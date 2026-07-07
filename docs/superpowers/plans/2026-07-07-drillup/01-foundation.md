@@ -6,7 +6,7 @@
 
 **Architecture:** create-next-app 기반 스캐폴드에 Prisma(MariaDB), Web Crypto 기반 HMAC 세션 토큰, Next.js middleware 인증 가드를 얹는다.
 
-**Tech Stack:** Next.js 15+, TypeScript, Tailwind CSS, Prisma, MariaDB 11 (docker), vitest
+**Tech Stack:** Next.js 15+, TypeScript, Tailwind CSS, Prisma, MariaDB(접속 정보는 `.env`에 사용자가 직접 입력), vitest
 
 ## Global Constraints
 
@@ -97,13 +97,13 @@ git commit -m "chore: Next.js 스캐폴드 및 vitest 설정"
 
 ---
 
-### Task 2: 로컬 MariaDB + Prisma 스키마
+### Task 2: DB 연결(.env 직접 입력) + Prisma 스키마
 
 **Files:**
-- Create: `docker-compose.yml`
 - Create: `prisma/schema.prisma`
 - Create: `src/server/db.ts`
 - Create: `.env` (커밋 금지), `.env.example`
+- Create: `docker-compose.yml` (선택 — 쓸 수 있는 MariaDB가 없을 때만)
 
 **Interfaces:**
 - Consumes: 없음
@@ -111,7 +111,68 @@ git commit -m "chore: Next.js 스캐폴드 및 vitest 설정"
   - Prisma 모델 `Topic`, `Question`, `SrsState`, `ReviewLog`, enum `QuestionType('MCQ'|'CLOZE')`, `ReviewMode('SRS'|'PRACTICE')`
   - `import { prisma } from "@/server/db"` — PrismaClient 싱글턴
 
-- [ ] **Step 1: docker-compose.yml 작성**
+**사전 조건:** 접속 가능한 MariaDB 서버가 있어야 한다 — 로컬 설치, 원격 인스턴스, 도커 등
+무엇이든 상관없다. **앱은 오직 `.env`에 사용자가 직접 입력한 IP/ID/PW로만 DB를 찾는다.**
+코드 어디에도 접속 정보를 하드코딩하지 않는다. 사용할 데이터베이스(스키마)가 아직 없다면
+DB 서버에서 미리 생성해 둔다:
+
+```sql
+CREATE DATABASE drillup CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+- [ ] **Step 1: Prisma 설치 및 초기화**
+
+```bash
+npm i -D prisma
+npm i @prisma/client
+npx prisma init --datasource-provider mysql
+```
+
+Expected: `prisma/schema.prisma`와 `.env`가 생성된다.
+
+- [ ] **Step 2: .env 및 .env.example 작성**
+
+`.env` — **아래 `DB_*` 5개 값은 사용자가 자신의 MariaDB 접속 정보로 직접 채우는 곳이다.**
+아래 값은 예시일 뿐이므로 실제 값으로 바꾼다. (create-next-app의 .gitignore가 `.env*`를
+무시하는지 확인 — 무시 목록에 없으면 `.env`를 .gitignore에 추가)
+
+```
+# ── 사용자가 직접 입력: MariaDB 접속 정보 ──────────────────
+DB_HOST="127.0.0.1"    # MariaDB 서버 IP 또는 호스트명
+DB_PORT="3306"
+DB_USER="drillup"      # 계정 ID
+DB_PASSWORD="secret"   # 계정 비밀번호
+DB_NAME="drillup"      # 데이터베이스(스키마) 이름
+
+# Prisma/Next.js가 사용하는 접속 URL — 위 DB_* 값을 조합한다. 이 줄은 수정하지 않는다.
+DATABASE_URL="mysql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+
+APP_PASSWORD="dev-password"
+SESSION_SECRET="dev-secret-change-me-0123456789abcdef"
+```
+
+참고: Prisma CLI와 Next.js 모두 .env 안에서 `${VAR}` 참조 확장(dotenv-expand)을 지원하므로
+위 조합이 양쪽에서 동작한다. 단, **비밀번호에 `$` `{` `}` `@` `:` `/` `#` 공백 등 특수문자가
+있으면** 확장이나 URL 파싱이 깨질 수 있다 — 그 경우 `DATABASE_URL` 한 줄에 URL 인코딩한
+값을 직접 풀어 쓴다 (예: 비밀번호 `p@ss!` → `mysql://drillup:p%40ss%21@127.0.0.1:3306/drillup`).
+
+`.env.example` (커밋 대상 — 값은 비워 둔다):
+
+```
+DB_HOST=""
+DB_PORT="3306"
+DB_USER=""
+DB_PASSWORD=""
+DB_NAME="drillup"
+DATABASE_URL="mysql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+APP_PASSWORD=""
+SESSION_SECRET=""
+```
+
+- [ ] **Step 3 (선택): 쓸 수 있는 MariaDB가 없는 경우에만 — 로컬 도커 DB**
+
+이미 접속할 MariaDB가 있으면 이 스텝은 건너뛴다. 없다면 `docker-compose.yml`을 만들어
+로컬 DB를 띄운다 (Docker Desktop 필요):
 
 ```yaml
 services:
@@ -131,44 +192,14 @@ volumes:
   drillup-db:
 ```
 
-- [ ] **Step 2: DB 기동**
-
 ```bash
 docker compose up -d
-docker compose ps
 ```
 
-Expected: `db` 서비스 상태가 `running` (초기화에 수 초 소요될 수 있음).
+이 경우 `.env`의 `DB_*` 값은 위 compose의 계정(`127.0.0.1` / `drillup` / `drillup` / `drillup`)과
+일치시킨다. 어느 쪽이든 **진실의 원천은 `.env`다.**
 
-- [ ] **Step 3: Prisma 설치 및 초기화**
-
-```bash
-npm i -D prisma
-npm i @prisma/client
-npx prisma init --datasource-provider mysql
-```
-
-Expected: `prisma/schema.prisma`와 `.env`가 생성된다.
-
-- [ ] **Step 4: .env 및 .env.example 작성**
-
-`.env` (create-next-app의 .gitignore가 `.env*`를 무시하는지 확인 — 무시 목록에 없으면 `.env`를 .gitignore에 추가):
-
-```
-DATABASE_URL="mysql://drillup:drillup@localhost:3306/drillup"
-APP_PASSWORD="dev-password"
-SESSION_SECRET="dev-secret-change-me-0123456789abcdef"
-```
-
-`.env.example` (커밋 대상):
-
-```
-DATABASE_URL="mysql://drillup:drillup@localhost:3306/drillup"
-APP_PASSWORD=""
-SESSION_SECRET=""
-```
-
-- [ ] **Step 5: Prisma 스키마 작성**
+- [ ] **Step 4: Prisma 스키마 작성**
 
 `prisma/schema.prisma` 전체를 다음으로 교체:
 
@@ -243,7 +274,7 @@ model ReviewLog {
 }
 ```
 
-- [ ] **Step 6: 마이그레이션 실행**
+- [ ] **Step 5: 마이그레이션 실행**
 
 ```bash
 npx prisma migrate dev --name init
@@ -251,15 +282,27 @@ npx prisma migrate dev --name init
 
 Expected: `prisma/migrations/..._init/` 생성, "Your database is now in sync" 메시지, Prisma Client 생성.
 
-- [ ] **Step 7: 테이블 생성 확인**
+참고: `migrate dev`는 shadow database를 임시 생성하므로 DB 계정에 `CREATE DATABASE` 권한이
+필요하다. 원격 DB 계정에 권한이 없어 실패하면, 개인 프로젝트이므로 마이그레이션 이력 없이
+스키마만 동기화하는 `npx prisma db push`로 대체해도 된다 (이후 스키마 변경 시에도 동일하게
+`db push` 사용).
+
+- [ ] **Step 6: 테이블 생성 확인**
 
 ```bash
-docker compose exec db mariadb -udrillup -pdrillup drillup -e "SHOW TABLES;"
+npx prisma migrate status
 ```
 
-Expected 출력에 `topic`, `question`, `srs_state`, `review_log`, `_prisma_migrations` 5개 테이블.
+Expected: `Database schema is up to date!` (db push를 쓴 경우 이 명령 대신 아래 Studio로 확인)
 
-- [ ] **Step 8: PrismaClient 싱글턴 작성**
+```bash
+npx prisma studio
+```
+
+브라우저(http://localhost:5555)에서 `Topic`, `Question`, `SrsState`, `ReviewLog` 모델이
+보이는지 확인 후 종료(Ctrl+C).
+
+- [ ] **Step 7: PrismaClient 싱글턴 작성**
 
 `src/server/db.ts`:
 
@@ -275,12 +318,14 @@ if (process.env.NODE_ENV !== "production") {
 }
 ```
 
-- [ ] **Step 9: 커밋**
+- [ ] **Step 8: 커밋**
 
 ```bash
 git add -A
-git commit -m "feat: MariaDB docker-compose 및 Prisma 스키마(topic/question/srs_state/review_log)"
+git commit -m "feat: DB 연결(.env) 및 Prisma 스키마(topic/question/srs_state/review_log)"
 ```
+
+커밋 전 `git status`로 `.env`가 스테이징되지 않았는지 반드시 확인한다 (접속 정보 유출 방지).
 
 ---
 

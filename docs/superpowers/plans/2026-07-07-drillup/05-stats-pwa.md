@@ -647,22 +647,23 @@ SRS(간격 반복)로 반복 학습한다.
 
 ## 개발 환경 실행
 
-필요: Node 22+, Docker Desktop
+필요: Node 22+, 접속 가능한 MariaDB 서버(로컬/원격/도커 무관)
 
     # 1. 의존성
     npm install
 
-    # 2. 로컬 MariaDB
-    docker compose up -d
-
-    # 3. 환경변수 — .env.example을 복사해 값 채우기
-    #    DATABASE_URL / APP_PASSWORD / SESSION_SECRET
+    # 2. 환경변수 — .env.example을 복사한 뒤 자신의 MariaDB 접속 정보를 직접 입력
+    #    DB_HOST(IP) / DB_PORT / DB_USER(ID) / DB_PASSWORD(PW) / DB_NAME
+    #    + APP_PASSWORD / SESSION_SECRET
     copy .env.example .env
 
-    # 4. 마이그레이션
+    # (선택) 쓸 MariaDB가 없으면 로컬 도커 DB 기동 후 그 계정을 .env에 입력
+    docker compose up -d
+
+    # 3. 마이그레이션
     npx prisma migrate dev
 
-    # 5. 개발 서버
+    # 4. 개발 서버
     npm run dev
 
 http://localhost:3000 접속 → APP_PASSWORD로 로그인.

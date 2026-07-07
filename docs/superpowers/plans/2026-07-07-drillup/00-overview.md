@@ -34,7 +34,8 @@
 - **API 오류 응답 형식 통일**: `{ "error": { "code": string, "message": string } }`
 - **커밋은 conventional commits** (`feat:`, `fix:`, `test:`, `chore:`, `docs:`). 태스크마다 커밋.
 - **테스트는 vitest**, 테스트 파일은 대상 파일 옆에 `*.test.ts`.
-- **환경변수**: `DATABASE_URL`, `APP_PASSWORD`, `SESSION_SECRET`, (선택) `NEXT_PUBLIC_API_BASE_URL`. `.env`는 커밋 금지, `.env.example`만 커밋.
+- **환경변수**: `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME`(사용자가 직접 입력) + 이를 조합한 `DATABASE_URL`, `APP_PASSWORD`, `SESSION_SECRET`, (선택) `NEXT_PUBLIC_API_BASE_URL`. `.env`는 커밋 금지, `.env.example`만 커밋.
+- **DB 접속 정보는 `.env`가 유일한 진실의 원천** — 코드·문서 어디에도 특정 호스트/계정을 하드코딩하지 않는다. DB 확인이 필요한 검증 절차는 `npx prisma studio` 또는 `npx prisma db execute`를 사용한다(특정 DB 배포 형태를 가정하는 명령 금지).
 
 ## 설계서 대비 의도적 단순화 (버그 아님)
 
@@ -48,7 +49,7 @@
 
 ```
 drillup/
-  docker-compose.yml            # 로컬 개발용 MariaDB
+  docker-compose.yml            # (선택) 쓸 MariaDB가 없을 때만 — 접속 정보의 원천은 항상 .env
   prisma/schema.prisma
   public/sw.js                  # PWA 서비스 워커
   public/icons/icon-{192,512}.png
@@ -95,7 +96,7 @@ drillup/
 
 ## 사전 준비 (실행 환경)
 
-- Docker Desktop이 실행 중이어야 한다 (로컬 MariaDB 컨테이너용).
+- 접속 가능한 MariaDB 서버와 그 접속 정보(IP/ID/PW/DB명) — 로컬 설치·원격 인스턴스·도커 등 무엇이든 가능. 사용자가 `.env`에 직접 입력한다(플랜 1 Task 2). 쓸 DB가 없을 때만 선택적으로 docker-compose 사용(이 경우 Docker Desktop 필요).
 - Node 22+ / npm 확인: `node -v`, `npm -v`
 - 검증 명령의 `curl`은 Windows PowerShell에서 `curl.exe`를 의미한다 (별칭 `curl`은 Invoke-WebRequest이므로 반드시 `curl.exe`로 실행).
 

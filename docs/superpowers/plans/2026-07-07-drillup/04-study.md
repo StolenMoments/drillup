@@ -306,13 +306,11 @@ curl.exe -s -b cookies.txt -H "Content-Type: application/json" -d "{\"questionId
 
 Expected: `{"isCorrect":true,"explanation":"...","correct":{"type":"MCQ","answer_index":2}}`
 
-SRS 상태 확인:
+SRS 상태 확인 — `npx prisma studio`(http://localhost:5555)에서 `SrsState` 모델의
+questionId 1 행 확인:
 
-```bash
-docker compose exec db mariadb -udrillup -pdrillup drillup -e "SELECT question_id, interval_days, repetitions, due_at FROM srs_state WHERE question_id = 1;"
-```
-
-Expected: `interval_days 1`, `repetitions 1`, `due_at`이 내일.
+Expected: `intervalDays 1`, `repetitions 1`, `dueAt`이 내일. (이하 이 문서의 "DB 확인"은
+모두 같은 방식으로 Prisma Studio를 사용한다)
 
 다시 큐 조회 → 문제 1이 큐에서 빠졌는지 확인:
 
@@ -326,7 +324,7 @@ curl.exe -s -b cookies.txt "http://localhost:3000/api/study/queue?mode=srs"
 curl.exe -s -b cookies.txt -H "Content-Type: application/json" -d "{\"questionId\":2,\"mode\":\"SRS\",\"answer\":{\"type\":\"CLOZE\",\"filled\":{\"1\":\"비연결\",\"2\":\"3-way\"}}}" http://localhost:3000/api/reviews
 ```
 
-Expected: `"isCorrect":false`, `correct.answers`에 정답 단어. DB에서 문제 2의 `lapses 1`, `ease_factor 2.30`, `due_at` 과거 유지 확인.
+Expected: `"isCorrect":false`, `correct.answers`에 정답 단어. Prisma Studio에서 문제 2의 `lapses 1`, `easeFactor 2.3`, `dueAt` 과거 유지 확인.
 
 연습 모드가 SRS를 건드리지 않는지:
 
@@ -744,11 +742,17 @@ export default function StudyPage() {
 
 - [ ] **Step 2: 수동 검증**
 
-먼저 문제 2(CLOZE)의 due를 과거로 되돌려 큐에 나오게 한다 (Task 2 검증에서 오답 처리했다면 이미 due가 과거이므로 생략 가능):
+먼저 문제 2(CLOZE)의 due를 과거로 되돌려 큐에 나오게 한다 (Task 2 검증에서 오답 처리했다면 이미 due가 과거이므로 생략 가능). 프로젝트 루트에 `tmp-reset-due.sql` 생성:
+
+```sql
+UPDATE srs_state SET due_at = NOW() - INTERVAL 1 DAY;
+```
 
 ```bash
-docker compose exec db mariadb -udrillup -pdrillup drillup -e "UPDATE srs_state SET due_at = NOW() - INTERVAL 1 DAY;"
+npx prisma db execute --file tmp-reset-due.sql --schema prisma/schema.prisma
 ```
+
+실행 후 `tmp-reset-due.sql` 삭제.
 
 브라우저 `/study?mode=srs`:
 

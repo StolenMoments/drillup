@@ -793,13 +793,10 @@ curl.exe -s -b cookies.txt http://localhost:3000/api/questions
 
 Expected: 2개 문제가 담긴 배열 (`attempts: 0`).
 
-srs_state 생성 확인:
+srs_state 생성 확인 — `npx prisma studio` 실행 후 브라우저(http://localhost:5555)에서
+`SrsState` 모델 열기:
 
-```bash
-docker compose exec db mariadb -udrillup -pdrillup drillup -e "SELECT question_id, ease_factor, interval_days, due_at FROM srs_state;"
-```
-
-Expected: 2행, `ease_factor 2.50`, `interval_days 0`.
+Expected: 2행, `easeFactor 2.5`, `intervalDays 0`, `dueAt`은 현재 시각. 확인 후 Studio 종료(Ctrl+C).
 
 확인 후 `tmp-import.json` 삭제.
 
