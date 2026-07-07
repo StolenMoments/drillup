@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum QuestionType {
+  MCQ
+  CLOZE
+}
+
+enum ReviewMode {
+  SRS
+  PRACTICE
+}
+
+model Topic {
+  id          Int        @id @default(autoincrement())
+  name        String     @unique @db.VarChar(100)
+  description String?    @db.Text
+  createdAt   DateTime   @default(now()) @map("created_at")
+  questions   Question[]
+
+  @@map("topic")
+}
+
+model Question {
+  id          Int          @id @default(autoincrement())
+  topicId     Int          @map("topic_id")
+  type        QuestionType
+  payload     Json
+  explanation String?      @db.Text
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  topic       Topic        @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  srsState    SrsState?
+  reviewLogs  ReviewLog[]
+
+  @@map("question")
+}
+
+model SrsState {
+  questionId     Int       @id @map("question_id")
+  easeFactor     Decimal   @default(2.5) @map("ease_factor") @db.Decimal(3, 2)
+  intervalDays   Int       @default(0) @map("interval_days")
+  repetitions    Int       @default(0)
+  lapses         Int       @default(0)
+  dueAt          DateTime  @default(now()) @map("due_at")
+  lastReviewedAt DateTime? @map("last_reviewed_at")
+  question       Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@map("srs_state")
+}
+
+model ReviewLog {
+  id         Int        @id @default(autoincrement())
+  questionId Int        @map("question_id")
+  mode       ReviewMode
+  isCorrect  Boolean    @map("is_correct")
+  answer     Json?
+  createdAt  DateTime   @default(now()) @map("created_at")
+  question   Question   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@map("review_log")
+}
