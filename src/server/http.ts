@@ -39,3 +39,11 @@ export async function parseBody<T>(
   }
   return result.data;
 }
+
+export function parseIdParam(raw: string): number {
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new ServiceError("BAD_REQUEST", "잘못된 id입니다", 400);
+  }
+  return id;
+}
