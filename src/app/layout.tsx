@@ -1,10 +1,16 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Link from "next/link";
+import LogoutButton from "@/components/LogoutButton";
+import SwRegister from "@/components/SwRegister";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "drillup",
   description: "개인용 문제은행",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0f172a",
 };
 
 export default function RootLayout({
@@ -32,9 +38,13 @@ export default function RootLayout({
             <Link href="/stats" className="hover:text-sky-300">
               통계
             </Link>
+            <span className="ml-auto">
+              <LogoutButton />
+            </span>
           </nav>
         </header>
         <main className="mx-auto max-w-3xl px-4 py-6">{children}</main>
+        <SwRegister />
       </body>
     </html>
   );
