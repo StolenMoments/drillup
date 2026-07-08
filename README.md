@@ -15,6 +15,7 @@ SRS(간격 반복)로 반복 학습한다.
     # 2. 환경변수 - .env.example을 복사한 뒤 자신의 MariaDB 접속 정보를 직접 입력
     #    DB_HOST(IP) / DB_PORT / DB_USER(ID) / DB_PASSWORD(PW) / DB_NAME
     #    + APP_PASSWORD / SESSION_SECRET
+    #    (DATABASE_URL은 채울 필요 없다 - DB_* 값으로 자동 구성된다)
     copy .env.example .env
 
     # (선택) 쓸 MariaDB가 없으면 로컬 도커 DB 기동 후 그 계정을 .env에 입력
