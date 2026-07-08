@@ -76,19 +76,32 @@ export interface StatsOverviewDto {
 }
 
 export type GenerationEngineDto = "CLAUDE" | "CODEX" | "ANTIGRAVITY";
-export type GenerationStatusDto = "RUNNING" | "SUCCEEDED" | "FAILED";
+export type GenerationStatusDto =
+  | "RUNNING"
+  | "VERIFYING"
+  | "SUCCEEDED"
+  | "FAILED";
+export type GenerationVerdictDto = "pass" | "fail" | "unverified";
 
 export type GenerationItemDto =
-  | { index: number; ok: true; question: unknown }
+  | {
+      index: number;
+      ok: true;
+      question: unknown;
+      verdict: GenerationVerdictDto;
+      verdictComment: string | null;
+    }
   | { index: number; ok: false; errors: string[] };
 
 export interface GenerationJobDto {
   id: number;
   topicId: number;
   engine: GenerationEngineDto;
+  verifyEngine: GenerationEngineDto;
   status: GenerationStatusDto;
   items: GenerationItemDto[] | null;
   errorMessage: string | null;
+  verifyWarning: string | null;
   createdAt: string;
   finishedAt: string | null;
 }

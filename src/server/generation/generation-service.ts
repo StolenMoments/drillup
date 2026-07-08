@@ -2,33 +2,66 @@ import path from "node:path";
 import type { GenerationJob, Prisma } from "@prisma/client";
 import { parseImportJson } from "@/core/import-schema";
 import { extractJsonObject } from "@/core/json-extract";
-import { buildCliGenerationPrompt } from "@/core/prompt-template";
+import {
+  buildCliGenerationPrompt,
+  buildCliVerifyPrompt,
+  type ExistingQuestions,
+} from "@/core/prompt-template";
+import { capSummaries, summarizeQuestionPayload } from "@/core/question-summary";
+import { mergeVerdicts, parseVerifyJson } from "@/core/verify-schema";
 import type { GenerationEngineDto, GenerationJobDto } from "@/lib/api-types";
 import { prisma } from "../db";
 import { ServiceError } from "../errors";
 import { generationTimeoutMs, jobOutputDir, runEngine } from "./run-engine";
 
 const ORPHAN_GRACE_MS = 60_000;
+const EXISTING_QUESTION_LIMIT = 100;
 
 function toDto(job: GenerationJob): GenerationJobDto {
   return {
     id: job.id,
     topicId: job.topicId,
     engine: job.engine,
+    verifyEngine: job.verifyEngine,
     status: job.status,
     items:
       job.status === "SUCCEEDED"
         ? (job.result as unknown as GenerationJobDto["items"])
         : null,
     errorMessage: job.errorMessage,
+    verifyWarning: job.verifyWarning,
     createdAt: job.createdAt.toISOString(),
     finishedAt: job.finishedAt?.toISOString() ?? null,
+  };
+}
+
+async function loadExistingQuestions(
+  topicId: number,
+): Promise<ExistingQuestions> {
+  const [total, questions] = await Promise.all([
+    prisma.question.count({ where: { topicId } }),
+    prisma.question.findMany({
+      where: { topicId },
+      orderBy: { createdAt: "desc" },
+      take: EXISTING_QUESTION_LIMIT,
+      select: { type: true, payload: true },
+    }),
+  ]);
+  const capped = capSummaries(
+    questions.map((question) =>
+      summarizeQuestionPayload(question.type, question.payload),
+    ),
+  );
+  return {
+    summaries: capped.kept,
+    truncated: capped.truncated || total > EXISTING_QUESTION_LIMIT,
   };
 }
 
 export async function createJob(input: {
   topicId: number;
   engine: GenerationEngineDto;
+  verifyEngine: GenerationEngineDto;
   instructions: string;
 }): Promise<GenerationJobDto> {
   const topic = await prisma.topic.findUnique({ where: { id: input.topicId } });
@@ -37,7 +70,7 @@ export async function createJob(input: {
   }
 
   const running = await prisma.generationJob.findFirst({
-    where: { topicId: input.topicId, status: "RUNNING" },
+    where: { topicId: input.topicId, status: { in: ["RUNNING", "VERIFYING"] } },
   });
   if (running) {
     throw new ServiceError(
@@ -47,15 +80,18 @@ export async function createJob(input: {
     );
   }
 
+  const existing = await loadExistingQuestions(input.topicId);
+
   const job = await prisma.generationJob.create({
     data: {
       topicId: input.topicId,
       engine: input.engine,
+      verifyEngine: input.verifyEngine,
       instructions: input.instructions,
     },
   });
 
-  void runJob(job.id, topic.name, input.instructions).catch((e) => {
+  void runJob(job.id, topic.name, input.instructions, existing).catch((e) => {
     console.error(`generation job ${job.id} failed unexpectedly`, e);
   });
 
@@ -66,9 +102,16 @@ async function runJob(
   jobId: number,
   topicName: string,
   instructions: string,
+  existing: ExistingQuestions,
 ): Promise<void> {
-  const resultPath = path.join(jobOutputDir(jobId), "result.json");
-  const prompt = buildCliGenerationPrompt(topicName, instructions, resultPath);
+  const dir = jobOutputDir(jobId);
+  const resultPath = path.join(dir, "result.json");
+  const prompt = buildCliGenerationPrompt(
+    topicName,
+    instructions,
+    resultPath,
+    existing,
+  );
 
   const job = await prisma.generationJob.findUnique({ where: { id: jobId } });
   if (!job || job.status !== "RUNNING") return;
@@ -89,12 +132,60 @@ async function runJob(
     return;
   }
 
+  // 이 시점의 verdict는 전부 unverified — 검증이 끝나면 덮어쓴다.
+  const unverifiedItems = mergeVerdicts(parsed.items, []);
+  const validItems = parsed.items.filter((item) => item.ok);
+
+  if (validItems.length === 0) {
+    await prisma.generationJob.update({
+      where: { id: jobId },
+      data: {
+        status: "SUCCEEDED",
+        result: unverifiedItems as unknown as Prisma.InputJsonValue,
+        rawOutput: run.resultText,
+        finishedAt: new Date(),
+      },
+    });
+    return;
+  }
+
+  await prisma.generationJob.update({
+    where: { id: jobId },
+    data: {
+      status: "VERIFYING",
+      result: unverifiedItems as unknown as Prisma.InputJsonValue,
+      rawOutput: run.resultText,
+    },
+  });
+
+  const verifyResultPath = path.join(dir, "verify-result.json");
+  const verifyPrompt = buildCliVerifyPrompt(
+    topicName,
+    validItems.map((item) => ({ index: item.index, question: item.question })),
+    verifyResultPath,
+  );
+
+  let finalItems = unverifiedItems;
+  let verifyWarning: string | null = null;
+
+  const verifyRun = await runEngine(job.verifyEngine, verifyPrompt, jobId, "verify-");
+  if (!verifyRun.ok) {
+    verifyWarning = verifyRun.failureReason;
+  } else {
+    const verdicts = parseVerifyJson(extractJsonObject(verifyRun.resultText));
+    if (!verdicts.ok) {
+      verifyWarning = `검증 결과를 해석하지 못했습니다: ${verdicts.fatal}`;
+    } else {
+      finalItems = mergeVerdicts(parsed.items, verdicts.verdicts);
+    }
+  }
+
   await prisma.generationJob.update({
     where: { id: jobId },
     data: {
       status: "SUCCEEDED",
-      result: parsed.items as unknown as Prisma.InputJsonValue,
-      rawOutput: run.resultText,
+      result: finalItems as unknown as Prisma.InputJsonValue,
+      verifyWarning,
       finishedAt: new Date(),
     },
   });
@@ -122,15 +213,29 @@ export async function getJob(id: number): Promise<GenerationJobDto> {
     throw new ServiceError("JOB_NOT_FOUND", "생성 작업을 찾을 수 없습니다", 404);
   }
 
-  if (
-    job.status === "RUNNING" &&
-    Date.now() - job.createdAt.getTime() > generationTimeoutMs() + ORPHAN_GRACE_MS
-  ) {
+  // 생성·검증 단계가 각각 타임아웃을 가지므로 고아 판정 기준은 2배 + 유예.
+  const orphanAfterMs = 2 * generationTimeoutMs() + ORPHAN_GRACE_MS;
+  const isStale = Date.now() - job.createdAt.getTime() > orphanAfterMs;
+
+  if (job.status === "RUNNING" && isStale) {
     const updated = await prisma.generationJob.update({
       where: { id },
       data: {
         status: "FAILED",
         errorMessage: "시간 초과 또는 서버 재시작으로 중단되었습니다",
+        finishedAt: new Date(),
+      },
+    });
+    return toDto(updated);
+  }
+
+  if (job.status === "VERIFYING" && isStale) {
+    // 생성 결과(전 항목 unverified)는 VERIFYING 전환 시점에 이미 저장돼 있다.
+    const updated = await prisma.generationJob.update({
+      where: { id },
+      data: {
+        status: "SUCCEEDED",
+        verifyWarning: "시간 초과 또는 서버 재시작으로 검증이 중단되었습니다",
         finishedAt: new Date(),
       },
     });

@@ -35,11 +35,12 @@ export async function runEngine(
   engine: EngineName,
   prompt: string,
   jobId: number,
+  filePrefix = "",
 ): Promise<EngineRunResult> {
   const dir = jobOutputDir(jobId);
   await mkdir(dir, { recursive: true });
-  const promptPath = path.join(dir, "prompt.md");
-  const resultPath = path.join(dir, "result.json");
+  const promptPath = path.join(dir, `${filePrefix}prompt.md`);
+  const resultPath = path.join(dir, `${filePrefix}result.json`);
   await writeFile(promptPath, prompt, "utf-8");
 
   const cmd = buildEngineCommand(engine, promptPath, {
@@ -90,10 +91,10 @@ export async function runEngine(
     child.stdin.end();
   });
 
-  await writeFile(path.join(dir, "stdout.log"), stdout, "utf-8").catch(
+  await writeFile(path.join(dir, `${filePrefix}stdout.log`), stdout, "utf-8").catch(
     () => undefined,
   );
-  await writeFile(path.join(dir, "stderr.log"), stderr, "utf-8").catch(
+  await writeFile(path.join(dir, `${filePrefix}stderr.log`), stderr, "utf-8").catch(
     () => undefined,
   );
 
@@ -121,7 +122,7 @@ export async function runEngine(
   if (resultText === null || resultText.trim() === "") {
     return {
       ok: false,
-      failureReason: `result.json이 생성되지 않았습니다 (exit_code=${exit.code ?? "unknown"})${logTail ? `; ${logTail}` : ""}`,
+      failureReason: `${filePrefix}result.json이 생성되지 않았습니다 (exit_code=${exit.code ?? "unknown"})${logTail ? `; ${logTail}` : ""}`,
     };
   }
   return { ok: true, resultText };
