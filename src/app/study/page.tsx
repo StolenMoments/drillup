@@ -1,0 +1,164 @@
+"use client";
+
+import Link from "next/link";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import ClozeCard from "@/components/ClozeCard";
+import McqCard from "@/components/McqCard";
+import ResultPanel from "@/components/ResultPanel";
+import { api } from "@/lib/api-client";
+import type {
+  ReviewAnswerDto,
+  ReviewResultDto,
+  StudyQuestionDto,
+} from "@/lib/api-types";
+
+function completionMessage(mode: "srs" | "practice"): string {
+  if (mode === "srs") return "오늘 복습할 문제를 모두 끝냈습니다";
+  return "풀 문제가 없습니다.";
+}
+
+function modeLabel(mode: "srs" | "practice"): string {
+  if (mode === "srs") return "오늘의 복습";
+  return "자유 연습";
+}
+
+function StudySession({
+  mode,
+  topicId,
+}: {
+  mode: "srs" | "practice";
+  topicId?: number;
+}) {
+  const [queue, setQueue] = useState<StudyQuestionDto[] | null>(null);
+  const [index, setIndex] = useState(0);
+  const [result, setResult] = useState<ReviewResultDto | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let ignore = false;
+
+    api.study
+      .queue(mode, topicId)
+      .then((questions) => {
+        if (!ignore) setQueue(questions);
+      })
+      .catch((err: unknown) => {
+        if (!ignore) {
+          setError(
+            err instanceof Error ? err.message : "문제를 불러오지 못했습니다",
+          );
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [mode, topicId]);
+
+  const current = queue?.[index];
+
+  async function submitAnswer(answer: ReviewAnswerDto) {
+    if (!current) return;
+    try {
+      const reviewResult = await api.study.submitReview({
+        questionId: current.id,
+        mode: mode === "srs" ? "SRS" : "PRACTICE",
+        answer,
+      });
+      setResult(reviewResult);
+      if (mode === "srs" && !reviewResult.isCorrect) {
+        setQueue((q) => (q ? [...q, current] : q));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "채점 요청에 실패했습니다");
+    }
+  }
+
+  function next() {
+    setResult(null);
+    setIndex((currentIndex) => currentIndex + 1);
+  }
+
+  if (error) return <p className="text-red-300">{error}</p>;
+  if (!queue) return <p className="text-slate-400">불러오는 중...</p>;
+
+  if (!current) {
+    return (
+      <div className="space-y-4 pt-10 text-center">
+        <p className="text-lg">{completionMessage(mode)}</p>
+        {mode === "srs" && (
+          <Link
+            href={`/study?mode=practice${topicId ? `&topicId=${topicId}` : ""}`}
+            className="inline-block rounded bg-slate-700 px-4 py-2"
+          >
+            자유 연습하기
+          </Link>
+        )}
+        <Link href="/" className="block text-sky-400">
+          대시보드로
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between text-sm text-slate-400">
+        <span>{modeLabel(mode)}</span>
+        <span>
+          {index + 1} / {queue.length}
+        </span>
+      </div>
+      {current.type === "MCQ" ? (
+        <McqCard
+          key={`${current.id}-${index}`}
+          question={current}
+          disabled={result !== null}
+          onSubmit={(selectedIndex) =>
+            submitAnswer({ type: "MCQ", selected_index: selectedIndex })
+          }
+        />
+      ) : (
+        <ClozeCard
+          key={`${current.id}-${index}`}
+          question={current}
+          disabled={result !== null}
+          onSubmit={(filled) => submitAnswer({ type: "CLOZE", filled })}
+        />
+      )}
+      {result && (
+        <ResultPanel
+          question={current}
+          result={result}
+          onNext={next}
+          isLast={index + 1 >= queue.length}
+        />
+      )}
+    </div>
+  );
+}
+
+function StudyContent() {
+  const params = useSearchParams();
+  const mode: "srs" | "practice" =
+    params.get("mode") === "practice" ? "practice" : "srs";
+  const topicIdRaw = params.get("topicId");
+  const topicId = topicIdRaw ? Number(topicIdRaw) : undefined;
+
+  return (
+    <StudySession
+      key={`${mode}-${topicId ?? "all"}`}
+      mode={mode}
+      topicId={topicId}
+    />
+  );
+}
+
+export default function StudyPage() {
+  return (
+    <Suspense fallback={<p className="text-slate-400">불러오는 중...</p>}>
+      <StudyContent />
+    </Suspense>
+  );
+}
