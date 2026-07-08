@@ -17,6 +17,45 @@ const ENGINES: Array<{ value: GenerationEngineDto; label: string }> = [
 ];
 
 const POLL_INTERVAL_MS = 3000;
+const ACTIVE_JOB_STORAGE_KEY = "drillup.activeGenerationJob";
+
+interface StoredGenerationJob {
+  jobId: number;
+  topicId: number;
+}
+
+function readStoredJob(): StoredGenerationJob | null {
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_JOB_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredGenerationJob>;
+    if (
+      typeof parsed.jobId !== "number" ||
+      typeof parsed.topicId !== "number"
+    ) {
+      return null;
+    }
+    return { jobId: parsed.jobId, topicId: parsed.topicId };
+  } catch {
+    return null;
+  }
+}
+
+function storeActiveJob(jobId: number, nextTopicId: number) {
+  window.localStorage.setItem(
+    ACTIVE_JOB_STORAGE_KEY,
+    JSON.stringify({ jobId, topicId: nextTopicId }),
+  );
+}
+
+function clearActiveJob() {
+  window.localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+}
+
+function selectValidItems(next: GenerationJobDto) {
+  if (next.status !== "SUCCEEDED" || !next.items) return new Set<number>();
+  return new Set(next.items.filter((item) => item.ok).map((item) => item.index));
+}
 
 export default function GeneratePage() {
   const [topics, setTopics] = useState<TopicDto[]>([]);
@@ -32,16 +71,50 @@ export default function GeneratePage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api.topics
-      .list()
-      .then(setTopics)
-      .catch((error: unknown) =>
+    let ignore = false;
+
+    async function loadInitialState() {
+      try {
+        const topicList = await api.topics.list();
+        if (ignore) return;
+        setTopics(topicList);
+
+        const stored = readStoredJob();
+        if (!stored) return;
+
+        const { job: restored } = await api.generate.get(stored.jobId);
+        if (ignore) return;
+
+        setTopicId(restored.topicId);
+        setEngine(restored.engine);
+        setJob(restored);
+        setElapsed(
+          Math.max(
+            0,
+            Math.floor((Date.now() - new Date(restored.createdAt).getTime()) / 1000),
+          ),
+        );
+        if (restored.status === "SUCCEEDED") {
+          setSelected(selectValidItems(restored));
+          setMessage("✅ 이전 생성 결과를 불러왔습니다");
+        } else if (restored.status === "RUNNING") {
+          setMessage("이전 생성 작업을 이어서 확인합니다");
+        }
+      } catch (error: unknown) {
+        if (ignore) return;
         setMessage(
           error instanceof Error
             ? error.message
             : "주제 목록을 불러오지 못했습니다",
-        ),
-      );
+        );
+        clearActiveJob();
+      }
+    }
+
+    void loadInitialState();
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   const running = job?.status === "RUNNING";
@@ -56,11 +129,7 @@ export default function GeneratePage() {
         if (next.status !== "RUNNING") {
           setJob(next);
           if (next.status === "SUCCEEDED" && next.items) {
-            setSelected(
-              new Set(
-                next.items.filter((item) => item.ok).map((item) => item.index),
-              ),
-            );
+            setSelected(selectValidItems(next));
           }
         }
       } catch {
@@ -105,6 +174,7 @@ export default function GeneratePage() {
         engine,
         instructions,
       });
+      storeActiveJob(created.id, topicId);
       setJob(created);
     } catch (error) {
       setMessage(
@@ -126,7 +196,7 @@ export default function GeneratePage() {
 
   async function save() {
     if (job?.status !== "SUCCEEDED" || !job.items) return;
-    if (topicId === "" || selected.size === 0) return;
+    if (selected.size === 0) return;
     const questions = job.items
       .filter((item) => item.ok && selected.has(item.index))
       .map((item) => (item.ok ? item.question : null))
@@ -134,10 +204,11 @@ export default function GeneratePage() {
 
     setSaving(true);
     try {
-      const { savedCount } = await api.import.submit(topicId, questions);
+      const { savedCount } = await api.import.submit(job.topicId, questions);
       setMessage(`✅ ${savedCount}개 문제를 저장했습니다`);
       setJob(null);
       setSelected(new Set());
+      clearActiveJob();
       await refreshTopics();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "저장에 실패했습니다");
