@@ -18,6 +18,7 @@
   --danger: oklch(0.68 0.18 28);
   --danger-soft: oklch(0.31 0.08 28);
   --warning: oklch(0.78 0.14 80);
+  --warning-soft: oklch(0.31 0.075 80);
   --radius: 12px;
 }
 

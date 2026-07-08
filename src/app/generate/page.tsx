@@ -54,7 +54,11 @@ function clearActiveJob() {
 
 function selectValidItems(next: GenerationJobDto) {
   if (next.status !== "SUCCEEDED" || !next.items) return new Set<number>();
-  return new Set(next.items.filter((item) => item.ok).map((item) => item.index));
+  return new Set(
+    next.items
+      .filter((item) => item.ok && item.verdict !== "fail")
+      .map((item) => item.index),
+  );
 }
 
 export default function GeneratePage() {
@@ -62,6 +66,8 @@ export default function GeneratePage() {
   const [topicId, setTopicId] = useState<number | "">("");
   const [newTopicName, setNewTopicName] = useState("");
   const [engine, setEngine] = useState<GenerationEngineDto>("CLAUDE");
+  const [verifyEngine, setVerifyEngine] = useState<GenerationEngineDto>("CODEX");
+  const [verifyTouched, setVerifyTouched] = useState(false);
   const [instructions, setInstructions] = useState("");
   const [job, setJob] = useState<GenerationJobDto | null>(null);
   const [starting, setStarting] = useState(false);
@@ -87,6 +93,8 @@ export default function GeneratePage() {
 
         setTopicId(restored.topicId);
         setEngine(restored.engine);
+        setVerifyEngine(restored.verifyEngine);
+        setVerifyTouched(true);
         setJob(restored);
         setElapsed(
           Math.max(
@@ -97,7 +105,7 @@ export default function GeneratePage() {
         if (restored.status === "SUCCEEDED") {
           setSelected(selectValidItems(restored));
           setMessage("✅ 이전 생성 결과를 불러왔습니다");
-        } else if (restored.status === "RUNNING") {
+        } else if (restored.status === "RUNNING" || restored.status === "VERIFYING") {
           setMessage("이전 생성 작업을 이어서 확인합니다");
         }
       } catch (error: unknown) {
@@ -117,16 +125,16 @@ export default function GeneratePage() {
     };
   }, []);
 
-  const running = job?.status === "RUNNING";
+  const inProgress = job?.status === "RUNNING" || job?.status === "VERIFYING";
 
   useEffect(() => {
-    if (!job || job.status !== "RUNNING") return;
+    if (!job || (job.status !== "RUNNING" && job.status !== "VERIFYING")) return;
     const startedAt = new Date(job.createdAt).getTime();
     const timer = setInterval(async () => {
       setElapsed(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
       try {
         const { job: next } = await api.generate.get(job.id);
-        if (next.status !== "RUNNING") {
+        if (next.status !== job.status) {
           setJob(next);
           if (next.status === "SUCCEEDED" && next.items) {
             setSelected(selectValidItems(next));
@@ -138,6 +146,18 @@ export default function GeneratePage() {
     }, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [job]);
+
+  function selectEngine(value: GenerationEngineDto) {
+    setEngine(value);
+    if (!verifyTouched) {
+      setVerifyEngine(value === "CLAUDE" ? "CODEX" : "CLAUDE");
+    }
+  }
+
+  function selectVerifyEngine(value: GenerationEngineDto) {
+    setVerifyEngine(value);
+    setVerifyTouched(true);
+  }
 
   async function refreshTopics() {
     setTopics(await api.topics.list());
@@ -162,7 +182,7 @@ export default function GeneratePage() {
   }
 
   async function startGeneration() {
-    if (topicId === "" || starting || running) return;
+    if (topicId === "" || starting || inProgress) return;
     setStarting(true);
     setMessage("");
     setJob(null);
@@ -172,6 +192,7 @@ export default function GeneratePage() {
       const { job: created } = await api.generate.create({
         topicId,
         engine,
+        verifyEngine,
         instructions,
       });
       storeActiveJob(created.id, topicId);
@@ -270,11 +291,29 @@ export default function GeneratePage() {
                 type="radio"
                 name="engine"
                 checked={engine === item.value}
-                onChange={() => setEngine(item.value)}
+                onChange={() => selectEngine(item.value)}
               />
               {item.label}
             </label>
           ))}
+        </div>
+        <div className="space-y-1">
+          <p className="muted text-sm">
+            검증 엔진 — 생성된 문제를 다른 CLI로 교차 검증합니다
+          </p>
+          <div className="flex flex-wrap gap-4">
+            {ENGINES.map((item) => (
+              <label key={item.value} className="chip gap-2">
+                <input
+                  type="radio"
+                  name="verifyEngine"
+                  checked={verifyEngine === item.value}
+                  onChange={() => selectVerifyEngine(item.value)}
+                />
+                {item.label}
+              </label>
+            ))}
+          </div>
         </div>
         <textarea
           value={instructions}
@@ -289,10 +328,14 @@ export default function GeneratePage() {
         <h2 className="section-title">생성</h2>
         <button
           onClick={startGeneration}
-          disabled={topicId === "" || starting || running}
+          disabled={topicId === "" || starting || inProgress}
           className="btn btn-primary"
         >
-          {running ? `생성 중... (경과 ${elapsed}초)` : "생성 시작"}
+          {job?.status === "VERIFYING"
+            ? `검증 중... (경과 ${elapsed}초)`
+            : inProgress
+              ? `생성 중... (경과 ${elapsed}초)`
+              : "생성 시작"}
         </button>
         {topicId === "" && (
           <p className="text-sm text-[color:var(--warning)]">주제를 먼저 선택하세요</p>
@@ -316,6 +359,11 @@ export default function GeneratePage() {
       {job?.status === "SUCCEEDED" && job.items && (
         <section className="space-y-3">
           <h2 className="section-title">미리보기 및 저장</h2>
+          {job.verifyWarning && (
+            <p className="whitespace-pre-wrap break-all rounded-[12px] border border-[color:var(--warning)] bg-[color:var(--warning-soft)] p-3 text-sm">
+              ⚠️ 검증을 수행하지 못했습니다: {job.verifyWarning}
+            </p>
+          )}
           {job.items.map((item) => (
             <div
               key={item.index}
@@ -332,6 +380,19 @@ export default function GeneratePage() {
                         ? "객관식"
                         : "빈칸"}
                     </span>
+                    {item.verdict === "pass" && (
+                      <span className="chip" style={{ color: "var(--success)" }}>
+                        ✅ 검증 통과
+                      </span>
+                    )}
+                    {item.verdict === "fail" && (
+                      <span className="chip" style={{ color: "var(--warning)" }}>
+                        ⚠️ 검증 의견
+                      </span>
+                    )}
+                    {item.verdict === "unverified" && (
+                      <span className="chip">검증 안 됨</span>
+                    )}
                     <label className="ml-auto flex items-center gap-2">
                       <input
                         type="checkbox"
@@ -346,7 +407,17 @@ export default function GeneratePage() {
                 )}
               </div>
               {item.ok ? (
-                <QuestionPreview question={item.question as ImportQuestion} />
+                <>
+                  <QuestionPreview question={item.question as ImportQuestion} />
+                  {item.verdict === "fail" && item.verdictComment && (
+                    <p className="mt-2 whitespace-pre-wrap break-all rounded-[12px] border border-[color:var(--warning)] bg-[color:var(--warning-soft)] p-2 text-sm">
+                      ⚠️ {item.verdictComment}
+                    </p>
+                  )}
+                  {item.verdict === "pass" && item.verdictComment && (
+                    <p className="subtle mt-2 text-xs">{item.verdictComment}</p>
+                  )}
+                </>
               ) : (
                 <ul className="list-inside list-disc text-sm text-[color:var(--danger)]">
                   {item.errors.map((error) => (
