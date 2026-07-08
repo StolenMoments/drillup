@@ -1,0 +1,15 @@
+services:
+  db:
+    image: mariadb:11
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: drillup
+      MARIADB_USER: drillup
+      MARIADB_PASSWORD: drillup
+    ports:
+      - "3306:3306"
+    volumes:
+      - drillup-db:/var/lib/mysql
+
+volumes:
+  drillup-db:
