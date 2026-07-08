@@ -2,7 +2,8 @@ import type {
   GenerationEngineDto,
   GenerationJobDto,
   QuestionDetailDto,
-  QuestionListItemDto,
+  QuestionListPageDto,
+  QuestionListParams,
   ReviewResultDto,
   StatsOverviewDto,
   StudyQuestionDto,
@@ -77,10 +78,17 @@ export const api = {
       request<{ ok: true }>(`/api/topics/${id}`, { method: "DELETE" }),
   },
   questions: {
-    list: (topicId?: number) =>
-      request<QuestionListItemDto[]>(
-        `/api/questions${topicId ? `?topicId=${topicId}` : ""}`,
-      ),
+    list: (params: QuestionListParams = {}) => {
+      const searchParams = new URLSearchParams();
+      if (params.topicId) searchParams.set("topicId", String(params.topicId));
+      if (params.type) searchParams.set("type", params.type);
+      if (params.sort) searchParams.set("sort", params.sort);
+      if (params.page) searchParams.set("page", String(params.page));
+      const query = searchParams.toString();
+      return request<QuestionListPageDto>(
+        `/api/questions${query ? `?${query}` : ""}`,
+      );
+    },
     get: (id: number) => request<QuestionDetailDto>(`/api/questions/${id}`),
     update: (
       id: number,

@@ -1,4 +1,15 @@
 export type QuestionTypeDto = "MCQ" | "CLOZE";
+export type QuestionListSortDto =
+  | "latest"
+  | "accuracyAsc"
+  | "accuracyDesc";
+
+export interface QuestionListParams {
+  topicId?: number;
+  type?: QuestionTypeDto;
+  sort?: QuestionListSortDto;
+  page?: number;
+}
 
 export interface TopicDto {
   id: number;
@@ -15,6 +26,14 @@ export interface QuestionListItemDto {
   attempts: number;
   correctCount: number;
   createdAt: string;
+}
+
+export interface QuestionListPageDto {
+  items: QuestionListItemDto[];
+  page: number;
+  pageSize: 15;
+  totalItems: number;
+  totalPages: number;
 }
 
 export interface QuestionDetailDto {

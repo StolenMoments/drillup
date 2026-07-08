@@ -19,6 +19,41 @@ import {
   updateQuestion,
 } from "./question-service";
 
+function makeQuestion(input: {
+  id: number;
+  type?: "MCQ" | "CLOZE";
+  correct?: number;
+  wrong?: number;
+  createdAt?: string;
+}) {
+  const type = input.type ?? "MCQ";
+  return {
+    id: input.id,
+    topicId: 1,
+    type,
+    payload:
+      type === "MCQ"
+        ? {
+            question: `Question ${input.id}`,
+            choices: ["A", "B", "C", "D"],
+            answer_index: 0,
+          }
+        : {
+            text: `Cloze {{blank_${input.id}:answer}}`,
+            blanks: [{ id: `blank_${input.id}`, answer: "answer" }],
+          },
+    reviewLogs: [
+      ...Array.from({ length: input.correct ?? 0 }, () => ({
+        isCorrect: true,
+      })),
+      ...Array.from({ length: input.wrong ?? 0 }, () => ({
+        isCorrect: false,
+      })),
+    ],
+    createdAt: new Date(input.createdAt ?? `2026-07-07T00:00:${String(input.id).padStart(2, "0")}.000Z`),
+  };
+}
+
 describe("question-service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -41,13 +76,13 @@ describe("question-service", () => {
       },
     ]);
 
-    const questions = await listQuestions(1);
+    const questions = await listQuestions({ topicId: 1 });
 
     expect(prismaMock.question.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { topicId: 1 } }),
     );
-    expect(questions).toEqual([
-      {
+    expect(questions.items).toEqual([
+      expect.objectContaining({
         id: 2,
         topicId: 1,
         type: "MCQ",
@@ -56,8 +91,80 @@ describe("question-service", () => {
         attempts: 2,
         correctCount: 1,
         createdAt: "2026-07-07T00:00:00.000Z",
-      },
+      }),
     ]);
+    expect(questions).toMatchObject({
+      page: 1,
+      pageSize: 15,
+      totalItems: 1,
+      totalPages: 1,
+    });
+  });
+
+  it("paginates question lists in pages of 15", async () => {
+    prismaMock.question.findMany.mockResolvedValue(
+      Array.from({ length: 20 }, (_, index) =>
+        makeQuestion({ id: index + 1 }),
+      ),
+    );
+
+    const page = await listQuestions({ page: 2 });
+
+    expect(page).toMatchObject({
+      page: 2,
+      pageSize: 15,
+      totalItems: 20,
+      totalPages: 2,
+    });
+    expect(page.items).toHaveLength(5);
+    expect(page.items.map((question) => question.id)).toEqual([5, 4, 3, 2, 1]);
+  });
+
+  it("filters questions by type", async () => {
+    prismaMock.question.findMany.mockResolvedValue([
+      makeQuestion({ id: 3, type: "MCQ" }),
+      makeQuestion({ id: 2, type: "CLOZE" }),
+      makeQuestion({ id: 1, type: "CLOZE" }),
+    ]);
+
+    const mcqPage = await listQuestions({ type: "MCQ" });
+    const clozePage = await listQuestions({ type: "CLOZE" });
+
+    expect(mcqPage.items.map((question) => question.type)).toEqual(["MCQ"]);
+    expect(mcqPage.totalItems).toBe(1);
+    expect(clozePage.items.map((question) => question.type)).toEqual([
+      "CLOZE",
+      "CLOZE",
+    ]);
+    expect(clozePage.totalItems).toBe(2);
+  });
+
+  it("sorts questions by low and high accuracy", async () => {
+    prismaMock.question.findMany.mockResolvedValue([
+      makeQuestion({ id: 1, correct: 1, wrong: 3 }),
+      makeQuestion({ id: 2, correct: 3, wrong: 1 }),
+      makeQuestion({ id: 3, correct: 1, wrong: 1 }),
+    ]);
+
+    const asc = await listQuestions({ sort: "accuracyAsc" });
+    const desc = await listQuestions({ sort: "accuracyDesc" });
+
+    expect(asc.items.map((question) => question.id)).toEqual([1, 3, 2]);
+    expect(desc.items.map((question) => question.id)).toEqual([2, 3, 1]);
+  });
+
+  it("places unattempted questions last when sorting by accuracy", async () => {
+    prismaMock.question.findMany.mockResolvedValue([
+      makeQuestion({ id: 1, correct: 0, wrong: 0 }),
+      makeQuestion({ id: 2, correct: 1, wrong: 0 }),
+      makeQuestion({ id: 3, correct: 0, wrong: 1 }),
+    ]);
+
+    const asc = await listQuestions({ sort: "accuracyAsc" });
+    const desc = await listQuestions({ sort: "accuracyDesc" });
+
+    expect(asc.items.map((question) => question.id)).toEqual([3, 2, 1]);
+    expect(desc.items.map((question) => question.id)).toEqual([2, 3, 1]);
   });
 
   it("returns NOT_FOUND when a question does not exist", async () => {

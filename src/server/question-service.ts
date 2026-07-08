@@ -4,10 +4,15 @@ import { clozePayloadSchema, mcqPayloadSchema } from "@/core/import-schema";
 import type {
   QuestionDetailDto,
   QuestionListItemDto,
+  QuestionListPageDto,
+  QuestionListParams,
+  QuestionListSortDto,
   QuestionTypeDto,
 } from "@/lib/api-types";
 import { prisma } from "./db";
 import { ServiceError } from "./errors";
+
+const QUESTION_PAGE_SIZE = 15;
 
 function previewOf(type: QuestionTypeDto, payload: unknown): string {
   const text =
@@ -17,16 +22,54 @@ function previewOf(type: QuestionTypeDto, payload: unknown): string {
   return text.length > 80 ? `${text.slice(0, 80)}...` : text;
 }
 
+function accuracyOf(question: QuestionListItemDto): number | null {
+  return question.attempts > 0
+    ? question.correctCount / question.attempts
+    : null;
+}
+
+function compareAccuracy(
+  a: QuestionListItemDto,
+  b: QuestionListItemDto,
+  direction: "asc" | "desc",
+): number {
+  const aAccuracy = accuracyOf(a);
+  const bAccuracy = accuracyOf(b);
+
+  if (aAccuracy === null && bAccuracy === null) return b.id - a.id;
+  if (aAccuracy === null) return 1;
+  if (bAccuracy === null) return -1;
+  if (aAccuracy === bAccuracy) return b.id - a.id;
+
+  return direction === "asc"
+    ? aAccuracy - bAccuracy
+    : bAccuracy - aAccuracy;
+}
+
+function sortQuestions(
+  questions: QuestionListItemDto[],
+  sort: QuestionListSortDto,
+): QuestionListItemDto[] {
+  return [...questions].sort((a, b) => {
+    if (sort === "accuracyAsc") return compareAccuracy(a, b, "asc");
+    if (sort === "accuracyDesc") return compareAccuracy(a, b, "desc");
+    return (
+      Date.parse(b.createdAt) - Date.parse(a.createdAt) ||
+      b.id - a.id
+    );
+  });
+}
+
 export async function listQuestions(
-  topicId?: number,
-): Promise<QuestionListItemDto[]> {
+  params: QuestionListParams = {},
+): Promise<QuestionListPageDto> {
   const questions = await prisma.question.findMany({
-    where: topicId ? { topicId } : undefined,
+    where: params.topicId ? { topicId: params.topicId } : undefined,
     include: { reviewLogs: { select: { isCorrect: true } } },
     orderBy: { id: "desc" },
   });
 
-  return questions.map((q) => ({
+  const items = questions.map((q) => ({
     id: q.id,
     topicId: q.topicId,
     type: q.type,
@@ -35,6 +78,24 @@ export async function listQuestions(
     correctCount: q.reviewLogs.filter((log) => log.isCorrect).length,
     createdAt: q.createdAt.toISOString(),
   }));
+
+  const filtered = params.type
+    ? items.filter((question) => question.type === params.type)
+    : items;
+  const sorted = sortQuestions(filtered, params.sort ?? "latest");
+  const totalItems = sorted.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / QUESTION_PAGE_SIZE));
+  const requestedPage = params.page && params.page > 0 ? params.page : 1;
+  const page = totalItems === 0 ? 1 : Math.min(requestedPage, totalPages);
+  const start = (page - 1) * QUESTION_PAGE_SIZE;
+
+  return {
+    items: sorted.slice(start, start + QUESTION_PAGE_SIZE),
+    page,
+    pageSize: QUESTION_PAGE_SIZE,
+    totalItems,
+    totalPages,
+  };
 }
 
 export async function getQuestion(id: number): Promise<QuestionDetailDto> {

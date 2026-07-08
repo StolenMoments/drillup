@@ -3,41 +3,111 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api-client";
-import type { QuestionListItemDto, TopicDto } from "@/lib/api-types";
+import type {
+  QuestionListPageDto,
+  QuestionListSortDto,
+  QuestionTypeDto,
+  TopicDto,
+} from "@/lib/api-types";
+
+const emptyPage: QuestionListPageDto = {
+  items: [],
+  page: 1,
+  pageSize: 15,
+  totalItems: 0,
+  totalPages: 1,
+};
+
+function visibleRange(pageData: QuestionListPageDto): string {
+  if (pageData.totalItems === 0) return "0 / 0";
+  const start = (pageData.page - 1) * pageData.pageSize + 1;
+  const end = Math.min(pageData.page * pageData.pageSize, pageData.totalItems);
+  return `${start}-${end} / ${pageData.totalItems}`;
+}
+
+function accuracyText(question: QuestionListPageDto["items"][number]): string {
+  if (question.attempts === 0) return "미학습";
+  return `${Math.round((question.correctCount / question.attempts) * 100)}% (${question.correctCount}/${question.attempts})`;
+}
 
 export default function QuestionsPage() {
   const [topics, setTopics] = useState<TopicDto[]>([]);
   const [topicId, setTopicId] = useState<number | "">("");
-  const [questions, setQuestions] = useState<QuestionListItemDto[]>([]);
+  const [typeFilter, setTypeFilter] = useState<QuestionTypeDto | "">("");
+  const [sort, setSort] = useState<QuestionListSortDto>("latest");
+  const [page, setPage] = useState(1);
+  const [pageData, setPageData] = useState<QuestionListPageDto>(emptyPage);
   const [message, setMessage] = useState("");
   const requestIdRef = useRef(0);
 
-  const reload = useCallback(async (selectedTopicId: number | "") => {
-    const requestId = ++requestIdRef.current;
-    try {
-      const [topicList, questionList] = await Promise.all([
-        api.topics.list(),
-        api.questions.list(selectedTopicId === "" ? undefined : selectedTopicId),
-      ]);
-      if (requestId !== requestIdRef.current) return;
-      setTopics(topicList);
-      setQuestions(questionList);
-    } catch (error) {
-      if (requestId !== requestIdRef.current) return;
-      setMessage(
-        error instanceof Error ? error.message : "목록을 불러오지 못했습니다",
-      );
-    }
-  }, []);
+  const reload = useCallback(
+    async (options: {
+      selectedTopicId: number | "";
+      selectedType: QuestionTypeDto | "";
+      selectedSort: QuestionListSortDto;
+      selectedPage: number;
+    }) => {
+      const requestId = ++requestIdRef.current;
+      try {
+        const [topicList, questionPage] = await Promise.all([
+          api.topics.list(),
+          api.questions.list({
+            topicId:
+              options.selectedTopicId === ""
+                ? undefined
+                : options.selectedTopicId,
+            type: options.selectedType === "" ? undefined : options.selectedType,
+            sort: options.selectedSort,
+            page: options.selectedPage,
+          }),
+        ]);
+        if (requestId !== requestIdRef.current) return;
+        setTopics(topicList);
+        setPageData(questionPage);
+        if (questionPage.page !== options.selectedPage) {
+          setPage(questionPage.page);
+        }
+        setMessage("");
+      } catch (error) {
+        if (requestId !== requestIdRef.current) return;
+        setMessage(
+          error instanceof Error ? error.message : "목록을 불러오지 못했습니다",
+        );
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
-    void Promise.resolve().then(() => reload(topicId));
-  }, [topicId, reload]);
+    void Promise.resolve().then(() =>
+      reload({
+        selectedTopicId: topicId,
+        selectedType: typeFilter,
+        selectedSort: sort,
+        selectedPage: page,
+      }),
+    );
+  }, [topicId, typeFilter, sort, page, reload]);
+
+  function resetPage() {
+    setPage(1);
+  }
 
   async function removeQuestion(id: number) {
     if (!window.confirm("이 문제를 삭제할까요?")) return;
     await api.questions.remove(id);
-    await reload(topicId);
+
+    if (pageData.items.length === 1 && pageData.page > 1) {
+      setPage(pageData.page - 1);
+      return;
+    }
+
+    await reload({
+      selectedTopicId: topicId,
+      selectedType: typeFilter,
+      selectedSort: sort,
+      selectedPage: pageData.page,
+    });
   }
 
   async function renameTopic() {
@@ -48,7 +118,12 @@ export default function QuestionsPage() {
 
     try {
       await api.topics.update(topicId, { name: name.trim() });
-      await reload(topicId);
+      await reload({
+        selectedTopicId: topicId,
+        selectedType: typeFilter,
+        selectedSort: sort,
+        selectedPage: page,
+      });
       setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "이름 변경 실패");
@@ -57,13 +132,19 @@ export default function QuestionsPage() {
 
   async function removeTopic() {
     if (topicId === "") return;
-    if (!window.confirm("주제와 포함된 문제가 모두 삭제됩니다. 계속할까요?")) {
+    if (
+      !window.confirm(
+        "주제와 포함된 문제가 모두 삭제됩니다. 계속할까요?",
+      )
+    ) {
       return;
     }
     await api.topics.remove(topicId);
     setTopicId("");
-    await reload("");
+    resetPage();
   }
+
+  const questions = pageData.items;
 
   return (
     <div className="app-page">
@@ -71,7 +152,7 @@ export default function QuestionsPage() {
         <div>
           <h1 className="page-title">문제 관리</h1>
           <p className="page-subtitle">
-            주제별로 문제를 훑고, 필요할 때 원본 payload와 해설을 수정합니다.
+            주제별로 문제를 묶고, 필요한 경우 원본 payload와 해설을 수정합니다.
           </p>
         </div>
       </div>
@@ -79,9 +160,10 @@ export default function QuestionsPage() {
       <div className="surface surface-pad flex flex-wrap items-center gap-2">
         <select
           value={topicId}
-          onChange={(event) =>
-            setTopicId(event.target.value ? Number(event.target.value) : "")
-          }
+          onChange={(event) => {
+            setTopicId(event.target.value ? Number(event.target.value) : "");
+            resetPage();
+          }}
           className="field w-auto min-w-52"
         >
           <option value="">전체 주제</option>
@@ -90,6 +172,30 @@ export default function QuestionsPage() {
               {topic.name} ({topic.questionCount})
             </option>
           ))}
+        </select>
+        <select
+          value={typeFilter}
+          onChange={(event) => {
+            setTypeFilter(event.target.value as QuestionTypeDto | "");
+            resetPage();
+          }}
+          className="field w-auto min-w-36"
+        >
+          <option value="">전체 유형</option>
+          <option value="MCQ">객관식</option>
+          <option value="CLOZE">빈칸</option>
+        </select>
+        <select
+          value={sort}
+          onChange={(event) => {
+            setSort(event.target.value as QuestionListSortDto);
+            resetPage();
+          }}
+          className="field w-auto min-w-44"
+        >
+          <option value="latest">최신순</option>
+          <option value="accuracyAsc">정답률 낮은순</option>
+          <option value="accuracyDesc">정답률 높은순</option>
         </select>
         {topicId !== "" && (
           <>
@@ -125,11 +231,7 @@ export default function QuestionsPage() {
               </span>
               <span className="min-w-0 flex-1 truncate">{question.preview}</span>
               <span className="shrink-0 text-sm text-[color:var(--muted)]">
-                {question.attempts === 0
-                  ? "미학습"
-                  : `${Math.round(
-                      (question.correctCount / question.attempts) * 100,
-                    )}% (${question.correctCount}/${question.attempts})`}
+                {accuracyText(question)}
               </span>
               <Link
                 href={`/questions/${question.id}`}
@@ -147,6 +249,31 @@ export default function QuestionsPage() {
           ))}
         </ul>
       )}
+
+      <div className="pagination-bar">
+        <button
+          type="button"
+          onClick={() => setPage((current) => Math.max(1, current - 1))}
+          disabled={pageData.page <= 1}
+          className="btn btn-secondary min-h-9 px-3 text-sm"
+        >
+          이전
+        </button>
+        <span className="pagination-summary">
+          {pageData.page} / {pageData.totalPages} 페이지
+        </span>
+        <span className="pagination-summary">{visibleRange(pageData)}</span>
+        <button
+          type="button"
+          onClick={() =>
+            setPage((current) => Math.min(pageData.totalPages, current + 1))
+          }
+          disabled={pageData.page >= pageData.totalPages}
+          className="btn btn-secondary min-h-9 px-3 text-sm"
+        >
+          다음
+        </button>
+      </div>
     </div>
   );
 }
