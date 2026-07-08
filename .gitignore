@@ -22,6 +22,7 @@
 
 # AI generation job output
 /generation_output/
+/generation_reference/
 
 # misc
 .DS_Store
