@@ -74,3 +74,21 @@ export interface StatsOverviewDto {
   dueTotal: number;
   topics: TopicStatsDto[];
 }
+
+export type GenerationEngineDto = "CLAUDE" | "CODEX" | "ANTIGRAVITY";
+export type GenerationStatusDto = "RUNNING" | "SUCCEEDED" | "FAILED";
+
+export type GenerationItemDto =
+  | { index: number; ok: true; question: unknown }
+  | { index: number; ok: false; errors: string[] };
+
+export interface GenerationJobDto {
+  id: number;
+  topicId: number;
+  engine: GenerationEngineDto;
+  status: GenerationStatusDto;
+  items: GenerationItemDto[] | null;
+  errorMessage: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+}
