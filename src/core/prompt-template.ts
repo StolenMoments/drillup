@@ -46,13 +46,42 @@ export function buildGenerationPrompt(topicName: string): string {
 `;
 }
 
+export interface ExistingQuestions {
+  summaries: string[];
+  truncated: boolean;
+}
+
+function dedupSection(existing: ExistingQuestions): string {
+  const lines = [
+    "## 중복 금지",
+    "",
+    "- 이번에 생성하는 문제들끼리 질문 내용이 중복되면 안 됩니다.",
+  ];
+  if (existing.summaries.length > 0) {
+    lines.push(
+      "- 아래 기존 문제 목록과 질문 내용이 같거나 표현만 바꾼 문제는 출제하지 마세요.",
+      "",
+      "### 기존 문제 목록",
+      "",
+      ...existing.summaries.map((summary) => `- ${summary}`),
+    );
+    if (existing.truncated) {
+      lines.push("", "(이 외에도 기존 문제가 더 있습니다. 위 목록은 일부입니다.)");
+    }
+  }
+  return lines.join("\n");
+}
+
 export function buildCliGenerationPrompt(
   topicName: string,
   instructions: string,
   resultPath: string,
+  existing: ExistingQuestions,
 ): string {
   const extra = instructions.trim();
   return `${promptBody(topicName)}
+${dedupSection(existing)}
+
 ## 추가 지시
 
 ${extra || "(없음)"}
