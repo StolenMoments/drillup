@@ -20,6 +20,9 @@
 # production
 /build
 
+# AI generation job output
+/generation_output/
+
 # misc
 .DS_Store
 *.pem
