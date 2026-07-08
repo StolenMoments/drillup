@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCliGenerationPrompt,
+  buildCliVerifyPrompt,
   buildGenerationPrompt,
 } from "./prompt-template";
 
@@ -82,5 +83,38 @@ describe("buildCliGenerationPrompt", () => {
       truncated: true,
     });
     expect(prompt).toContain("이 외에도 기존 문제가 더 있습니다");
+  });
+});
+
+describe("buildCliVerifyPrompt", () => {
+  const items = [
+    {
+      index: 0,
+      question: {
+        type: "mcq",
+        question: "리눅스 커널을 만든 사람은?",
+        choices: ["리누스 토르발스", "데니스 리치", "켄 톰프슨", "빌 게이츠"],
+        answer_index: 0,
+      },
+    },
+    { index: 2, question: { type: "cloze", text: "{{1}}는 OS다." } },
+  ];
+
+  it("주제명·판정 기준·출력 규격·저장 경로를 포함한다", () => {
+    const prompt = buildCliVerifyPrompt("리눅스 기초", items, "D:\\v.json");
+    expect(prompt).toContain('"리눅스 기초"');
+    expect(prompt).toContain("정답 정확성");
+    expect(prompt).toContain("answer_index");
+    expect(prompt).toContain('"verdicts"');
+    expect(prompt).toContain("D:\\v.json");
+    expect(prompt).toContain("stdout에 출력하지 마세요");
+  });
+
+  it("각 문제를 index 번호와 JSON 내용으로 나열한다", () => {
+    const prompt = buildCliVerifyPrompt("리눅스 기초", items, "D:\\v.json");
+    expect(prompt).toContain("### 문제 0");
+    expect(prompt).toContain("### 문제 2");
+    expect(prompt).toContain("리눅스 커널을 만든 사람은?");
+    expect(prompt).toContain("리누스 토르발스");
   });
 });

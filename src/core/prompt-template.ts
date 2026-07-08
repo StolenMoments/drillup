@@ -93,3 +93,51 @@ ${extra || "(없음)"}
 - 파일 내용은 위 출력 형식의 JSON만 포함해야 하며, 코드 펜스나 설명 문장을 추가하지 마세요.
 `;
 }
+
+export function buildCliVerifyPrompt(
+  topicName: string,
+  items: Array<{ index: number; question: unknown }>,
+  resultPath: string,
+): string {
+  const listing = items
+    .map(
+      (item) =>
+        `### 문제 ${item.index}\n\n\`\`\`json\n${JSON.stringify(item.question, null, 2)}\n\`\`\``,
+    )
+    .join("\n\n");
+
+  return `당신은 학습용 문제 검수 전문가입니다. 주제 "${topicName}"에 대해 생성된 아래 문제들을 검증해 주세요.
+
+## 판정 기준
+
+각 문제를 다음 기준으로 판정하세요. 하나라도 어긋나면 "fail"입니다.
+
+1. 정답 정확성: 정답이 사실적으로 정확한가? mcq는 answer_index가 가리키는 보기가 실제 정답인가? cloze는 빈칸 정답 단어가 문맥상 올바른가?
+2. 문제 품질: 질문이 명확하고 모호하지 않은가? mcq 보기 중 정답으로 볼 수 있는 것이 2개 이상은 아닌가? 해설(explanation)이 정답과 모순되지 않는가?
+
+## 검증 대상 문제
+
+${listing}
+
+## 출력 형식
+
+다른 설명 없이 아래 구조의 JSON만 작성하세요. 위의 모든 문제에 대해 verdict를 하나씩 내야 합니다.
+
+{
+  "verdicts": [
+    { "index": 0, "verdict": "pass", "comment": "" },
+    { "index": 1, "verdict": "fail", "comment": "간결한 사유" }
+  ]
+}
+
+- index는 위 "문제 N" 제목의 N을 그대로 사용하세요.
+- verdict는 "pass" 또는 "fail"만 허용됩니다.
+- comment는 fail이면 사유를 반드시 적고, pass면 빈 문자열이나 짧은 의견을 적으세요.
+
+## 결과 저장 (반드시 준수)
+
+- 결과 JSON을 stdout에 출력하지 마세요.
+- 결과 JSON은 다음 경로에 UTF-8 텍스트 파일로만 저장하세요: ${resultPath}
+- 파일 내용은 위 출력 형식의 JSON만 포함해야 하며, 코드 펜스나 설명 문장을 추가하지 마세요.
+`;
+}
