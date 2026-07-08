@@ -1,4 +1,4 @@
-export function buildGenerationPrompt(topicName: string): string {
+function promptBody(topicName: string): string {
   return `당신은 학습용 문제 출제 전문가입니다. 주제 "${topicName}"에 대한 학습 문제를 생성해 주세요.
 
 ## 출력 형식
@@ -35,9 +35,32 @@ export function buildGenerationPrompt(topicName: string): string {
 - cloze: 빈칸은 문장의 핵심 개념 단어에만 넣을 것.
 - explanation은 한두 문장으로 간결하게 작성.
 - 두 유형(mcq, cloze)을 섞어서 출제할 것.
+`;
+}
 
+export function buildGenerationPrompt(topicName: string): string {
+  return `${promptBody(topicName)}
 ## 추가 지시
 
 여기에 범위, 난이도, 문제 수 같은 조건을 추가해 사용하세요.
+`;
+}
+
+export function buildCliGenerationPrompt(
+  topicName: string,
+  instructions: string,
+  resultPath: string,
+): string {
+  const extra = instructions.trim();
+  return `${promptBody(topicName)}
+## 추가 지시
+
+${extra || "(없음)"}
+
+## 결과 저장 (반드시 준수)
+
+- 결과 JSON을 stdout에 출력하지 마세요.
+- 결과 JSON은 다음 경로에 UTF-8 텍스트 파일로만 저장하세요: ${resultPath}
+- 파일 내용은 위 출력 형식의 JSON만 포함해야 하며, 코드 펜스나 설명 문장을 추가하지 마세요.
 `;
 }
