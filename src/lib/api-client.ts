@@ -1,4 +1,6 @@
 import type {
+  GenerationEngineDto,
+  GenerationJobDto,
   QuestionDetailDto,
   QuestionListItemDto,
   ReviewResultDto,
@@ -97,6 +99,19 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ topicId, questions }),
       }),
+  },
+  generate: {
+    create: (input: {
+      topicId: number;
+      engine: GenerationEngineDto;
+      instructions: string;
+    }) =>
+      request<{ job: GenerationJobDto }>("/api/generate", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    get: (id: number) =>
+      request<{ job: GenerationJobDto }>(`/api/generate/${id}`),
   },
   study: {
     queue: (mode: "srs" | "practice", topicId?: number) =>
