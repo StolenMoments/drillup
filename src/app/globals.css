@@ -35,6 +35,7 @@ body {
     radial-gradient(circle at top left, oklch(0.27 0.055 238 / 0.55), transparent 34rem),
     linear-gradient(180deg, var(--bg-soft), var(--bg) 22rem);
   color: var(--text);
+  font-family: "Apple SD Gothic Neo", var(--font-nanum-square), system-ui, sans-serif;
   min-height: 100vh;
 }
 
