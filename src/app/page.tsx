@@ -98,7 +98,7 @@ export default function DashboardPage() {
               <div className="flex items-center justify-between gap-3">
                 <span className="min-w-0 font-semibold">{topic.name}</span>
                 <span className="chip shrink-0">
-                  {topic.total}문제 · 오늘 {topic.dueCount}
+                  {topic.total}문제 · 복습 예정 {topic.dueCount}
                 </span>
               </div>
               <ProgressBar topic={topic} />
