@@ -30,7 +30,9 @@ export async function importQuestions(
           topicId,
           type: question.type === "mcq" ? "MCQ" : "CLOZE",
           payload: toPayload(question) as Prisma.InputJsonValue,
-          explanation: question.explanation ?? null,
+          explanation: question.explanation?.trim()
+            ? question.explanation.trim()
+            : null,
         },
         select: { id: true },
       });

@@ -66,4 +66,24 @@ describe("importQuestions", () => {
     });
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
+
+  it("공백뿐인 explanation은 null로 저장한다", async () => {
+    await importQuestions(1, [{ ...validMcq, explanation: "   " }]);
+
+    expect(prismaMock.question.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ explanation: null }),
+      }),
+    );
+  });
+
+  it("explanation의 양끝 공백을 제거해 저장한다", async () => {
+    await importQuestions(1, [{ ...validMcq, explanation: "  해설  " }]);
+
+    expect(prismaMock.question.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ explanation: "해설" }),
+      }),
+    );
+  });
 });
