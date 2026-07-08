@@ -8,7 +8,7 @@ type McqQuestion = Extract<StudyQuestionDto, { type: "MCQ" }>;
 interface McqCardProps {
   question: McqQuestion;
   disabled: boolean;
-  onSubmit: (selectedIndex: number) => void;
+  onSubmit: (selectedOriginalIndex: number) => void;
 }
 
 export default function McqCard({
@@ -24,7 +24,7 @@ export default function McqCard({
       <div className="space-y-2">
         {question.choices.map((choice, index) => (
           <button
-            key={index}
+            key={choice.original_index}
             disabled={disabled}
             onClick={() => setSelected(index)}
             className={`w-full rounded border px-3 py-3 text-left ${
@@ -33,13 +33,16 @@ export default function McqCard({
                 : "border-slate-700 bg-slate-900"
             }`}
           >
-            {index + 1}. {choice}
+            {index + 1}. {choice.text}
           </button>
         ))}
       </div>
       <button
         disabled={disabled || selected === null}
-        onClick={() => selected !== null && onSubmit(selected)}
+        onClick={() =>
+          selected !== null &&
+          onSubmit(question.choices[selected].original_index)
+        }
         className="w-full rounded bg-sky-600 py-3 font-semibold disabled:opacity-50"
       >
         제출

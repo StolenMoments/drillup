@@ -14,6 +14,19 @@ function resultTitle(isCorrect: boolean): string {
   return "오답입니다 ❌";
 }
 
+function mcqAnswerText(
+  question: Extract<StudyQuestionDto, { type: "MCQ" }>,
+  answerIndex: number,
+): string {
+  const currentIndex = question.choices.findIndex(
+    (choice) => choice.original_index === answerIndex,
+  );
+  if (currentIndex < 0) return `${answerIndex + 1}.`;
+
+  const choice = question.choices[currentIndex];
+  return `${currentIndex + 1}. ${choice.text}`;
+}
+
 export default function ResultPanel({
   question,
   result,
@@ -33,8 +46,7 @@ export default function ResultPanel({
         result.correct.type === "MCQ" &&
         question.type === "MCQ" && (
           <p>
-            정답: {result.correct.answer_index + 1}.{" "}
-            {question.choices[result.correct.answer_index]}
+            정답: {mcqAnswerText(question, result.correct.answer_index)}
           </p>
         )}
       {!result.isCorrect && result.correct.type === "CLOZE" && (

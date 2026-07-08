@@ -26,7 +26,12 @@ function toStudyDto(question: {
       id: question.id,
       type: "MCQ",
       question: payload.question,
-      choices: payload.choices,
+      choices: shuffle(
+        payload.choices.map((text, original_index) => ({
+          text,
+          original_index,
+        })),
+      ),
     };
   }
 

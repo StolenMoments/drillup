@@ -25,8 +25,13 @@ export interface QuestionDetailDto {
   explanation: string | null;
 }
 
+export interface McqChoiceDto {
+  text: string;
+  original_index: number;
+}
+
 export type StudyQuestionDto =
-  | { id: number; type: "MCQ"; question: string; choices: string[] }
+  | { id: number; type: "MCQ"; question: string; choices: McqChoiceDto[] }
   | {
       id: number;
       type: "CLOZE";
