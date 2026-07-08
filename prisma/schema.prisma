@@ -24,6 +24,7 @@ enum GenerationEngine {
 
 enum GenerationStatus {
   RUNNING
+  VERIFYING
   SUCCEEDED
   FAILED
 }
@@ -80,17 +81,19 @@ model ReviewLog {
 }
 
 model GenerationJob {
-  id           Int              @id @default(autoincrement())
-  topicId      Int              @map("topic_id")
-  engine       GenerationEngine
-  instructions String           @db.Text
-  status       GenerationStatus @default(RUNNING)
-  result       Json?
-  errorMessage String?          @map("error_message") @db.Text
-  rawOutput    String?          @map("raw_output") @db.MediumText
-  createdAt    DateTime         @default(now()) @map("created_at")
-  finishedAt   DateTime?        @map("finished_at")
-  topic        Topic            @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  id            Int              @id @default(autoincrement())
+  topicId       Int              @map("topic_id")
+  engine        GenerationEngine
+  verifyEngine  GenerationEngine @default(CLAUDE) @map("verify_engine")
+  instructions  String           @db.Text
+  status        GenerationStatus @default(RUNNING)
+  result        Json?
+  errorMessage  String?          @map("error_message") @db.Text
+  verifyWarning String?          @map("verify_warning") @db.Text
+  rawOutput     String?          @map("raw_output") @db.MediumText
+  createdAt     DateTime         @default(now()) @map("created_at")
+  finishedAt    DateTime?        @map("finished_at")
+  topic         Topic            @relation(fields: [topicId], references: [id], onDelete: Cascade)
 
   @@map("generation_job")
 }
