@@ -54,46 +54,48 @@ export default function QuestionEditPage() {
   }
 
   if (!loaded) {
-    return <p className="text-slate-400">{message || "불러오는 중..."}</p>;
+    return <p className="muted">{message || "불러오는 중..."}</p>;
   }
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-bold">
-        문제 수정 #{id}{" "}
-        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-sm font-normal">
-          {type === "MCQ" ? "객관식" : "빈칸"}
-        </span>
-      </h1>
-      <div className="space-y-1">
-        <label className="text-sm text-slate-400">payload (JSON)</label>
+    <div className="app-page max-w-4xl">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">문제 수정 #{id}</h1>
+          <p className="page-subtitle">
+            <span className="chip">{type === "MCQ" ? "객관식" : "빈칸"}</span>
+          </p>
+        </div>
+      </div>
+      <div className="surface surface-pad space-y-2">
+        <label className="text-sm font-semibold text-[color:var(--muted)]">payload (JSON)</label>
         <textarea
           value={payloadText}
           onChange={(event) => setPayloadText(event.target.value)}
           rows={14}
-          className="w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm"
+          className="textarea font-mono text-sm"
         />
       </div>
-      <div className="space-y-1">
-        <label className="text-sm text-slate-400">해설</label>
+      <div className="surface surface-pad space-y-2">
+        <label className="text-sm font-semibold text-[color:var(--muted)]">해설</label>
         <textarea
           value={explanation}
           onChange={(event) => setExplanation(event.target.value)}
           rows={4}
-          className="w-full rounded border border-slate-700 bg-slate-900 px-3 py-2"
+          className="textarea"
         />
       </div>
-      {message && <p className="text-sm text-red-300">{message}</p>}
+      {message && <p className="text-sm text-[color:var(--danger)]">{message}</p>}
       <div className="flex gap-2">
         <button
           onClick={save}
-          className="rounded bg-sky-600 px-4 py-2 font-semibold"
+          className="btn btn-primary"
         >
           저장
         </button>
         <button
           onClick={() => router.push("/questions")}
-          className="rounded bg-slate-700 px-4 py-2"
+          className="btn btn-secondary"
         >
           취소
         </button>

@@ -218,17 +218,24 @@ export default function GeneratePage() {
   }
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-xl font-bold">AI 문제 생성</h1>
+    <div className="app-page">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">AI 문제 생성</h1>
+          <p className="page-subtitle">
+            생성 엔진에 문제 제작을 맡기고 결과를 검증해 바로 문제은행에 저장합니다.
+          </p>
+        </div>
+      </div>
 
-      <section className="space-y-3">
-        <h2 className="font-semibold">1. 주제 선택</h2>
+      <section className="surface surface-pad space-y-3">
+        <h2 className="section-title">주제 선택</h2>
         <select
           value={topicId}
           onChange={(event) =>
             setTopicId(event.target.value ? Number(event.target.value) : "")
           }
-          className="w-full rounded border border-slate-700 bg-slate-900 px-3 py-2"
+          className="field"
         >
           <option value="">주제를 선택하세요</option>
           {topics.map((topic) => (
@@ -242,23 +249,23 @@ export default function GeneratePage() {
             value={newTopicName}
             onChange={(event) => setNewTopicName(event.target.value)}
             placeholder="새 주제 이름"
-            className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-900 px-3 py-2"
+            className="field min-w-0 flex-1"
           />
           <button
             onClick={createTopic}
             disabled={newTopicName.trim().length === 0}
-            className="shrink-0 rounded bg-slate-700 px-4 py-2 disabled:opacity-50"
+            className="btn btn-secondary shrink-0"
           >
             추가
           </button>
         </div>
       </section>
 
-      <section className="space-y-3">
-        <h2 className="font-semibold">2. 엔진과 추가 지시</h2>
+      <section className="surface surface-pad space-y-3">
+        <h2 className="section-title">엔진과 추가 지시</h2>
         <div className="flex flex-wrap gap-4">
           {ENGINES.map((item) => (
-            <label key={item.value} className="flex items-center gap-2">
+            <label key={item.value} className="chip gap-2">
               <input
                 type="radio"
                 name="engine"
@@ -274,32 +281,32 @@ export default function GeneratePage() {
           onChange={(event) => setInstructions(event.target.value)}
           rows={4}
           placeholder="범위, 난이도, 문제 수 같은 조건 (예: 쉬운 난이도로 10문제)"
-          className="w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
+          className="textarea text-sm"
         />
       </section>
 
-      <section className="space-y-3">
-        <h2 className="font-semibold">3. 생성</h2>
+      <section className="surface surface-pad space-y-3">
+        <h2 className="section-title">생성</h2>
         <button
           onClick={startGeneration}
           disabled={topicId === "" || starting || running}
-          className="rounded bg-sky-600 px-4 py-2 font-semibold disabled:opacity-50"
+          className="btn btn-primary"
         >
           {running ? `생성 중... (경과 ${elapsed}초)` : "생성 시작"}
         </button>
         {topicId === "" && (
-          <p className="text-sm text-amber-400">주제를 먼저 선택하세요</p>
+          <p className="text-sm text-[color:var(--warning)]">주제를 먼저 선택하세요</p>
         )}
       </section>
 
       {job?.status === "FAILED" && (
         <section className="space-y-3">
-          <p className="whitespace-pre-wrap break-all rounded border border-red-800 bg-red-950 p-3 text-sm text-red-300">
+          <p className="whitespace-pre-wrap break-all rounded-[12px] border border-[color:var(--danger)] bg-[color:var(--danger-soft)] p-3 text-sm">
             ❌ 생성에 실패했습니다: {job.errorMessage}
           </p>
           <button
             onClick={startGeneration}
-            className="rounded bg-slate-700 px-4 py-2"
+            className="btn btn-secondary"
           >
             다시 시도
           </button>
@@ -308,19 +315,19 @@ export default function GeneratePage() {
 
       {job?.status === "SUCCEEDED" && job.items && (
         <section className="space-y-3">
-          <h2 className="font-semibold">4. 미리보기 및 저장</h2>
+          <h2 className="section-title">미리보기 및 저장</h2>
           {job.items.map((item) => (
             <div
               key={item.index}
-              className={`rounded border p-3 ${
-                item.ok ? "border-slate-700" : "border-red-800 bg-red-950/40"
+              className={`surface surface-pad ${
+                item.ok ? "" : "border-[color:var(--danger)] bg-[color:var(--danger-soft)]"
               }`}
             >
               <div className="mb-2 flex items-center gap-2 text-sm">
-                <span className="text-slate-500">#{item.index + 1}</span>
+                <span className="subtle">#{item.index + 1}</span>
                 {item.ok ? (
                   <>
-                    <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs">
+                    <span className="chip">
                       {(item.question as ImportQuestion).type === "mcq"
                         ? "객관식"
                         : "빈칸"}
@@ -335,13 +342,13 @@ export default function GeneratePage() {
                     </label>
                   </>
                 ) : (
-                  <span className="text-red-300">오류</span>
+                  <span className="text-[color:var(--danger)]">오류</span>
                 )}
               </div>
               {item.ok ? (
                 <QuestionPreview question={item.question as ImportQuestion} />
               ) : (
-                <ul className="list-inside list-disc text-sm text-red-300">
+                <ul className="list-inside list-disc text-sm text-[color:var(--danger)]">
                   {item.errors.map((error) => (
                     <li key={error}>{error}</li>
                   ))}
@@ -352,14 +359,14 @@ export default function GeneratePage() {
           <button
             onClick={save}
             disabled={selected.size === 0 || saving}
-            className="rounded bg-emerald-600 px-4 py-2 font-semibold disabled:opacity-50"
+            className="btn btn-success"
           >
             {saving ? "저장 중..." : `선택한 ${selected.size}개 문제 저장`}
           </button>
         </section>
       )}
 
-      {message && <p className="text-sm text-sky-300">{message}</p>}
+      {message && <p className="text-sm text-[color:var(--brand)]">{message}</p>}
     </div>
   );
 }

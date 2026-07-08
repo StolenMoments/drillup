@@ -35,10 +35,10 @@ export default function ResultPanel({
 }: ResultPanelProps) {
   return (
     <div
-      className={`space-y-3 rounded border p-4 ${
+      className={`space-y-3 rounded-[12px] border p-4 ${
         result.isCorrect
-          ? "border-emerald-700 bg-emerald-950/40"
-          : "border-red-700 bg-red-950/40"
+          ? "border-[color:var(--success)] bg-[color:var(--success-soft)]"
+          : "border-[color:var(--danger)] bg-[color:var(--danger-soft)]"
       }`}
     >
       <p className="text-lg font-bold">{resultTitle(result.isCorrect)}</p>
@@ -58,11 +58,11 @@ export default function ResultPanel({
         </p>
       )}
       {result.explanation && (
-        <p className="text-slate-300">{result.explanation}</p>
+        <p className="text-[color:var(--muted)]">{result.explanation}</p>
       )}
       <button
         onClick={onNext}
-        className="w-full rounded bg-slate-700 py-3 font-semibold"
+        className="btn btn-secondary w-full"
       >
         {isLast ? "완료" : "다음 문제"}
       </button>

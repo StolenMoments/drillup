@@ -108,17 +108,24 @@ export default function ImportPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-xl font-bold">문제 가져오기</h1>
+    <div className="app-page">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">문제 가져오기</h1>
+          <p className="page-subtitle">
+            주제를 정하고 LLM 결과 JSON을 검증한 뒤 저장할 문제만 선택합니다.
+          </p>
+        </div>
+      </div>
 
-      <section className="space-y-3">
-        <h2 className="font-semibold">1. 주제 선택</h2>
+      <section className="surface surface-pad space-y-3">
+        <h2 className="section-title">주제 선택</h2>
         <select
           value={topicId}
           onChange={(event) =>
             setTopicId(event.target.value ? Number(event.target.value) : "")
           }
-          className="w-full rounded border border-slate-700 bg-slate-900 px-3 py-2"
+          className="field"
         >
           <option value="">주제를 선택하세요</option>
           {topics.map((topic) => (
@@ -132,68 +139,68 @@ export default function ImportPage() {
             value={newTopicName}
             onChange={(event) => setNewTopicName(event.target.value)}
             placeholder="새 주제 이름"
-            className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-900 px-3 py-2"
+            className="field min-w-0 flex-1"
           />
           <button
             onClick={createTopic}
             disabled={newTopicName.trim().length === 0}
-            className="shrink-0 rounded bg-slate-700 px-4 py-2 disabled:opacity-50"
+            className="btn btn-secondary shrink-0"
           >
             추가
           </button>
         </div>
       </section>
 
-      <section className="space-y-3">
-        <h2 className="font-semibold">2. LLM 프롬프트 복사</h2>
+      <section className="surface surface-pad space-y-3">
+        <h2 className="section-title">LLM 프롬프트</h2>
         <button
           onClick={copyPrompt}
           disabled={!selectedTopic}
-          className="rounded bg-slate-700 px-4 py-2 disabled:opacity-50"
+          className="btn btn-secondary"
         >
           프롬프트 복사
         </button>
       </section>
 
-      <section className="space-y-3">
-        <h2 className="font-semibold">3. 생성된 JSON 붙여넣기</h2>
+      <section className="surface surface-pad space-y-3">
+        <h2 className="section-title">생성된 JSON 붙여넣기</h2>
         <textarea
           value={rawJson}
           onChange={(event) => setRawJson(event.target.value)}
           rows={12}
           placeholder='{"questions": [...]}'
-          className="w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm"
+          className="textarea font-mono text-sm"
         />
         <button
           onClick={validate}
           disabled={rawJson.trim().length === 0}
-          className="rounded bg-sky-600 px-4 py-2 font-semibold disabled:opacity-50"
+          className="btn btn-primary"
         >
           검증
         </button>
       </section>
 
       {parsed && !parsed.ok && (
-        <p className="rounded border border-red-800 bg-red-950 p-3 text-red-300">
+        <p className="rounded-[12px] border border-[color:var(--danger)] bg-[color:var(--danger-soft)] p-3 text-[color:var(--text)]">
           {parsed.fatal}
         </p>
       )}
 
       {parsed?.ok && (
         <section className="space-y-3">
-          <h2 className="font-semibold">4. 미리보기 및 저장</h2>
+          <h2 className="section-title">미리보기 및 저장</h2>
           {parsed.items.map((item) => (
             <div
               key={item.index}
-              className={`rounded border p-3 ${
-                item.ok ? "border-slate-700" : "border-red-800 bg-red-950/40"
+              className={`surface surface-pad ${
+                item.ok ? "" : "border-[color:var(--danger)] bg-[color:var(--danger-soft)]"
               }`}
             >
               <div className="mb-2 flex items-center gap-2 text-sm">
-                <span className="text-slate-500">#{item.index + 1}</span>
+                <span className="subtle">#{item.index + 1}</span>
                 {item.ok ? (
                   <>
-                    <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs">
+                    <span className="chip">
                       {item.question.type === "mcq" ? "객관식" : "빈칸"}
                     </span>
                     <label className="ml-auto flex items-center gap-2">
@@ -206,13 +213,13 @@ export default function ImportPage() {
                     </label>
                   </>
                 ) : (
-                  <span className="text-red-300">오류</span>
+                  <span className="text-[color:var(--danger)]">오류</span>
                 )}
               </div>
               {item.ok ? (
                 <QuestionPreview question={item.question} />
               ) : (
-                <ul className="list-inside list-disc text-sm text-red-300">
+                <ul className="list-inside list-disc text-sm text-[color:var(--danger)]">
                   {item.errors.map((error) => (
                     <li key={error}>{error}</li>
                   ))}
@@ -223,17 +230,17 @@ export default function ImportPage() {
           <button
             onClick={save}
             disabled={topicId === "" || selected.size === 0 || saving}
-            className="rounded bg-emerald-600 px-4 py-2 font-semibold disabled:opacity-50"
+            className="btn btn-success"
           >
             {saving ? "저장 중..." : `선택한 ${selected.size}개 문제 저장`}
           </button>
           {topicId === "" && (
-            <p className="text-sm text-amber-400">주제를 먼저 선택하세요</p>
+            <p className="text-sm text-[color:var(--warning)]">주제를 먼저 선택하세요</p>
           )}
         </section>
       )}
 
-      {message && <p className="text-sm text-sky-300">{message}</p>}
+      {message && <p className="text-sm text-[color:var(--brand)]">{message}</p>}
     </div>
   );
 }

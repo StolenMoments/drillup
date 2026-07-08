@@ -28,23 +28,26 @@ export default function LoginPage() {
   }
 
   return (
-    <form onSubmit={submit} className="mx-auto mt-16 max-w-xs space-y-4">
-      <h1 className="text-center text-xl font-bold">drillup 로그인</h1>
+    <form onSubmit={submit} className="surface surface-pad mx-auto mt-16 max-w-sm space-y-5">
+      <div className="text-center">
+        <h1 className="page-title">drillup 로그인</h1>
+        <p className="page-subtitle mx-auto">개인 문제은행에 들어가 학습을 이어갑니다.</p>
+      </div>
       <input
         type="password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         placeholder="비밀번호"
         autoFocus
-        className="w-full rounded border border-slate-700 bg-slate-900 px-3 py-2"
+        className="field"
       />
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-[color:var(--danger)]">{error}</p>}
       <button
         type="submit"
         disabled={pending || password.length === 0}
-        className="w-full rounded bg-sky-600 py-2 font-semibold disabled:opacity-50"
+        className="btn btn-primary w-full"
       >
-        로그인
+        {pending ? "확인 중..." : "로그인"}
       </button>
     </form>
   );

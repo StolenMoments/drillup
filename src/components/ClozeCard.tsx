@@ -57,8 +57,8 @@ export default function ClozeCard({
   }
 
   return (
-    <div className="space-y-4">
-      <p className="text-lg leading-10">
+    <div className="surface surface-pad space-y-5">
+      <p className="text-lg leading-10 text-[color:var(--text)]">
         {parts.map((part, index) =>
           part.kind === "text" ? (
             <span key={index}>{part.value}</span>
@@ -67,10 +67,10 @@ export default function ClozeCard({
               key={index}
               disabled={disabled}
               onClick={() => clearBlank(part.id)}
-              className={`mx-1 inline-block min-w-16 rounded border-b-2 px-2 py-0.5 align-baseline ${
+              className={`mx-1 inline-block min-w-16 rounded-lg border px-2 py-0.5 align-baseline transition-colors ${
                 filled[String(part.id)]
-                  ? "border-sky-500 bg-sky-950 text-sky-300"
-                  : "border-slate-500 bg-slate-900 text-slate-500"
+                  ? "border-[color:var(--brand)] bg-[color:var(--brand-soft)] text-white"
+                  : "border-[color:var(--border)] bg-[oklch(0.21_0.026_252)] text-[color:var(--subtle)]"
               }`}
             >
               {filled[String(part.id)] ?? "__"}
@@ -84,7 +84,7 @@ export default function ClozeCard({
             key={index}
             disabled={disabled || usedWords.has(word)}
             onClick={() => fillWord(word)}
-            className="rounded border border-slate-700 bg-slate-900 px-3 py-2 disabled:opacity-30"
+            className="btn btn-secondary min-h-9 px-3 py-2 disabled:opacity-30"
           >
             {word}
           </button>
@@ -93,7 +93,7 @@ export default function ClozeCard({
       <button
         disabled={disabled || !allFilled}
         onClick={() => onSubmit(filled)}
-        className="w-full rounded bg-sky-600 py-3 font-semibold disabled:opacity-50"
+        className="btn btn-primary w-full"
       >
         제출
       </button>

@@ -80,22 +80,22 @@ function StudySession({
     setIndex((currentIndex) => currentIndex + 1);
   }
 
-  if (error) return <p className="text-red-300">{error}</p>;
-  if (!queue) return <p className="text-slate-400">불러오는 중...</p>;
+  if (error) return <p className="text-[color:var(--danger)]">{error}</p>;
+  if (!queue) return <p className="muted">불러오는 중...</p>;
 
   if (!current) {
     return (
-      <div className="space-y-4 pt-10 text-center">
-        <p className="text-lg">{completionMessage(mode)}</p>
+      <div className="surface surface-pad mx-auto max-w-lg space-y-4 text-center">
+        <p className="text-xl font-bold">{completionMessage(mode)}</p>
         {mode === "srs" && (
           <Link
             href={`/study?mode=practice${topicId ? `&topicId=${topicId}` : ""}`}
-            className="inline-block rounded bg-slate-700 px-4 py-2"
+            className="btn btn-secondary"
           >
             자유 연습하기
           </Link>
         )}
-        <Link href="/" className="block text-sky-400">
+        <Link href="/" className="block text-[color:var(--brand)]">
           대시보드로
         </Link>
       </div>
@@ -103,10 +103,10 @@ function StudySession({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between text-sm text-slate-400">
-        <span>{modeLabel(mode)}</span>
-        <span>
+    <div className="mx-auto max-w-3xl space-y-4">
+      <div className="surface surface-pad flex items-center justify-between gap-3 text-sm">
+        <span className="font-semibold">{modeLabel(mode)}</span>
+        <span className="chip">
           {index + 1} / {queue.length}
         </span>
       </div>
@@ -157,8 +157,18 @@ function StudyContent() {
 
 export default function StudyPage() {
   return (
-    <Suspense fallback={<p className="text-slate-400">불러오는 중...</p>}>
-      <StudyContent />
-    </Suspense>
+    <div className="app-page">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">학습</h1>
+          <p className="page-subtitle">
+            오늘 복습과 자유 연습을 같은 흐름으로 풀고 즉시 피드백을 확인합니다.
+          </p>
+        </div>
+      </div>
+      <Suspense fallback={<p className="muted">불러오는 중...</p>}>
+        <StudyContent />
+      </Suspense>
+    </div>
   );
 }

@@ -19,21 +19,24 @@ export default function McqCard({
   const [selected, setSelected] = useState<number | null>(null);
 
   return (
-    <div className="space-y-4">
-      <p className="text-lg">{question.question}</p>
+    <div className="surface surface-pad space-y-5">
+      <p className="text-lg leading-8 text-[color:var(--text)]">
+        {question.question}
+      </p>
       <div className="space-y-2">
         {question.choices.map((choice, index) => (
           <button
             key={choice.original_index}
             disabled={disabled}
             onClick={() => setSelected(index)}
-            className={`w-full rounded border px-3 py-3 text-left ${
+            className={`w-full rounded-[10px] border px-4 py-3 text-left transition-colors ${
               selected === index
-                ? "border-sky-500 bg-sky-950"
-                : "border-slate-700 bg-slate-900"
+                ? "border-[color:var(--brand)] bg-[color:var(--brand-soft)] text-white"
+                : "border-[color:var(--border)] bg-[oklch(0.22_0.026_252)] text-[color:var(--text)] hover:border-[color:var(--border-strong)]"
             }`}
           >
-            {index + 1}. {choice.text}
+            <span className="mr-2 text-[color:var(--subtle)]">{index + 1}</span>
+            {choice.text}
           </button>
         ))}
       </div>
@@ -43,7 +46,7 @@ export default function McqCard({
           selected !== null &&
           onSubmit(question.choices[selected].original_index)
         }
-        className="w-full rounded bg-sky-600 py-3 font-semibold disabled:opacity-50"
+        className="btn btn-primary w-full"
       >
         제출
       </button>

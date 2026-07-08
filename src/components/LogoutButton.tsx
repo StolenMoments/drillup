@@ -9,7 +9,10 @@ export default function LogoutButton() {
   }
 
   return (
-    <button onClick={logout} className="text-slate-500 hover:text-slate-300">
+    <button
+      onClick={logout}
+      className="rounded-lg px-3 py-2 text-[color:var(--subtle)] hover:bg-[color:var(--surface)] hover:text-[color:var(--text)]"
+    >
       로그아웃
     </button>
   );

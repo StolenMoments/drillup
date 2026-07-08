@@ -66,16 +66,23 @@ export default function QuestionsPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-bold">문제 관리</h1>
+    <div className="app-page">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">문제 관리</h1>
+          <p className="page-subtitle">
+            주제별로 문제를 훑고, 필요할 때 원본 payload와 해설을 수정합니다.
+          </p>
+        </div>
+      </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="surface surface-pad flex flex-wrap items-center gap-2">
         <select
           value={topicId}
           onChange={(event) =>
             setTopicId(event.target.value ? Number(event.target.value) : "")
           }
-          className="rounded border border-slate-700 bg-slate-900 px-3 py-2"
+          className="field w-auto min-w-52"
         >
           <option value="">전체 주제</option>
           {topics.map((topic) => (
@@ -88,13 +95,13 @@ export default function QuestionsPage() {
           <>
             <button
               onClick={renameTopic}
-              className="rounded bg-slate-700 px-3 py-2 text-sm"
+              className="btn btn-secondary min-h-9 px-3 text-sm"
             >
               주제 이름 변경
             </button>
             <button
               onClick={removeTopic}
-              className="rounded bg-red-800 px-3 py-2 text-sm"
+              className="btn btn-danger min-h-9 px-3 text-sm"
             >
               주제 삭제
             </button>
@@ -102,22 +109,22 @@ export default function QuestionsPage() {
         )}
       </div>
 
-      {message && <p className="text-sm text-red-300">{message}</p>}
+      {message && <p className="text-sm text-[color:var(--danger)]">{message}</p>}
 
       {questions.length === 0 ? (
-        <p className="text-slate-400">문제가 없습니다.</p>
+        <p className="empty-state">문제가 없습니다.</p>
       ) : (
         <ul className="space-y-2">
           {questions.map((question) => (
             <li
               key={question.id}
-              className="flex items-center gap-3 rounded border border-slate-800 p-3"
+              className="list-row flex items-center gap-3 p-3"
             >
-              <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs">
+              <span className="chip">
                 {question.type === "MCQ" ? "객관식" : "빈칸"}
               </span>
               <span className="min-w-0 flex-1 truncate">{question.preview}</span>
-              <span className="shrink-0 text-sm text-slate-400">
+              <span className="shrink-0 text-sm text-[color:var(--muted)]">
                 {question.attempts === 0
                   ? "미학습"
                   : `${Math.round(
@@ -126,13 +133,13 @@ export default function QuestionsPage() {
               </span>
               <Link
                 href={`/questions/${question.id}`}
-                className="shrink-0 text-sm text-sky-400"
+                className="shrink-0 text-sm font-semibold text-[color:var(--brand)]"
               >
                 수정
               </Link>
               <button
                 onClick={() => removeQuestion(question.id)}
-                className="shrink-0 text-sm text-red-400"
+                className="shrink-0 text-sm font-semibold text-[color:var(--danger)]"
               >
                 삭제
               </button>
