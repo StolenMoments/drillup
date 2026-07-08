@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api-client";
 import type { QuestionListItemDto, TopicDto } from "@/lib/api-types";
 
@@ -10,40 +10,28 @@ export default function QuestionsPage() {
   const [topicId, setTopicId] = useState<number | "">("");
   const [questions, setQuestions] = useState<QuestionListItemDto[]>([]);
   const [message, setMessage] = useState("");
+  const requestIdRef = useRef(0);
 
   const reload = useCallback(async (selectedTopicId: number | "") => {
-    const [topicList, questionList] = await Promise.all([
-      api.topics.list(),
-      api.questions.list(selectedTopicId === "" ? undefined : selectedTopicId),
-    ]);
-    setTopics(topicList);
-    setQuestions(questionList);
+    const requestId = ++requestIdRef.current;
+    try {
+      const [topicList, questionList] = await Promise.all([
+        api.topics.list(),
+        api.questions.list(selectedTopicId === "" ? undefined : selectedTopicId),
+      ]);
+      if (requestId !== requestIdRef.current) return;
+      setTopics(topicList);
+      setQuestions(questionList);
+    } catch (error) {
+      if (requestId !== requestIdRef.current) return;
+      setMessage(
+        error instanceof Error ? error.message : "목록을 불러오지 못했습니다",
+      );
+    }
   }, []);
 
   useEffect(() => {
-    let ignore = false;
-
-    async function load() {
-      try {
-        const [topicList, questionList] = await Promise.all([
-          api.topics.list(),
-          api.questions.list(topicId === "" ? undefined : topicId),
-        ]);
-        if (ignore) return;
-        setTopics(topicList);
-        setQuestions(questionList);
-      } catch (error) {
-        if (ignore) return;
-        setMessage(
-          error instanceof Error ? error.message : "목록을 불러오지 못했습니다",
-        );
-      }
-    }
-
-    load();
-    return () => {
-      ignore = true;
-    };
+    void Promise.resolve().then(() => reload(topicId));
   }, [topicId, reload]);
 
   async function removeQuestion(id: number) {
