@@ -36,24 +36,95 @@ export default function ClozeCard({
   disabled,
   onSubmit,
 }: ClozeCardProps) {
-  const [filled, setFilled] = useState<Record<string, string>>({});
+  const [activeBlankId, setActiveBlankId] = useState<number | null>(
+    question.blankIds[0] ?? null,
+  );
+  const [assignedWordIndexes, setAssignedWordIndexes] = useState<
+    Record<string, number>
+  >({});
   const parts = useMemo(() => splitParts(question.text), [question.text]);
 
-  const usedWords = new Set(Object.values(filled));
-  const allFilled = question.blankIds.every((id) => filled[String(id)]);
+  const usedWordIndexes = new Set(Object.values(assignedWordIndexes));
+  const allFilled = question.blankIds.every(
+    (id) => assignedWordIndexes[String(id)] !== undefined,
+  );
+  const activeBlankKey =
+    activeBlankId === null ? undefined : String(activeBlankId);
+  const activeBlankHasWord =
+    activeBlankKey !== undefined &&
+    assignedWordIndexes[activeBlankKey] !== undefined;
+  const filled = Object.fromEntries(
+    Object.entries(assignedWordIndexes).map(([blankId, wordIndex]) => [
+      blankId,
+      question.wordBank[wordIndex],
+    ]),
+  );
 
-  function fillWord(word: string) {
-    const empty = question.blankIds.find((id) => !filled[String(id)]);
-    if (empty === undefined) return;
-    setFilled((prev) => ({ ...prev, [String(empty)]: word }));
+  function fillWord(wordIndex: number) {
+    if (activeBlankId === null) return;
+
+    const nextAssigned = {
+      ...assignedWordIndexes,
+      [String(activeBlankId)]: wordIndex,
+    };
+    setAssignedWordIndexes(nextAssigned);
+
+    const nextEmpty = question.blankIds.find(
+      (id) => nextAssigned[String(id)] === undefined,
+    );
+    if (nextEmpty !== undefined) {
+      setActiveBlankId(nextEmpty);
+    }
   }
 
   function clearBlank(id: number) {
-    setFilled((prev) => {
+    setAssignedWordIndexes((prev) => {
       const next = { ...prev };
       delete next[String(id)];
       return next;
     });
+    setActiveBlankId(id);
+  }
+
+  function submit() {
+    onSubmit(filled);
+  }
+
+  function blankClassName(id: number) {
+    const hasWord = assignedWordIndexes[String(id)] !== undefined;
+    const isSelected = activeBlankId === id;
+    const base =
+      "mx-1 inline-block min-w-16 rounded-lg border px-2 py-0.5 align-baseline transition-colors";
+
+    if (disabled) {
+      return `${base} ${
+        hasWord
+          ? "border-[color:var(--brand)] bg-[color:var(--brand-soft)] text-white"
+          : "border-[color:var(--border)] bg-[oklch(0.21_0.026_252)] text-[color:var(--subtle)]"
+      }`;
+    }
+
+    if (isSelected) {
+      return `${base} border-[color:var(--brand)] bg-[oklch(0.38_0.09_238)] text-white ring-2 ring-[color:var(--brand)] ring-offset-2 ring-offset-[color:var(--surface)]`;
+    }
+
+    if (hasWord) {
+      return `${base} border-[color:var(--brand)] bg-[color:var(--brand-soft)] text-white hover:border-[color:var(--brand)]`;
+    }
+
+    return `${base} border-[color:var(--border)] bg-[oklch(0.21_0.026_252)] text-[color:var(--subtle)] hover:border-[color:var(--border-strong)] hover:text-[color:var(--text)]`;
+  }
+
+  function blankLabel(id: number) {
+    const assignedIndex = assignedWordIndexes[String(id)];
+    if (assignedIndex === undefined) return `${id}번 빈칸 선택`;
+    return `${id}번 빈칸 선택, 현재 답 ${question.wordBank[assignedIndex]}`;
+  }
+
+  function blankText(id: number) {
+    const assignedIndex = assignedWordIndexes[String(id)];
+    if (assignedIndex === undefined) return "__";
+    return question.wordBank[assignedIndex];
   }
 
   return (
@@ -66,24 +137,31 @@ export default function ClozeCard({
             <button
               key={index}
               disabled={disabled}
-              onClick={() => clearBlank(part.id)}
-              className={`mx-1 inline-block min-w-16 rounded-lg border px-2 py-0.5 align-baseline transition-colors ${
-                filled[String(part.id)]
-                  ? "border-[color:var(--brand)] bg-[color:var(--brand-soft)] text-white"
-                  : "border-[color:var(--border)] bg-[oklch(0.21_0.026_252)] text-[color:var(--subtle)]"
-              }`}
+              onClick={() => setActiveBlankId(part.id)}
+              aria-label={blankLabel(part.id)}
+              aria-pressed={activeBlankId === part.id}
+              className={blankClassName(part.id)}
             >
-              {filled[String(part.id)] ?? "__"}
+              {blankText(part.id)}
             </button>
           ),
         )}
       </p>
+      <div className="flex justify-end">
+        <button
+          disabled={disabled || activeBlankId === null || !activeBlankHasWord}
+          onClick={() => activeBlankId !== null && clearBlank(activeBlankId)}
+          className="btn btn-secondary min-h-9 px-3 py-2 text-sm disabled:opacity-30"
+        >
+          비우기
+        </button>
+      </div>
       <div className="flex flex-wrap gap-2">
         {question.wordBank.map((word, index) => (
           <button
             key={index}
-            disabled={disabled || usedWords.has(word)}
-            onClick={() => fillWord(word)}
+            disabled={disabled || usedWordIndexes.has(index)}
+            onClick={() => fillWord(index)}
             className="btn btn-secondary min-h-9 px-3 py-2 disabled:opacity-30"
           >
             {word}
@@ -92,7 +170,7 @@ export default function ClozeCard({
       </div>
       <button
         disabled={disabled || !allFilled}
-        onClick={() => onSubmit(filled)}
+        onClick={submit}
         className="btn btn-primary w-full"
       >
         제출
