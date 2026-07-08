@@ -32,6 +32,9 @@ export default function RootLayout({
             <Link href="/import" className="hover:text-sky-300">
               가져오기
             </Link>
+            <Link href="/generate" className="hover:text-sky-300">
+              AI 생성
+            </Link>
             <Link href="/questions" className="hover:text-sky-300">
               문제 관리
             </Link>
