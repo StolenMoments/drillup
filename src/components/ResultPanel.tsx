@@ -10,8 +10,8 @@ interface ResultPanelProps {
 }
 
 function resultTitle(isCorrect: boolean): string {
-  if (isCorrect) return "정답입니다";
-  return "오답입니다";
+  if (isCorrect) return "정답입니다 ✅";
+  return "오답입니다 ❌";
 }
 
 export default function ResultPanel({

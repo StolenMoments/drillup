@@ -14,7 +14,7 @@ import type {
 } from "@/lib/api-types";
 
 function completionMessage(mode: "srs" | "practice"): string {
-  if (mode === "srs") return "오늘 복습할 문제를 모두 끝냈습니다";
+  if (mode === "srs") return "오늘 복습할 문제를 모두 끝냈습니다 🎉";
   return "풀 문제가 없습니다.";
 }
 
