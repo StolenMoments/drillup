@@ -1,7 +1,7 @@
 const encoder = new TextEncoder();
 
 export const SESSION_COOKIE = "drillup_session";
-export const SESSION_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90일
+export const SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 365일
 
 async function hmacHex(secret: string, data: string): Promise<string> {
   const key = await crypto.subtle.importKey(
