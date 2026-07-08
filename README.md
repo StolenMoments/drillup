@@ -49,3 +49,12 @@ http://localhost:3000 접속 후 APP_PASSWORD로 로그인.
    -> 출력된 JSON을 붙여넣기 -> 검증/미리보기 -> 저장
 2. **학습**: 대시보드에서 "복습 시작"(SRS) 또는 "연습"(스케줄 무관 랜덤)
 3. **통계**: 주제별 진척도(미학습/학습 중/암기 완료), 문제별 정답률
+
+## AI 문제 생성 (/generate)
+
+로컬에 설치된 CLI 에이전트를 non-interactive 모드로 실행해 문제를 자동 생성합니다.
+
+- 지원 엔진: claude code(`claude.exe`), codex(`codex.exe`), antigravity(`agy.exe`) — 각 CLI가 설치·로그인되어 있어야 합니다.
+- 흐름: 주제·추가 지시 입력 -> 잡 생성(202) -> 3초 폴링 -> 미리보기에서 선택 -> 기존 가져오기 API로 저장.
+- 잡 이력은 DB의 `generation_job` 테이블에, 실행 산출물은 `generation_output/jobs/<id>/`(git 미추적)에 남습니다.
+- 타임아웃 기본 10분 — `.env`의 `GENERATION_TIMEOUT_MS`(밀리초)로 조정.
