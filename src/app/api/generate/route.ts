@@ -5,6 +5,7 @@ import { handleApiError, jsonOk, parseBody } from "@/server/http";
 const createSchema = z.object({
   topicId: z.number().int().positive(),
   engine: z.enum(["CLAUDE", "CODEX", "ANTIGRAVITY"]),
+  verifyEngine: z.enum(["CLAUDE", "CODEX", "ANTIGRAVITY"]),
   instructions: z.string().max(4000),
 });
 

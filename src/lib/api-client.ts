@@ -104,6 +104,7 @@ export const api = {
     create: (input: {
       topicId: number;
       engine: GenerationEngineDto;
+      verifyEngine: GenerationEngineDto;
       instructions: string;
     }) =>
       request<{ job: GenerationJobDto }>("/api/generate", {
