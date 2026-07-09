@@ -18,6 +18,9 @@ describe("buildEngineCommand - CLAUDE", () => {
       "--dangerously-skip-permissions",
       "--model",
       "sonnet",
+      "--allowedTools",
+      "WebSearch",
+      "WebFetch",
       "-p",
     ]);
     expect(cmd.promptViaStdin).toBe(true);

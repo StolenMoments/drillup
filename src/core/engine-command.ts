@@ -50,7 +50,15 @@ export function buildEngineCommand(
     );
     return {
       command,
-      args: ["--dangerously-skip-permissions", "--model", "sonnet", "-p"],
+      args: [
+        "--dangerously-skip-permissions",
+        "--model",
+        "sonnet",
+        "--allowedTools",
+        "WebSearch",
+        "WebFetch",
+        "-p",
+      ],
       promptViaStdin: true,
     };
   }
