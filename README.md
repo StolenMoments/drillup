@@ -60,3 +60,12 @@ http://localhost:3000 접속 후 APP_PASSWORD로 로그인.
 - 흐름: 주제·추가 지시 입력 -> 잡 생성(202) -> 3초 폴링(생성 중 -> 검증 중) -> 미리보기에서 선택 -> 기존 가져오기 API로 저장.
 - 잡 이력은 DB의 `generation_job` 테이블에, 실행 산출물은 `generation_output/jobs/<id>/`(git 미추적)에 남습니다.
 - 타임아웃 기본 10분 — `.env`의 `GENERATION_TIMEOUT_MS`(밀리초)로 조정.
+
+### 참고 자료 기반 생성
+
+- 문제 관리에서 주제에 "참고 자료 폴더"를 설정하면(예: `aip-c01`),
+  `generation_reference/<폴더>/`의 md/txt 파일을 /generate에서 선택해
+  에이전트가 읽고 근거로 출제·검증합니다.
+- 최신 시험처럼 모델 학습 데이터가 부족한 주제에 사용합니다.
+  AIP-C01 자료 구성은 `docs/aip-c01-reference-data.md`를 참고하세요.
+- `generation_reference/`는 git에 커밋되지 않습니다.
