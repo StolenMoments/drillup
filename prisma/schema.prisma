@@ -42,16 +42,17 @@ model Topic {
 }
 
 model Question {
-  id          Int          @id @default(autoincrement())
-  topicId     Int          @map("topic_id")
-  type        QuestionType
-  payload     Json
-  explanation String?      @db.Text
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt @map("updated_at")
-  topic       Topic        @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  srsState    SrsState?
-  reviewLogs  ReviewLog[]
+  id                 Int                 @id @default(autoincrement())
+  topicId            Int                 @map("topic_id")
+  type               QuestionType
+  payload            Json
+  explanation        String?             @db.Text
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  topic              Topic               @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  srsState           SrsState?
+  reviewLogs         ReviewLog[]
+  answerExplanations AnswerExplanation[]
 
   @@map("question")
 }
@@ -82,22 +83,34 @@ model ReviewLog {
 }
 
 model GenerationJob {
-  id            Int              @id @default(autoincrement())
-  topicId       Int              @map("topic_id")
-  engine        GenerationEngine
-  verifyEngine  GenerationEngine @default(CLAUDE) @map("verify_engine")
-  instructions  String           @db.Text
-  status        GenerationStatus @default(RUNNING)
-  result        Json?
-  errorMessage  String?          @map("error_message") @db.Text
-  verifyWarning String?          @map("verify_warning") @db.Text
-  rawOutput     String?          @map("raw_output") @db.MediumText
+  id             Int              @id @default(autoincrement())
+  topicId        Int              @map("topic_id")
+  engine         GenerationEngine
+  verifyEngine   GenerationEngine @default(CLAUDE) @map("verify_engine")
+  instructions   String           @db.Text
+  status         GenerationStatus @default(RUNNING)
+  result         Json?
+  errorMessage   String?          @map("error_message") @db.Text
+  verifyWarning  String?          @map("verify_warning") @db.Text
+  rawOutput      String?          @map("raw_output") @db.MediumText
   referenceFiles Json?            @map("reference_files")
-  createdAt     DateTime         @default(now()) @map("created_at")
-  finishedAt    DateTime?        @map("finished_at")
-  approvedAt    DateTime?        @map("approved_at")
-  savedCount    Int              @default(0) @map("saved_count")
-  topic         Topic            @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  createdAt      DateTime         @default(now()) @map("created_at")
+  finishedAt     DateTime?        @map("finished_at")
+  approvedAt     DateTime?        @map("approved_at")
+  savedCount     Int              @default(0) @map("saved_count")
+  topic          Topic            @relation(fields: [topicId], references: [id], onDelete: Cascade)
 
   @@map("generation_job")
+}
+
+model AnswerExplanation {
+  id         Int              @id @default(autoincrement())
+  questionId Int              @map("question_id")
+  engine     GenerationEngine
+  content    String           @db.Text
+  createdAt  DateTime         @default(now()) @map("created_at")
+  question   Question         @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, engine])
+  @@map("answer_explanation")
 }
