@@ -34,10 +34,9 @@ interface SpawnExit {
 export async function runEngine(
   engine: EngineName,
   prompt: string,
-  jobId: number,
+  dir: string,
   filePrefix = "",
 ): Promise<EngineRunResult> {
-  const dir = jobOutputDir(jobId);
   await mkdir(dir, { recursive: true });
   const promptPath = path.join(dir, `${filePrefix}prompt.md`);
   const resultPath = path.join(dir, `${filePrefix}result.json`);

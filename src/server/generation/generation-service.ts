@@ -160,7 +160,7 @@ async function runJob(
   const job = await prisma.generationJob.findUnique({ where: { id: jobId } });
   if (!job || job.status !== "RUNNING") return;
 
-  const run = await runEngine(job.engine, prompt, jobId);
+  const run = await runEngine(job.engine, prompt, dir);
   if (!run.ok) {
     await failJob(jobId, run.failureReason, null);
     return;
@@ -213,7 +213,7 @@ async function runJob(
   let finalItems = unverifiedItems;
   let verifyWarning: string | null = null;
 
-  const verifyRun = await runEngine(job.verifyEngine, verifyPrompt, jobId, "verify-");
+  const verifyRun = await runEngine(job.verifyEngine, verifyPrompt, dir, "verify-");
   if (!verifyRun.ok) {
     verifyWarning = verifyRun.failureReason;
   } else {
