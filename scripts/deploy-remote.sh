@@ -5,7 +5,7 @@ set -euo pipefail
 
 cd "$DEPLOY_PATH"
 
-npm ci
+npm ci --include=dev
 ./node_modules/.bin/prisma migrate deploy
 ./node_modules/.bin/prisma generate
 npm run build
