@@ -1,12 +1,36 @@
 "use client";
 
-import type { ReviewResultDto, StudyQuestionDto } from "@/lib/api-types";
+import { useState } from "react";
+import { api } from "@/lib/api-client";
+import type {
+  GenerationEngineDto,
+  ReviewResultDto,
+  StudyQuestionDto,
+} from "@/lib/api-types";
 
 interface ResultPanelProps {
   question: StudyQuestionDto;
   result: ReviewResultDto;
   onNext: () => void;
   isLast: boolean;
+}
+
+const ENGINES: { value: GenerationEngineDto; label: string }[] = [
+  { value: "CLAUDE", label: "Claude로 해설받기" },
+  { value: "CODEX", label: "Codex로 해설받기" },
+  { value: "ANTIGRAVITY", label: "Antigravity로 해설받기" },
+];
+
+type EngineState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "done"; content: string }
+  | { status: "error"; message: string };
+
+function engineLabel(engine: GenerationEngineDto): string {
+  if (engine === "CLAUDE") return "Claude";
+  if (engine === "CODEX") return "Codex";
+  return "Antigravity";
 }
 
 function resultTitle(isCorrect: boolean): string {
@@ -33,6 +57,33 @@ export default function ResultPanel({
   onNext,
   isLast,
 }: ResultPanelProps) {
+  const [engineStates, setEngineStates] = useState<
+    Record<GenerationEngineDto, EngineState>
+  >({
+    CLAUDE: { status: "idle" },
+    CODEX: { status: "idle" },
+    ANTIGRAVITY: { status: "idle" },
+  });
+
+  async function requestExplanation(engine: GenerationEngineDto) {
+    setEngineStates((prev) => ({ ...prev, [engine]: { status: "loading" } }));
+    try {
+      const res = await api.questions.explain(question.id, engine);
+      setEngineStates((prev) => ({
+        ...prev,
+        [engine]: { status: "done", content: res.content },
+      }));
+    } catch (err) {
+      setEngineStates((prev) => ({
+        ...prev,
+        [engine]: {
+          status: "error",
+          message: err instanceof Error ? err.message : "요청 실패",
+        },
+      }));
+    }
+  }
+
   return (
     <div
       className={`space-y-3 rounded-[12px] border p-4 ${
@@ -60,6 +111,51 @@ export default function ResultPanel({
       {result.explanation && (
         <p className="text-[color:var(--muted)]">{result.explanation}</p>
       )}
+
+      <div className="space-y-2 border-t border-[color:var(--border)] pt-3">
+        <p className="section-title">🤖 AI 해설 받기</p>
+        <div className="flex flex-wrap gap-2">
+          {ENGINES.map(({ value, label }) => {
+            const state = engineStates[value];
+            return (
+              <button
+                key={value}
+                onClick={() => requestExplanation(value)}
+                disabled={state.status === "loading" || state.status === "done"}
+                className="btn btn-secondary text-sm"
+              >
+                {state.status === "loading"
+                  ? "불러오는 중..."
+                  : state.status === "done"
+                    ? `${label} ✓`
+                    : label}
+              </button>
+            );
+          })}
+        </div>
+        {ENGINES.map(({ value, label }) => {
+          const state = engineStates[value];
+          if (state.status === "done") {
+            return (
+              <div key={value} className="surface surface-pad space-y-1">
+                <p className="chip">{engineLabel(value)}</p>
+                <p className="whitespace-pre-wrap text-[color:var(--muted)]">
+                  {state.content}
+                </p>
+              </div>
+            );
+          }
+          if (state.status === "error") {
+            return (
+              <p key={value} className="text-[color:var(--danger)]">
+                ❌ {label} 해설을 가져오지 못했습니다: {state.message}
+              </p>
+            );
+          }
+          return null;
+        })}
+      </div>
+
       <button
         onClick={onNext}
         className="btn btn-secondary w-full"
