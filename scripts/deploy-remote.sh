@@ -6,6 +6,10 @@ set -euo pipefail
 cd "$DEPLOY_PATH"
 
 npm ci
+echo "DEBUG pwd=$(pwd)"
+echo "DEBUG env-file-cat-A:"; cat -A .env | head -8
+node -e "require('dotenv').config(); console.log('DEBUG DB_HOST=[' + process.env.DB_HOST + '] len=' + (process.env.DB_HOST||'').length); console.log('DEBUG DB_USER=[' + process.env.DB_USER + ']'); console.log('DEBUG DB_NAME=[' + process.env.DB_NAME + ']'); console.log('DEBUG DB_PASSWORD_set=' + (process.env.DB_PASSWORD !== undefined));"
+cat -A prisma.config.ts | tail -10
 ./node_modules/.bin/prisma migrate deploy
 ./node_modules/.bin/prisma generate
 npm run build
