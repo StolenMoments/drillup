@@ -57,7 +57,7 @@ describe("buildEngineCommand - ANTIGRAVITY", () => {
     expect(cmd.args[1]).toBe("-p");
     expect(cmd.args[2]).toContain('"D:\\p\\prompt.md"');
     expect(cmd.args[3]).toBe("--model");
-    expect(cmd.args[4]).toBe("Gemini 3.1 Pro (High)");
+    expect(cmd.args[4]).toBe("Gemini 3.5 Flash (High)");
     expect(cmd.promptViaStdin).toBe(false);
   });
 

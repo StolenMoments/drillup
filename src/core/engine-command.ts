@@ -12,7 +12,7 @@ export interface EngineCommand {
   promptViaStdin: boolean;
 }
 
-const AGY_MODEL = "Gemini 3.1 Pro (High)";
+const AGY_MODEL = "Gemini 3.5 Flash (High)";
 
 function winJoin(...parts: string[]): string {
   return parts.join("\\");
