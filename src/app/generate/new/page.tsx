@@ -118,14 +118,14 @@ export default function GenerationNewPage() {
     setStarting(true);
     setMessage("");
     try {
-      const { job } = await api.generate.create({
+      await api.generate.create({
         topicId,
         engine,
         verifyEngine,
         instructions,
         referenceFiles: selectedTopic?.referenceDir ? [...selectedFiles] : [],
       });
-      router.push(`/generate/${job.id}`);
+      router.push("/generate");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "생성 요청에 실패했습니다");
       setStarting(false);
