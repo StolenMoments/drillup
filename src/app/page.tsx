@@ -12,7 +12,7 @@ function ProgressBar({ topic }: { topic: TopicStatsDto }) {
 
   return (
     <div className="mt-2 space-y-1">
-      <div className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-[oklch(0.2_0.026_252)]">
+      <div className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-[color:var(--border)]">
         {topic.mastered > 0 && (
           <div
             className="bg-[color:var(--success)]"
@@ -20,7 +20,7 @@ function ProgressBar({ topic }: { topic: TopicStatsDto }) {
           />
         )}
         {topic.learning > 0 && (
-          <div className="bg-[color:var(--brand)]" style={{ width: pct(topic.learning) }} />
+          <div className="bg-[color:var(--amber)]" style={{ width: pct(topic.learning) }} />
         )}
       </div>
       <p className="text-xs text-[color:var(--muted)]">
@@ -29,11 +29,11 @@ function ProgressBar({ topic }: { topic: TopicStatsDto }) {
           암기 완료 {topic.mastered}
         </span>
         <span className="mr-2">
-          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-[color:var(--brand)]" />
+          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-[color:var(--amber)]" />
           학습 중 {topic.learning}
         </span>
         <span>
-          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-[color:var(--border)]" />
+          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-[color:var(--border-strong)]" />
           미학습 {topic.unlearned}
         </span>
       </p>
@@ -64,9 +64,11 @@ export default function DashboardPage() {
             복습 기한이 된 문제를 먼저 처리하고, 여유가 있으면 자유 연습으로 감을 유지하세요.
           </p>
         </div>
-        <div className="rounded-[12px] bg-[oklch(0.21_0.026_252)] p-5 text-center md:min-w-48">
+        <div className="rounded-[12px] bg-[color:var(--brand-soft)] p-5 text-center md:min-w-48">
           <p className="text-sm text-[color:var(--muted)]">복습할 문제</p>
-          <p className="my-1 text-5xl font-bold text-white">{stats.dueTotal}</p>
+          <p className="my-1 text-5xl font-bold text-[color:var(--brand-strong)]">
+            {stats.dueTotal}
+          </p>
           <Link
             href={stats.dueTotal > 0 ? "/study?mode=srs" : "/study?mode=practice"}
             className={`btn mt-3 w-full ${stats.dueTotal > 0 ? "btn-primary" : "btn-secondary"}`}
@@ -105,7 +107,7 @@ export default function DashboardPage() {
               <div className="mt-4 flex gap-2 text-sm">
                 <Link
                   href={`/study?mode=srs&topicId=${topic.id}`}
-                  className="btn btn-primary min-h-9 px-3"
+                  className={`btn min-h-9 px-3 ${topic.dueCount > 0 ? "btn-primary" : "btn-secondary"}`}
                 >
                   복습
                 </Link>

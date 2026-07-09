@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "개인용 문제은행",
     start_url: "/",
     display: "standalone",
-    background_color: "#0f172a",
-    theme_color: "#0f172a",
+    background_color: "#eff4f9",
+    theme_color: "#eff4f9",
     icons: [
       { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
       {

@@ -88,7 +88,7 @@ export default function StatsPage() {
         <div className="overflow-x-auto rounded-[10px] border border-[color:var(--border)]">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-[color:var(--border)] bg-[oklch(0.21_0.026_252)] text-left text-[color:var(--muted)]">
+              <tr className="border-b border-[color:var(--border)] bg-[color:var(--bg-soft)] text-left text-[color:var(--muted)]">
                 <th className="px-3 py-2">주제</th>
                 <th className="px-3 py-2 text-right">전체</th>
                 <th className="px-3 py-2 text-right">익히기 완료</th>

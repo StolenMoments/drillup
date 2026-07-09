@@ -1,24 +1,25 @@
 @import "tailwindcss";
 
 :root {
-  --bg: oklch(0.18 0.025 252);
-  --bg-soft: oklch(0.23 0.028 252);
-  --surface: oklch(0.265 0.03 252);
-  --surface-raised: oklch(0.31 0.032 252);
-  --border: oklch(0.43 0.035 252);
-  --border-strong: oklch(0.56 0.055 244);
-  --text: oklch(0.94 0.012 252);
-  --muted: oklch(0.74 0.024 252);
-  --subtle: oklch(0.61 0.028 252);
-  --brand: oklch(0.68 0.16 235);
-  --brand-strong: oklch(0.61 0.18 238);
-  --brand-soft: oklch(0.34 0.08 238);
-  --success: oklch(0.72 0.14 158);
-  --success-soft: oklch(0.31 0.075 158);
-  --danger: oklch(0.68 0.18 28);
-  --danger-soft: oklch(0.31 0.08 28);
-  --warning: oklch(0.78 0.14 80);
-  --warning-soft: oklch(0.31 0.075 80);
+  --bg: oklch(0.965 0.008 244);
+  --bg-soft: oklch(0.945 0.01 244);
+  --surface: oklch(0.99 0.004 244);
+  --surface-raised: oklch(1 0 0);
+  --border: oklch(0.82 0.016 244);
+  --border-strong: oklch(0.72 0.026 240);
+  --text: oklch(0.28 0.024 250);
+  --muted: oklch(0.46 0.022 248);
+  --subtle: oklch(0.52 0.018 248);
+  --brand: oklch(0.58 0.17 244);
+  --brand-strong: oklch(0.46 0.19 246);
+  --brand-soft: oklch(0.93 0.045 244);
+  --success: oklch(0.46 0.13 158);
+  --success-soft: oklch(0.94 0.06 158);
+  --danger: oklch(0.52 0.2 25);
+  --danger-soft: oklch(0.94 0.045 25);
+  --warning: oklch(0.5 0.14 75);
+  --warning-soft: oklch(0.93 0.06 80);
+  --amber: oklch(0.68 0.17 70);
   --radius: 12px;
 }
 
@@ -27,21 +28,19 @@
 }
 
 html {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 body {
   -webkit-tap-highlight-color: transparent;
-  background:
-    radial-gradient(circle at top left, oklch(0.27 0.055 238 / 0.55), transparent 34rem),
-    linear-gradient(180deg, var(--bg-soft), var(--bg) 22rem);
+  background: linear-gradient(180deg, var(--bg-soft), var(--bg) 22rem);
   color: var(--text);
   font-family: "Apple SD Gothic Neo", var(--font-nanum-square), system-ui, sans-serif;
   min-height: 100vh;
 }
 
 ::selection {
-  background: oklch(0.58 0.16 235 / 0.45);
+  background: oklch(0.82 0.06 244 / 0.6);
 }
 
 button,
@@ -104,7 +103,7 @@ textarea::placeholder {
   .surface {
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    background: color-mix(in oklch, var(--surface) 94%, black);
+    background: var(--surface-raised);
   }
 
   .surface-pad {
@@ -123,7 +122,7 @@ textarea::placeholder {
     width: 100%;
     border: 1px solid var(--border);
     border-radius: 10px;
-    background: oklch(0.21 0.026 252);
+    background: var(--surface-raised);
     color: var(--text);
     padding: 0.68rem 0.78rem;
     transition: border-color 160ms ease, background-color 160ms ease;
@@ -142,7 +141,7 @@ textarea::placeholder {
     transition: none;
     appearance: none;
     padding-right: 2.3rem;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23A0ACBA' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%2397A7B4' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 0.9rem center;
   }
@@ -174,7 +173,7 @@ textarea::placeholder {
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: var(--brand);
+    background: oklch(0.4 0.19 246);
   }
 
   .btn-secondary {
@@ -185,16 +184,16 @@ textarea::placeholder {
 
   .btn-secondary:hover:not(:disabled) {
     border-color: var(--border-strong);
-    background: oklch(0.35 0.035 252);
+    background: var(--bg-soft);
   }
 
   .btn-success {
-    background: oklch(0.52 0.13 158);
+    background: var(--success);
     color: white;
   }
 
   .btn-danger {
-    background: oklch(0.43 0.13 28);
+    background: var(--danger);
     color: white;
   }
 
@@ -226,7 +225,7 @@ textarea::placeholder {
   .empty-state {
     border: 1px dashed var(--border);
     border-radius: var(--radius);
-    background: oklch(0.24 0.028 252 / 0.72);
+    background: var(--bg-soft);
     color: var(--muted);
     padding: 1.1rem;
   }
@@ -234,7 +233,7 @@ textarea::placeholder {
   .list-row {
     border: 1px solid var(--border);
     border-radius: 10px;
-    background: oklch(0.24 0.028 252 / 0.82);
+    background: var(--surface);
   }
 
   .pagination-bar {

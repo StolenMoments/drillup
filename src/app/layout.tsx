@@ -39,7 +39,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#151f31",
+  themeColor: "#eff4f9",
 };
 
 export default function RootLayout({
@@ -50,7 +50,7 @@ export default function RootLayout({
   return (
     <html lang="ko" className={nanumSquare.variable}>
       <body>
-        <header className="sticky top-0 z-10 border-b border-[color:var(--border)] bg-[oklch(0.18_0.025_252_/_0.9)] backdrop-blur">
+        <header className="sticky top-0 z-10 border-b border-[color:var(--border)] bg-[oklch(0.965_0.008_244_/_0.88)] backdrop-blur">
           <nav className="mx-auto flex max-w-6xl items-center gap-1 overflow-x-auto whitespace-nowrap px-4 py-3 text-sm">
             <AppNav />
             <span className="ml-auto">

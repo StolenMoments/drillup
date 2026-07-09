@@ -31,11 +31,15 @@ export default function McqCard({
             onClick={() => setSelected(index)}
             className={`w-full rounded-[10px] border px-4 py-3 text-left transition-colors ${
               selected === index
-                ? "border-[color:var(--brand)] bg-[color:var(--brand-soft)] text-white"
-                : "border-[color:var(--border)] bg-[oklch(0.22_0.026_252)] text-[color:var(--text)] hover:border-[color:var(--border-strong)]"
+                ? "border-[color:var(--brand)] bg-[color:var(--brand-strong)] text-white"
+                : "border-[color:var(--border)] bg-[color:var(--bg-soft)] text-[color:var(--text)] hover:border-[color:var(--border-strong)]"
             }`}
           >
-            <span className="mr-2 text-[color:var(--subtle)]">{index + 1}</span>
+            <span
+              className={`mr-2 ${selected === index ? "text-white/80" : "text-[color:var(--subtle)]"}`}
+            >
+              {index + 1}
+            </span>
             {choice.text}
           </button>
         ))}

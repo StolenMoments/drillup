@@ -99,20 +99,20 @@ export default function ClozeCard({
     if (disabled) {
       return `${base} ${
         hasWord
-          ? "border-[color:var(--brand)] bg-[color:var(--brand-soft)] text-white"
-          : "border-[color:var(--border)] bg-[oklch(0.21_0.026_252)] text-[color:var(--subtle)]"
+          ? "border-[color:var(--brand)] bg-[color:var(--brand-strong)] text-white"
+          : "border-[color:var(--border)] bg-[color:var(--bg-soft)] text-[color:var(--subtle)]"
       }`;
     }
 
     if (isSelected) {
-      return `${base} border-[color:var(--brand)] bg-[oklch(0.38_0.09_238)] text-white ring-2 ring-[color:var(--brand)] ring-offset-2 ring-offset-[color:var(--surface)]`;
+      return `${base} border-[color:var(--brand)] bg-[color:var(--brand-strong)] text-white ring-2 ring-[color:var(--brand)] ring-offset-2 ring-offset-[color:var(--surface)]`;
     }
 
     if (hasWord) {
-      return `${base} border-[color:var(--brand)] bg-[color:var(--brand-soft)] text-white hover:border-[color:var(--brand)]`;
+      return `${base} border-[color:var(--brand)] bg-[color:var(--brand-strong)] text-white hover:border-[color:var(--brand)]`;
     }
 
-    return `${base} border-[color:var(--border)] bg-[oklch(0.21_0.026_252)] text-[color:var(--subtle)] hover:border-[color:var(--border-strong)] hover:text-[color:var(--text)]`;
+    return `${base} border-[color:var(--border)] bg-[color:var(--bg-soft)] text-[color:var(--subtle)] hover:border-[color:var(--border-strong)] hover:text-[color:var(--text)]`;
   }
 
   function blankLabel(id: number) {
