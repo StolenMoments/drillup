@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAnswerExplanationPrompt,
   buildCliGenerationPrompt,
   buildCliVerifyPrompt,
   buildGenerationPrompt,
@@ -184,5 +185,43 @@ describe("buildCliVerifyPrompt 참고 자료 섹션", () => {
   it("파일이 없으면 섹션을 생략한다", () => {
     const prompt = buildCliVerifyPrompt("주제", VERIFY_ITEMS, "D:\\v.json");
     expect(prompt).not.toContain("## 참고 자료");
+  });
+});
+
+describe("buildAnswerExplanationPrompt", () => {
+  it("MCQ: 질문·보기·정답 표시·저장 경로를 포함한다", () => {
+    const prompt = buildAnswerExplanationPrompt(
+      "MCQ",
+      {
+        question: "리눅스 커널을 만든 사람은?",
+        choices: ["리누스 토르발스", "데니스 리치", "켄 톰프슨", "빌 게이츠"],
+        answer_index: 0,
+      },
+      "D:\\explain\\1-claude\\result.json",
+    );
+    expect(prompt).toContain("리눅스 커널을 만든 사람은?");
+    expect(prompt).toContain("1. 리누스 토르발스 (정답)");
+    expect(prompt).toContain("2. 데니스 리치");
+    expect(prompt).toContain("각 오답 보기가 왜 틀렸는지");
+    expect(prompt).toContain("D:\\explain\\1-claude\\result.json");
+    expect(prompt).toContain("stdout에 출력하지 마세요");
+    expect(prompt).toContain('"explanation"');
+  });
+
+  it("CLOZE: 본문·정답·distractors·저장 경로를 포함한다", () => {
+    const prompt = buildAnswerExplanationPrompt(
+      "CLOZE",
+      {
+        text: "{{1}}는 OS다.",
+        blanks: [{ id: 1, answer: "리눅스" }],
+        distractors: ["윈도우", "맥OS"],
+      },
+      "D:\\explain\\2-codex\\result.json",
+    );
+    expect(prompt).toContain("{{1}}는 OS다.");
+    expect(prompt).toContain("1번 = 리눅스");
+    expect(prompt).toContain("윈도우, 맥OS");
+    expect(prompt).toContain("각 오답 후보(distractor)가 왜 그 빈칸에 맞지 않는지");
+    expect(prompt).toContain("D:\\explain\\2-codex\\result.json");
   });
 });

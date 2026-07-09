@@ -1,3 +1,5 @@
+import type { ClozePayload, McqPayload, QuestionType } from "./types";
+
 function promptBody(topicName: string): string {
   return `당신은 학습용 문제 출제 전문가입니다. 주제 "${topicName}"에 대한 학습 문제를 생성해 주세요.
 
@@ -119,6 +121,73 @@ ${webVerificationSection("문제를 만들기 전에")}${referenceSection(refere
 ## 추가 지시
 
 ${extra || "(없음)"}
+
+## 결과 저장 (반드시 준수)
+
+- 결과 JSON을 stdout에 출력하지 마세요.
+- 결과 JSON은 다음 경로에 UTF-8 텍스트 파일로만 저장하세요: ${resultPath}
+- 파일 내용은 위 출력 형식의 JSON만 포함해야 하며, 코드 펜스나 설명 문장을 추가하지 마세요.
+`;
+}
+
+function mcqExplanationSection(payload: McqPayload): string {
+  const choices = payload.choices
+    .map(
+      (choice, i) =>
+        `${i + 1}. ${choice}${i === payload.answer_index ? " (정답)" : ""}`,
+    )
+    .join("\n");
+  return `## 문제 (객관식)
+
+질문: ${payload.question}
+
+보기:
+${choices}`;
+}
+
+function clozeExplanationSection(payload: ClozePayload): string {
+  const answers = payload.blanks
+    .map((blank) => `${blank.id}번 = ${blank.answer}`)
+    .join(", ");
+  return `## 문제 (빈칸 채우기)
+
+본문: ${payload.text}
+
+정답: ${answers}
+오답 후보(distractors): ${payload.distractors.join(", ")}`;
+}
+
+export function buildAnswerExplanationPrompt(
+  type: QuestionType,
+  payload: McqPayload | ClozePayload,
+  resultPath: string,
+): string {
+  const questionSection =
+    type === "MCQ"
+      ? mcqExplanationSection(payload as McqPayload)
+      : clozeExplanationSection(payload as ClozePayload);
+  const wrongGuide =
+    type === "MCQ"
+      ? "각 오답 보기가 왜 틀렸는지 보기마다 각각 설명하세요."
+      : "각 오답 후보(distractor)가 왜 그 빈칸에 맞지 않는지 각각 설명하세요.";
+
+  return `당신은 학습 문제 해설 전문가입니다. 아래 문제에 대해 정답 근거와 오답이 틀린 이유를 설명해 주세요.
+
+${questionSection}
+
+## 요구 사항
+
+- 정답(빈칸 정답 포함)이 왜 맞는지 먼저 설명하세요.
+- ${wrongGuide}
+- 한국어로, 학습자가 이해하기 쉽게 간결히 작성하세요. 마크다운 기호(#, *, - 등) 없이 일반 문장과 줄바꿈만 사용하세요.
+
+## 출력 형식
+
+다른 설명 없이 아래 구조의 JSON만 출력하세요. 코드 펜스(\`\`\`)를 쓰지 마세요.
+
+{
+  "explanation": "여기에 전체 해설 텍스트"
+}
 
 ## 결과 저장 (반드시 준수)
 
