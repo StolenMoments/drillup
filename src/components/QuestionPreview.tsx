@@ -2,8 +2,10 @@ import type { ImportQuestion } from "@/core/import-schema";
 
 export default function QuestionPreview({
   question,
+  revealed,
 }: {
   question: ImportQuestion;
+  revealed: boolean;
 }) {
   if (question.type === "mcq") {
     return (
@@ -14,13 +16,13 @@ export default function QuestionPreview({
             <li
               key={choice}
               className={
-                index === question.answer_index
+                revealed && index === question.answer_index
                   ? "font-semibold text-[color:var(--success)]"
                   : "text-[color:var(--muted)]"
               }
             >
               {index + 1}. {choice}
-              {index === question.answer_index ? " (정답)" : ""}
+              {revealed && index === question.answer_index ? " (정답)" : ""}
             </li>
           ))}
         </ol>
@@ -28,17 +30,20 @@ export default function QuestionPreview({
     );
   }
 
-  const filledText = question.text.replace(/\{\{(\d+)\}\}/g, (_, id) => {
+  const displayText = question.text.replace(/\{\{(\d+)\}\}/g, (_, id) => {
+    if (!revealed) return "_____";
     const blank = question.blanks.find((item) => item.id === Number(id));
     return `[${blank?.answer ?? "?"}]`;
   });
 
   return (
     <div className="space-y-2">
-      <p className="leading-7">{filledText}</p>
-      <p className="text-sm text-[color:var(--muted)]">
-        오답 단어: {question.distractors.join(", ")}
-      </p>
+      <p className="leading-7">{displayText}</p>
+      {revealed && (
+        <p className="text-sm text-[color:var(--muted)]">
+          오답 단어: {question.distractors.join(", ")}
+        </p>
+      )}
     </div>
   );
 }

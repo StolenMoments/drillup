@@ -18,6 +18,7 @@ export default function ImportPage() {
   const [rawJson, setRawJson] = useState("");
   const [parsed, setParsed] = useState<ImportParseResult | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -78,6 +79,15 @@ export default function ImportPage() {
 
   function toggle(index: number) {
     setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }
+
+  function toggleReveal(index: number) {
+    setRevealed((prev) => {
       const next = new Set(prev);
       if (next.has(index)) next.delete(index);
       else next.add(index);
@@ -203,21 +213,33 @@ export default function ImportPage() {
                     <span className="chip">
                       {item.question.type === "mcq" ? "객관식" : "빈칸"}
                     </span>
-                    <label className="ml-auto flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(item.index)}
-                        onChange={() => toggle(item.index)}
-                      />
-                      저장
-                    </label>
+                    <div className="ml-auto flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleReveal(item.index)}
+                        className="btn btn-secondary min-h-9 px-3 py-2 text-sm"
+                      >
+                        {revealed.has(item.index) ? "정답 숨기기" : "정답 보기"}
+                      </button>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(item.index)}
+                          onChange={() => toggle(item.index)}
+                        />
+                        저장
+                      </label>
+                    </div>
                   </>
                 ) : (
                   <span className="text-[color:var(--danger)]">오류</span>
                 )}
               </div>
               {item.ok ? (
-                <QuestionPreview question={item.question} />
+                <QuestionPreview
+                  question={item.question}
+                  revealed={revealed.has(item.index)}
+                />
               ) : (
                 <ul className="list-inside list-disc text-sm text-[color:var(--danger)]">
                   {item.errors.map((error) => (

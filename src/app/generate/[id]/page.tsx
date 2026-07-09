@@ -38,6 +38,7 @@ export default function GenerationDetailPage() {
   const jobId = Number(params.id);
   const [job, setJob] = useState<GenerationJobDto | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [elapsed, setElapsed] = useState(0);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
@@ -92,6 +93,15 @@ export default function GenerationDetailPage() {
 
   function toggle(index: number) {
     setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }
+
+  function toggleReveal(index: number) {
+    setRevealed((prev) => {
       const next = new Set(prev);
       if (next.has(index)) next.delete(index);
       else next.add(index);
@@ -213,14 +223,23 @@ export default function GenerationDetailPage() {
                     {item.verdict === "unverified" && (
                       <span className="chip">검증 안 됨</span>
                     )}
-                    <label className="ml-auto flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(item.index)}
-                        onChange={() => toggle(item.index)}
-                      />
-                      저장
-                    </label>
+                    <div className="ml-auto flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleReveal(item.index)}
+                        className="btn btn-secondary min-h-9 px-3 py-2 text-sm"
+                      >
+                        {revealed.has(item.index) ? "정답 숨기기" : "정답 보기"}
+                      </button>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(item.index)}
+                          onChange={() => toggle(item.index)}
+                        />
+                        저장
+                      </label>
+                    </div>
                   </>
                 ) : (
                   <span className="text-[color:var(--danger)]">오류</span>
@@ -228,7 +247,10 @@ export default function GenerationDetailPage() {
               </div>
               {item.ok ? (
                 <>
-                  <QuestionPreview question={item.question as ImportQuestion} />
+                  <QuestionPreview
+                    question={item.question as ImportQuestion}
+                    revealed={revealed.has(item.index)}
+                  />
                   {item.verdict === "fail" && item.verdictComment && (
                     <p className="mt-2 whitespace-pre-wrap break-all rounded-[12px] border border-[color:var(--warning)] bg-[color:var(--warning-soft)] p-2 text-sm">
                       ⚠️ {item.verdictComment}
