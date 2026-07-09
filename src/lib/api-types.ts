@@ -134,4 +134,6 @@ export interface GenerationJobDto {
   verifyWarning: string | null;
   createdAt: string;
   finishedAt: string | null;
+  approvedAt: string | null;
+  savedCount: number;
 }

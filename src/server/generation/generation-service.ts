@@ -33,6 +33,8 @@ function toDto(job: GenerationJob): GenerationJobDto {
     verifyWarning: job.verifyWarning,
     createdAt: job.createdAt.toISOString(),
     finishedAt: job.finishedAt?.toISOString() ?? null,
+    approvedAt: job.approvedAt?.toISOString() ?? null,
+    savedCount: job.savedCount,
   };
 }
 

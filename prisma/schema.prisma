@@ -95,6 +95,8 @@ model GenerationJob {
   referenceFiles Json?            @map("reference_files")
   createdAt     DateTime         @default(now()) @map("created_at")
   finishedAt    DateTime?        @map("finished_at")
+  approvedAt    DateTime?        @map("approved_at")
+  savedCount    Int              @default(0) @map("saved_count")
   topic         Topic            @relation(fields: [topicId], references: [id], onDelete: Cascade)
 
   @@map("generation_job")
