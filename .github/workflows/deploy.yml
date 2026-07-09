@@ -60,9 +60,7 @@ jobs:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
           set -euo pipefail
-          echo "DEBUG DEPLOY_PATH base64: $(printf '%s' "$DEPLOY_PATH" | base64 -w0)"
-          echo "DEBUG SSH_USER base64: $(printf '%s' "$SSH_USER" | base64 -w0)"
-          ssh -i ~/.ssh/deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "mkdir -p -- '$DEPLOY_PATH' && echo REMOTE_MKDIR_OK && ls -la '$DEPLOY_PATH'"
+          ssh -i ~/.ssh/deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "mkdir -p -- '$DEPLOY_PATH'"
           rsync -avz --delete \
             -e "ssh -i ~/.ssh/deploy_key -p ${SSH_PORT:-22}" \
             --exclude='.git/' \

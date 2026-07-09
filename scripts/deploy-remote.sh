@@ -7,6 +7,7 @@ cd "$DEPLOY_PATH"
 
 npm ci
 npx prisma migrate deploy
+npx prisma generate
 npm run build
 
 UNIT_DIR="$HOME/.config/systemd/user"
