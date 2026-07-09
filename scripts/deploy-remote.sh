@@ -5,6 +5,22 @@ set -euo pipefail
 
 cd "$DEPLOY_PATH"
 
+if [ ! -f .env ]; then
+  echo "Missing .env at DEPLOY_PATH: $DEPLOY_PATH/.env" >&2
+  exit 1
+fi
+
+missing_env=0
+for key in DB_HOST DB_USER DB_PASSWORD DB_NAME APP_PASSWORD SESSION_SECRET; do
+  if ! grep -Eq "^${key}=" .env; then
+    echo "Missing required key in .env: $key" >&2
+    missing_env=1
+  fi
+done
+if [ "$missing_env" -ne 0 ]; then
+  exit 1
+fi
+
 NODE_ENV=development NPM_CONFIG_PRODUCTION=false npm ci --include=dev --ignore-scripts
 ./node_modules/.bin/prisma generate
 ./node_modules/.bin/prisma migrate deploy
