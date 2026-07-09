@@ -1,4 +1,5 @@
 import type {
+  AnswerExplanationDto,
   GenerationEngineDto,
   GenerationJobDto,
   GenerationJobSummaryDto,
@@ -107,6 +108,11 @@ export const api = {
       }),
     remove: (id: number) =>
       request<{ ok: true }>(`/api/questions/${id}`, { method: "DELETE" }),
+    explain: (id: number, engine: GenerationEngineDto) =>
+      request<AnswerExplanationDto>(`/api/questions/${id}/explain`, {
+        method: "POST",
+        body: JSON.stringify({ engine }),
+      }),
   },
   import: {
     submit: (topicId: number, questions: unknown[]) =>

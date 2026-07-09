@@ -105,6 +105,12 @@ export interface ReferenceFileListDto {
   dirExists: boolean;
 }
 
+export interface AnswerExplanationDto {
+  engine: GenerationEngineDto;
+  content: string;
+  cached: boolean;
+}
+
 export type GenerationEngineDto = "CLAUDE" | "CODEX" | "ANTIGRAVITY";
 export type GenerationStatusDto =
   | "RUNNING"
