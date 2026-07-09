@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import path from "node:path";
 import type { GenerationJob, Prisma } from "@prisma/client";
 import { parseImportJson, type ImportQuestion } from "@/core/import-schema";
@@ -329,6 +330,25 @@ export async function approveJob(
     data: { approvedAt: new Date(), savedCount: { increment: savedCount } },
   });
   return { savedCount, job: toDto(updated) };
+}
+
+export async function deleteJob(id: number): Promise<void> {
+  const job = await prisma.generationJob.findUnique({ where: { id } });
+  if (!job) {
+    throw new ServiceError("JOB_NOT_FOUND", "생성 작업을 찾을 수 없습니다", 404);
+  }
+  if (job.status === "RUNNING" || job.status === "VERIFYING") {
+    throw new ServiceError(
+      "JOB_RUNNING",
+      "진행 중인 작업은 삭제할 수 없습니다",
+      409,
+    );
+  }
+
+  await prisma.generationJob.delete({ where: { id } });
+  await rm(jobOutputDir(id), { recursive: true, force: true }).catch(() => {
+    // 출력 디렉터리 정리는 best-effort로 처리한다.
+  });
 }
 
 export async function listJobs(): Promise<GenerationJobSummaryDto[]> {

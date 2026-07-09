@@ -136,6 +136,8 @@ export const api = {
         `/api/generate/${id}/approve`,
         { method: "POST", body: JSON.stringify({ indices }) },
       ),
+    remove: (id: number) =>
+      request<{ ok: true }>(`/api/generate/${id}`, { method: "DELETE" }),
   },
   study: {
     queue: (mode: "srs" | "practice", topicId?: number) =>
