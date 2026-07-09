@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import QuestionPreview from "@/components/QuestionPreview";
 import type { ImportQuestion } from "@/core/import-schema";
@@ -34,6 +34,7 @@ function statusLabel(job: GenerationJobDto, elapsed: number): string {
 
 export default function GenerationDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const jobId = Number(params.id);
   const [job, setJob] = useState<GenerationJobDto | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -113,6 +114,7 @@ export default function GenerationDetailPage() {
       const result = await api.generate.approve(job.id, [...selected]);
       setJob(result.job);
       setMessage(`✅ ${result.savedCount}개 문제를 저장했습니다`);
+      router.push("/generate");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "저장에 실패했습니다");
     } finally {

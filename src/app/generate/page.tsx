@@ -87,7 +87,7 @@ export default function GenerationListPage() {
 
       {jobs !== null && jobs.length === 0 && (
         <p className="muted text-sm">
-          아직 생성한 작업이 없습니다 - "새 생성"으로 시작하세요.
+          진행 중인 생성 작업이 없습니다 - "새 생성"으로 시작하세요.
         </p>
       )}
 
