@@ -7,7 +7,9 @@ export async function getStatsOverview(): Promise<StatsOverviewDto> {
   const now = new Date();
   const topics = await prisma.topic.findMany({
     orderBy: { name: "asc" },
-    include: {
+    select: {
+      id: true,
+      name: true,
       questions: {
         select: {
           srsState: {
