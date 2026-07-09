@@ -7,6 +7,7 @@ import { api } from "@/lib/api-client";
 import type {
   GenerationEngineDto,
   GenerationJobDto,
+  ReferenceFileListDto,
   TopicDto,
 } from "@/lib/api-types";
 
@@ -73,6 +74,8 @@ export default function GeneratePage() {
   const [starting, setStarting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [refList, setRefList] = useState<ReferenceFileListDto | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -126,6 +129,7 @@ export default function GeneratePage() {
   }, []);
 
   const inProgress = job?.status === "RUNNING" || job?.status === "VERIFYING";
+  const selectedTopic = topics.find((topic) => topic.id === topicId);
 
   useEffect(() => {
     if (!job || (job.status !== "RUNNING" && job.status !== "VERIFYING")) return;
@@ -146,6 +150,31 @@ export default function GeneratePage() {
     }, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [job]);
+
+  useEffect(() => {
+    const topic = topics.find((item) => item.id === topicId);
+    let ignore = false;
+
+    async function loadReferenceFiles() {
+      setRefList(null);
+      setSelectedFiles(new Set());
+      if (topicId === "" || !topic?.referenceDir) return;
+
+      try {
+        const list = await api.topics.referenceFiles(topicId);
+        if (ignore) return;
+        setRefList(list);
+        setSelectedFiles(new Set(list.files.map((file) => file.path)));
+      } catch {
+        if (!ignore) setRefList({ files: [], dirExists: false });
+      }
+    }
+
+    void loadReferenceFiles();
+    return () => {
+      ignore = true;
+    };
+  }, [topicId, topics]);
 
   function selectEngine(value: GenerationEngineDto) {
     setEngine(value);
@@ -194,7 +223,7 @@ export default function GeneratePage() {
         engine,
         verifyEngine,
         instructions,
-        referenceFiles: [],
+        referenceFiles: selectedTopic?.referenceDir ? [...selectedFiles] : [],
       });
       storeActiveJob(created.id, topicId);
       setJob(created);
@@ -212,6 +241,15 @@ export default function GeneratePage() {
       const next = new Set(prev);
       if (next.has(index)) next.delete(index);
       else next.add(index);
+      return next;
+    });
+  }
+
+  function toggleFile(filePath: string) {
+    setSelectedFiles((prev) => {
+      const next = new Set(prev);
+      if (next.has(filePath)) next.delete(filePath);
+      else next.add(filePath);
       return next;
     });
   }
@@ -282,6 +320,40 @@ export default function GeneratePage() {
           </button>
         </div>
       </section>
+
+      {selectedTopic?.referenceDir && (
+        <section className="surface surface-pad space-y-3">
+          <h2 className="section-title">참고 자료</h2>
+          <p className="muted text-sm">
+            generation_reference/{selectedTopic.referenceDir}/ — 선택한 파일을
+            에이전트가 읽고 근거로 출제합니다
+          </p>
+          {refList === null ? (
+            <p className="muted text-sm">파일 목록을 불러오는 중...</p>
+          ) : !refList.dirExists || refList.files.length === 0 ? (
+            <p className="text-sm text-[color:var(--warning)]">
+              ⚠️ 참고 자료가 없습니다 — generation_reference/
+              {selectedTopic.referenceDir}/ 에 md/txt 파일을 넣으세요
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {refList.files.map((file) => (
+                <label key={file.path} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selectedFiles.has(file.path)}
+                    onChange={() => toggleFile(file.path)}
+                  />
+                  <span className="min-w-0 flex-1 break-all">{file.path}</span>
+                  <span className="subtle shrink-0 text-xs">
+                    {(file.size / 1024).toFixed(1)} KB
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="surface surface-pad space-y-3">
         <h2 className="section-title">엔진과 추가 지시</h2>
