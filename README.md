@@ -43,6 +43,41 @@ http://localhost:3000 접속 후 APP_PASSWORD로 로그인.
 `APP_PASSWORD`는 실제 사용할 비밀번호로 설정한다. HTTPS 리버스 프록시 뒤에서
 운영할 것. 세션 쿠키는 production에서 Secure 속성을 갖는다.
 
+## 자동 배포 (CD)
+
+`master`에 push하면 `.github/workflows/deploy.yml`이 실행되어:
+
+1. `npm ci` -> `npm run lint` -> `npm test` (실패 시 배포 중단)
+2. 소스를 rsync로 Ampere 인스턴스(`146.56.170.98`)에 전송
+   (`.env`, `node_modules/`, `.next/` 등은 제외되어 서버 쪽 상태가
+   보존됨)
+3. 서버에서 `scripts/deploy-remote.sh` 실행: `npm ci` -> `npx prisma
+   migrate deploy` -> `npm run build` -> systemd user 서비스(`drillup`)
+   재시작
+
+### 필요한 GitHub Secrets
+
+레포 Settings -> Secrets and variables -> Actions에 등록:
+
+- `SSH_HOST` - 배포 대상 서버 IP
+- `SSH_USER` - SSH 접속 계정
+- `SSH_PRIVATE_KEY` - 그 계정의 SSH 개인키 전체 내용
+- `DEPLOY_PATH` - 서버 상 앱 디렉터리 절대경로 (홈 디렉터리 하위, 예:
+  `/home/<user>/drillup`)
+- `SSH_PORT` - SSH 포트 (선택, 없으면 22)
+
+### 서버 측 1회성 사전 준비 (최초 배포 전에 수동으로)
+
+- Node 22+ 설치
+- `DEPLOY_PATH`에 프로덕션 `.env` 파일 직접 생성 (`DB_*`,
+  `APP_PASSWORD`, `SESSION_SECRET`, `NODE_ENV=production`, `PORT=3000`)
+- `loginctl enable-linger <user>` 실행 (재부팅 후에도 systemd user
+  서비스가 유지되도록)
+- 이 서버의 MariaDB 접속 정보를 `.env`의 `DB_*` 값에 반영
+
+HTTPS 리버스 프록시(nginx 등) 구성은 이 워크플로우 범위 밖이며 별도로
+진행한다.
+
 ## 사용 흐름
 
 1. **가져오기**: 주제 생성 -> "프롬프트 복사" -> LLM 채팅에 붙여넣고 지시 추가
