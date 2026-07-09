@@ -21,6 +21,11 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+        env:
+          DB_HOST: 127.0.0.1
+          DB_USER: ci
+          DB_PASSWORD: ci
+          DB_NAME: drillup_ci
 
   deploy:
     needs: test
