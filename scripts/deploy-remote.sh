@@ -6,6 +6,9 @@ set -euo pipefail
 cd "$DEPLOY_PATH"
 
 npm ci
+echo "DEBUG PATH=$PATH"
+echo "DEBUG HOME=$HOME"
+ls -la node_modules/.bin/prisma
 npx prisma migrate deploy
 npx prisma generate
 npm run build
