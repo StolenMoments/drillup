@@ -5,6 +5,16 @@ function env(existing: string[] = []): EngineEnv {
   return {
     homeDir: "C:\\Users\\me",
     localAppData: "C:\\Users\\me\\AppData\\Local",
+    platform: "win32",
+    fileExists: (path: string) => existing.includes(path),
+  };
+}
+
+function linuxEnv(existing: string[] = []): EngineEnv {
+  return {
+    homeDir: "/home/opc",
+    localAppData: null,
+    platform: "linux",
     fileExists: (path: string) => existing.includes(path),
   };
 }
@@ -30,6 +40,17 @@ describe("buildEngineCommand - CLAUDE", () => {
     const cmd = buildEngineCommand("CLAUDE", "D:\\p\\prompt.md", env());
     expect(cmd.command).toBe("claude.cmd");
   });
+
+  it("uses claude from PATH on Linux when no direct binary exists", () => {
+    const cmd = buildEngineCommand("CLAUDE", "/tmp/prompt.md", linuxEnv());
+    expect(cmd.command).toBe("claude");
+  });
+
+  it("uses ~/.local/bin/claude on Linux when it exists", () => {
+    const exe = "/home/opc/.local/bin/claude";
+    const cmd = buildEngineCommand("CLAUDE", "/tmp/prompt.md", linuxEnv([exe]));
+    expect(cmd.command).toBe(exe);
+  });
 });
 
 describe("buildEngineCommand - CODEX", () => {
@@ -45,6 +66,17 @@ describe("buildEngineCommand - CODEX", () => {
   it("exe가 없으면 codex.cmd로 폴백한다", () => {
     const cmd = buildEngineCommand("CODEX", "D:\\p\\prompt.md", env());
     expect(cmd.command).toBe("codex.cmd");
+  });
+
+  it("uses codex from PATH on Linux when no direct binary exists", () => {
+    const cmd = buildEngineCommand("CODEX", "/tmp/prompt.md", linuxEnv());
+    expect(cmd.command).toBe("codex");
+  });
+
+  it("uses ~/.local/bin/codex on Linux when it exists", () => {
+    const exe = "/home/opc/.local/bin/codex";
+    const cmd = buildEngineCommand("CODEX", "/tmp/prompt.md", linuxEnv([exe]));
+    expect(cmd.command).toBe(exe);
   });
 });
 
@@ -65,5 +97,16 @@ describe("buildEngineCommand - ANTIGRAVITY", () => {
     const noLocal: EngineEnv = { ...env(), localAppData: null };
     const cmd = buildEngineCommand("ANTIGRAVITY", "D:\\p\\prompt.md", noLocal);
     expect(cmd.command).toBe("agy.exe");
+  });
+
+  it("uses agy from PATH on Linux when no direct binary exists", () => {
+    const cmd = buildEngineCommand("ANTIGRAVITY", "/tmp/prompt.md", linuxEnv());
+    expect(cmd.command).toBe("agy");
+  });
+
+  it("uses ~/.local/bin/agy on Linux when it exists", () => {
+    const exe = "/home/opc/.local/bin/agy";
+    const cmd = buildEngineCommand("ANTIGRAVITY", "/tmp/prompt.md", linuxEnv([exe]));
+    expect(cmd.command).toBe(exe);
   });
 });

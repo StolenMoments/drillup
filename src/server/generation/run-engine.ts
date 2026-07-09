@@ -45,6 +45,7 @@ export async function runEngine(
   const cmd = buildEngineCommand(engine, promptPath, {
     homeDir: homedir(),
     localAppData: process.env.LOCALAPPDATA ?? null,
+    platform: process.platform,
     fileExists: existsSync,
   });
 
