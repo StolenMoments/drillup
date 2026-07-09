@@ -5,15 +5,7 @@ set -euo pipefail
 
 cd "$DEPLOY_PATH"
 
-echo "DEBUG pre-npm-ci pwd=$(pwd)"
-ls -la .env 2>&1
-echo "DEBUG pre-npm-ci env exists: $?"
-
 npm ci
-
-echo "DEBUG post-npm-ci pwd=$(pwd)"
-ls -la .env 2>&1
-echo "DEBUG post-npm-ci env exists: $?"
 ./node_modules/.bin/prisma migrate deploy
 ./node_modules/.bin/prisma generate
 npm run build
