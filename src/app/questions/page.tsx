@@ -130,6 +130,33 @@ export default function QuestionsPage() {
     }
   }
 
+  async function editReferenceDir() {
+    if (topicId === "") return;
+    const current = topics.find((topic) => topic.id === topicId);
+    const dir = window.prompt(
+      "참고 자료 폴더 (generation_reference/ 기준 상대 경로, 비우면 해제)",
+      current?.referenceDir ?? "",
+    );
+    if (dir === null) return;
+
+    try {
+      await api.topics.update(topicId, {
+        referenceDir: dir.trim() === "" ? null : dir.trim(),
+      });
+      await reload({
+        selectedTopicId: topicId,
+        selectedType: typeFilter,
+        selectedSort: sort,
+        selectedPage: page,
+      });
+      setMessage("✅ 참고 자료 폴더를 설정했습니다");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "참고 자료 폴더 설정 실패",
+      );
+    }
+  }
+
   async function removeTopic() {
     if (topicId === "") return;
     if (
@@ -204,6 +231,12 @@ export default function QuestionsPage() {
               className="btn btn-secondary min-h-9 px-3 text-sm"
             >
               주제 이름 변경
+            </button>
+            <button
+              onClick={editReferenceDir}
+              className="btn btn-secondary min-h-9 px-3 text-sm"
+            >
+              참고 자료 폴더
             </button>
             <button
               onClick={removeTopic}
