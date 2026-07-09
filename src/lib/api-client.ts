@@ -131,6 +131,11 @@ export const api = {
       request<{ job: GenerationJobDto }>(`/api/generate/${id}`),
     list: () =>
       request<{ jobs: GenerationJobSummaryDto[] }>("/api/generate"),
+    approve: (id: number, indices: number[]) =>
+      request<{ savedCount: number; job: GenerationJobDto }>(
+        `/api/generate/${id}/approve`,
+        { method: "POST", body: JSON.stringify({ indices }) },
+      ),
   },
   study: {
     queue: (mode: "srs" | "practice", topicId?: number) =>

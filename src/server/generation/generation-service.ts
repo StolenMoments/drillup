@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { GenerationJob, Prisma } from "@prisma/client";
-import { parseImportJson } from "@/core/import-schema";
+import { parseImportJson, type ImportQuestion } from "@/core/import-schema";
 import { extractJsonObject } from "@/core/json-extract";
 import {
   buildCliGenerationPrompt,
@@ -17,6 +17,7 @@ import type {
 } from "@/lib/api-types";
 import { prisma } from "../db";
 import { ServiceError } from "../errors";
+import { importQuestions } from "../import-service";
 import { resolveReferenceFiles } from "./reference";
 import { generationTimeoutMs, jobOutputDir, runEngine } from "./run-engine";
 
@@ -286,6 +287,48 @@ export async function getJob(id: number): Promise<GenerationJobDto> {
   }
 
   return toDto(job);
+}
+
+export async function approveJob(
+  id: number,
+  indices: number[],
+): Promise<{ savedCount: number; job: GenerationJobDto }> {
+  const job = await prisma.generationJob.findUnique({ where: { id } });
+  if (!job) {
+    throw new ServiceError("JOB_NOT_FOUND", "생성 작업을 찾을 수 없습니다", 404);
+  }
+  if (job.status !== "SUCCEEDED") {
+    throw new ServiceError(
+      "JOB_NOT_APPROVABLE",
+      "완료된 작업만 저장할 수 있습니다",
+      409,
+    );
+  }
+
+  const items = job.result as unknown as GenerationItemDto[] | null;
+  const byIndex = new Map(items?.map((item) => [item.index, item]) ?? []);
+  const questions: ImportQuestion[] = [];
+  for (const index of indices) {
+    const item = byIndex.get(index);
+    if (!item || !item.ok) {
+      throw new ServiceError(
+        "INVALID_ITEMS",
+        "저장할 수 없는 항목이 포함되어 있습니다",
+        400,
+      );
+    }
+    questions.push(item.question as unknown as ImportQuestion);
+  }
+  if (questions.length === 0) {
+    throw new ServiceError("INVALID_ITEMS", "저장할 항목이 없습니다", 400);
+  }
+
+  const savedCount = await importQuestions(job.topicId, questions);
+  const updated = await prisma.generationJob.update({
+    where: { id },
+    data: { approvedAt: new Date(), savedCount: { increment: savedCount } },
+  });
+  return { savedCount, job: toDto(updated) };
 }
 
 export async function listJobs(): Promise<GenerationJobSummaryDto[]> {
