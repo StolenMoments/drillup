@@ -40,6 +40,7 @@ function promptBody(topicName: string): string {
 
 export function buildGenerationPrompt(topicName: string): string {
   return `${promptBody(topicName)}
+${webVerificationSection("문제를 만들기 전에")}
 ## 추가 지시
 
 여기에 범위, 난이도, 문제 수 같은 조건을 추가해 사용하세요.
@@ -49,6 +50,21 @@ export function buildGenerationPrompt(topicName: string): string {
 export interface ExistingQuestions {
   summaries: string[];
   truncated: boolean;
+}
+
+function webVerificationSection(lead: string): string {
+  return [
+    "## 웹 검색 기반 사실 확인",
+    "",
+    `${lead} 사용 가능한 WebSearch/WebFetch/브라우징 도구로 최신 정보를 확인하세요.`,
+    "",
+    "- 공식 문서, 벤더 문서, 표준 문서 같은 1차 출처를 우선하세요.",
+    "- 블로그나 커뮤니티 글은 공식 자료가 없을 때만 보조 근거로 사용하세요.",
+    "- 참고 자료와 최신 공식 웹 문서가 다르면 최신 공식 웹 문서를 우선하세요.",
+    "- 웹 검색 도구를 사용할 수 없으면 추측하지 말고, 사용 가능한 참고 자료와 지식 기준으로만 진행하세요.",
+    "- 출력 JSON에는 별도 출처 필드를 추가하지 마세요.",
+    "",
+  ].join("\n");
 }
 
 function dedupSection(existing: ExistingQuestions): string {
@@ -98,7 +114,7 @@ export function buildCliGenerationPrompt(
 ): string {
   const extra = instructions.trim();
   return `${promptBody(topicName)}
-${referenceSection(referenceFiles, "문제를 만들기 전에")}${dedupSection(existing)}
+${webVerificationSection("문제를 만들기 전에")}${referenceSection(referenceFiles, "문제를 만들기 전에")}${dedupSection(existing)}
 
 ## 추가 지시
 
@@ -134,7 +150,7 @@ export function buildCliVerifyPrompt(
 1. 정답 정확성: 정답이 사실적으로 정확한가? mcq는 answer_index가 가리키는 보기가 실제 정답인가? cloze는 빈칸 정답 단어가 문맥상 올바른가?
 2. 문제 품질: 질문이 명확하고 모호하지 않은가? mcq 보기 중 정답으로 볼 수 있는 것이 2개 이상은 아닌가? 해설(explanation)이 정답과 모순되지 않는가?
 
-${referenceSection(referenceFiles, "판정하기 전에")}
+${webVerificationSection("판정하기 전에")}${referenceSection(referenceFiles, "판정하기 전에")}
 ## 검증 대상 문제
 
 ${listing}

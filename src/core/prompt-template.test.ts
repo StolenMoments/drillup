@@ -12,6 +12,8 @@ describe("buildGenerationPrompt (기존 수동용)", () => {
     expect(prompt).toContain("여기에 범위, 난이도, 문제 수 같은 조건을 추가해 사용하세요");
     expect(prompt).toContain('"questions"');
     expect(prompt).toContain("choices는 4~6개");
+    expect(prompt).toContain("## 웹 검색 기반 사실 확인");
+    expect(prompt).toContain("공식 문서, 벤더 문서, 표준 문서 같은 1차 출처");
   });
 });
 
@@ -47,6 +49,10 @@ describe("buildCliGenerationPrompt", () => {
       "D:\\work\\drillup\\generation_output\\jobs\\1\\result.json",
     );
     expect(prompt).toContain("stdout에 출력하지 마세요");
+    expect(prompt).toContain("## 웹 검색 기반 사실 확인");
+    expect(prompt).toContain("WebSearch/WebFetch/브라우징 도구");
+    expect(prompt).toContain("최신 공식 웹 문서를 우선하세요");
+    expect(prompt).toContain("별도 출처 필드를 추가하지 마세요");
   });
 
   it("추가 지시가 공백뿐이면 (없음)으로 표기한다", () => {
@@ -112,6 +118,8 @@ describe("buildCliVerifyPrompt", () => {
     expect(prompt).toContain('"verdicts"');
     expect(prompt).toContain("D:\\v.json");
     expect(prompt).toContain("stdout에 출력하지 마세요");
+    expect(prompt).toContain("## 웹 검색 기반 사실 확인");
+    expect(prompt).toContain("판정하기 전에 사용 가능한 WebSearch/WebFetch/브라우징 도구");
   });
 
   it("각 문제를 index 번호와 JSON 내용으로 나열한다", () => {
