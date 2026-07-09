@@ -1,0 +1,254 @@
+"use client";
+
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import QuestionPreview from "@/components/QuestionPreview";
+import type { ImportQuestion } from "@/core/import-schema";
+import { api } from "@/lib/api-client";
+import type { GenerationJobDto } from "@/lib/api-types";
+
+const POLL_INTERVAL_MS = 3000;
+
+function selectValidItems(job: GenerationJobDto): Set<number> {
+  if (job.status !== "SUCCEEDED" || !job.items) return new Set<number>();
+  return new Set(
+    job.items
+      .filter((item) => item.ok && item.verdict !== "fail")
+      .map((item) => item.index),
+  );
+}
+
+function statusLabel(job: GenerationJobDto, elapsed: number): string {
+  switch (job.status) {
+    case "RUNNING":
+      return `생성 중... (경과 ${elapsed}초)`;
+    case "VERIFYING":
+      return `검증 중... (경과 ${elapsed}초)`;
+    case "SUCCEEDED":
+      return "✅ 생성 완료";
+    case "FAILED":
+      return "❌ 생성 실패";
+  }
+}
+
+export default function GenerationDetailPage() {
+  const params = useParams<{ id: string }>();
+  const jobId = Number(params.id);
+  const [job, setJob] = useState<GenerationJobDto | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [elapsed, setElapsed] = useState(0);
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let ignore = false;
+    async function load() {
+      if (!Number.isInteger(jobId) || jobId <= 0) {
+        setMessage("잘못된 생성 작업 id입니다");
+        return;
+      }
+      try {
+        const { job: loaded } = await api.generate.get(jobId);
+        if (ignore) return;
+        setJob(loaded);
+        setElapsed(
+          Math.max(
+            0,
+            Math.floor((Date.now() - new Date(loaded.createdAt).getTime()) / 1000),
+          ),
+        );
+        if (loaded.status === "SUCCEEDED") setSelected(selectValidItems(loaded));
+      } catch (error) {
+        if (!ignore) {
+          setMessage(
+            error instanceof Error ? error.message : "생성 작업을 불러오지 못했습니다",
+          );
+        }
+      }
+    }
+    void load();
+    return () => {
+      ignore = true;
+    };
+  }, [jobId]);
+
+  useEffect(() => {
+    if (!job || (job.status !== "RUNNING" && job.status !== "VERIFYING")) return;
+    const startedAt = new Date(job.createdAt).getTime();
+    const timer = setInterval(async () => {
+      setElapsed(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+      try {
+        const { job: next } = await api.generate.get(job.id);
+        setJob(next);
+        if (next.status === "SUCCEEDED") setSelected(selectValidItems(next));
+      } catch {
+        // 폴링 일시 오류는 다음 주기에 재시도한다.
+      }
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [job]);
+
+  function toggle(index: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }
+
+  async function save() {
+    if (job?.status !== "SUCCEEDED" || selected.size === 0 || saving) return;
+    if (
+      job.savedCount > 0 &&
+      !window.confirm(`이미 ${job.savedCount}개를 저장했습니다. 다시 저장할까요?`)
+    ) {
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+    try {
+      const result = await api.generate.approve(job.id, [...selected]);
+      setJob(result.job);
+      setMessage(`✅ ${result.savedCount}개 문제를 저장했습니다`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "저장에 실패했습니다");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="app-page space-y-4">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">생성 작업 #{Number.isFinite(jobId) ? jobId : ""}</h1>
+          <p className="page-subtitle">
+            작업 진행 상태를 확인하고 검증된 항목만 문제은행에 저장합니다.
+          </p>
+        </div>
+        <Link href="/generate" className="btn btn-secondary shrink-0">
+          목록
+        </Link>
+      </div>
+
+      {!job && !message && <p className="muted text-sm">불러오는 중...</p>}
+
+      {job && (
+        <section className="surface surface-pad space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="chip">{statusLabel(job, elapsed)}</span>
+            <span className="chip">{job.engine}→{job.verifyEngine}</span>
+            {job.savedCount > 0 && (
+              <span className="chip text-[color:var(--warning)]">
+                ⚠️ 이미 {job.savedCount}개 저장함
+              </span>
+            )}
+          </div>
+          <p className="subtle text-xs">
+            시작: {new Date(job.createdAt).toLocaleString()}
+            {job.finishedAt ? ` · 종료: ${new Date(job.finishedAt).toLocaleString()}` : ""}
+          </p>
+        </section>
+      )}
+
+      {job?.status === "FAILED" && (
+        <section className="space-y-3">
+          <p className="whitespace-pre-wrap break-all rounded-[12px] border border-[color:var(--danger)] bg-[color:var(--danger-soft)] p-3 text-sm">
+            ❌ 생성에 실패했습니다: {job.errorMessage}
+          </p>
+          <Link href="/generate/new" className="btn btn-secondary">
+            다시 시도
+          </Link>
+        </section>
+      )}
+
+      {job?.status === "SUCCEEDED" && job.items && (
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="section-title">미리보기 및 저장</h2>
+            <button
+              onClick={save}
+              disabled={selected.size === 0 || saving}
+              className="btn btn-success"
+            >
+              {saving ? "저장 중..." : `선택한 ${selected.size}개 문제 저장`}
+            </button>
+          </div>
+          {job.verifyWarning && (
+            <p className="whitespace-pre-wrap break-all rounded-[12px] border border-[color:var(--warning)] bg-[color:var(--warning-soft)] p-3 text-sm">
+              ⚠️ 검증을 수행하지 못했습니다: {job.verifyWarning}
+            </p>
+          )}
+          {job.items.map((item) => (
+            <div
+              key={item.index}
+              className={`surface surface-pad ${
+                item.ok ? "" : "border-[color:var(--danger)] bg-[color:var(--danger-soft)]"
+              }`}
+            >
+              <div className="mb-2 flex items-center gap-2 text-sm">
+                <span className="subtle">#{item.index + 1}</span>
+                {item.ok ? (
+                  <>
+                    <span className="chip">
+                      {(item.question as ImportQuestion).type === "mcq"
+                        ? "객관식"
+                        : "빈칸"}
+                    </span>
+                    {item.verdict === "pass" && (
+                      <span className="chip" style={{ color: "var(--success)" }}>
+                        ✅ 검증 통과
+                      </span>
+                    )}
+                    {item.verdict === "fail" && (
+                      <span className="chip" style={{ color: "var(--warning)" }}>
+                        ⚠️ 검증 의견
+                      </span>
+                    )}
+                    {item.verdict === "unverified" && (
+                      <span className="chip">검증 안 됨</span>
+                    )}
+                    <label className="ml-auto flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(item.index)}
+                        onChange={() => toggle(item.index)}
+                      />
+                      저장
+                    </label>
+                  </>
+                ) : (
+                  <span className="text-[color:var(--danger)]">오류</span>
+                )}
+              </div>
+              {item.ok ? (
+                <>
+                  <QuestionPreview question={item.question as ImportQuestion} />
+                  {item.verdict === "fail" && item.verdictComment && (
+                    <p className="mt-2 whitespace-pre-wrap break-all rounded-[12px] border border-[color:var(--warning)] bg-[color:var(--warning-soft)] p-2 text-sm">
+                      ⚠️ {item.verdictComment}
+                    </p>
+                  )}
+                  {item.verdict === "pass" && item.verdictComment && (
+                    <p className="subtle mt-2 text-xs">{item.verdictComment}</p>
+                  )}
+                </>
+              ) : (
+                <ul className="list-inside list-disc text-sm text-[color:var(--danger)]">
+                  {item.errors.map((error) => (
+                    <li key={error}>{error}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+
+      {message && <p className="text-sm text-[color:var(--brand)]">{message}</p>}
+    </div>
+  );
+}
