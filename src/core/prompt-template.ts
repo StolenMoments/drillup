@@ -72,15 +72,33 @@ function dedupSection(existing: ExistingQuestions): string {
   return lines.join("\n");
 }
 
+function referenceSection(files: string[], lead: string): string {
+  if (files.length === 0) return "";
+  return [
+    "## 참고 자료 (반드시 먼저 읽을 것)",
+    "",
+    `${lead} 아래 파일들을 모두 읽으세요:`,
+    "",
+    ...files.map((file) => `- ${file}`),
+    "",
+    "- 문제와 정답의 사실 관계는 반드시 위 자료 내용에 근거해야 합니다.",
+    "- 자료에 없는 내용을 기억이나 추측으로 출제하지 마세요.",
+    "- 자료와 당신의 기억이 다르면 자료를 우선하세요.",
+    "- 읽을 수 없는 파일이 있으면 그 파일은 무시하고 진행하세요.",
+    "",
+  ].join("\n");
+}
+
 export function buildCliGenerationPrompt(
   topicName: string,
   instructions: string,
   resultPath: string,
   existing: ExistingQuestions,
+  referenceFiles: string[] = [],
 ): string {
   const extra = instructions.trim();
   return `${promptBody(topicName)}
-${dedupSection(existing)}
+${referenceSection(referenceFiles, "문제를 만들기 전에")}${dedupSection(existing)}
 
 ## 추가 지시
 
@@ -98,6 +116,7 @@ export function buildCliVerifyPrompt(
   topicName: string,
   items: Array<{ index: number; question: unknown }>,
   resultPath: string,
+  referenceFiles: string[] = [],
 ): string {
   const listing = items
     .map(
@@ -115,6 +134,7 @@ export function buildCliVerifyPrompt(
 1. 정답 정확성: 정답이 사실적으로 정확한가? mcq는 answer_index가 가리키는 보기가 실제 정답인가? cloze는 빈칸 정답 단어가 문맥상 올바른가?
 2. 문제 품질: 질문이 명확하고 모호하지 않은가? mcq 보기 중 정답으로 볼 수 있는 것이 2개 이상은 아닌가? 해설(explanation)이 정답과 모순되지 않는가?
 
+${referenceSection(referenceFiles, "판정하기 전에")}
 ## 검증 대상 문제
 
 ${listing}

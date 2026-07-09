@@ -15,6 +15,22 @@ describe("buildGenerationPrompt (기존 수동용)", () => {
 });
 
 const NO_EXISTING = { summaries: [], truncated: false };
+const VERIFY_ITEMS = [
+  {
+    index: 0,
+    question: {
+      type: "mcq",
+      question: "리눅스 커널을 만든 사람은?",
+      choices: ["리누스 토르발스", "데니스 리치", "켄 톰프슨", "빌 게이츠"],
+      answer_index: 0,
+    },
+  },
+  { index: 2, question: { type: "cloze", text: "{{1}}는 OS다." } },
+];
+const REF_FILES = [
+  "C:\\work\\drillup\\generation_reference\\aip-c01\\common\\00-exam-guide.md",
+  "C:\\work\\drillup\\generation_reference\\aip-c01\\d1\\bedrock.md",
+];
 
 describe("buildCliGenerationPrompt", () => {
   it("주제명·추가 지시·결과 저장 경로를 포함한다", () => {
@@ -87,21 +103,8 @@ describe("buildCliGenerationPrompt", () => {
 });
 
 describe("buildCliVerifyPrompt", () => {
-  const items = [
-    {
-      index: 0,
-      question: {
-        type: "mcq",
-        question: "리눅스 커널을 만든 사람은?",
-        choices: ["리누스 토르발스", "데니스 리치", "켄 톰프슨", "빌 게이츠"],
-        answer_index: 0,
-      },
-    },
-    { index: 2, question: { type: "cloze", text: "{{1}}는 OS다." } },
-  ];
-
   it("주제명·판정 기준·출력 규격·저장 경로를 포함한다", () => {
-    const prompt = buildCliVerifyPrompt("리눅스 기초", items, "D:\\v.json");
+    const prompt = buildCliVerifyPrompt("리눅스 기초", VERIFY_ITEMS, "D:\\v.json");
     expect(prompt).toContain('"리눅스 기초"');
     expect(prompt).toContain("정답 정확성");
     expect(prompt).toContain("answer_index");
@@ -111,10 +114,66 @@ describe("buildCliVerifyPrompt", () => {
   });
 
   it("각 문제를 index 번호와 JSON 내용으로 나열한다", () => {
-    const prompt = buildCliVerifyPrompt("리눅스 기초", items, "D:\\v.json");
+    const prompt = buildCliVerifyPrompt("리눅스 기초", VERIFY_ITEMS, "D:\\v.json");
     expect(prompt).toContain("### 문제 0");
     expect(prompt).toContain("### 문제 2");
     expect(prompt).toContain("리눅스 커널을 만든 사람은?");
     expect(prompt).toContain("리누스 토르발스");
+  });
+});
+
+describe("buildCliGenerationPrompt 참고 자료 섹션", () => {
+  it("파일 목록과 근거 우선 지시를 포함한다", () => {
+    const prompt = buildCliGenerationPrompt(
+      "AIP-C01 D1",
+      "",
+      "D:\\r.json",
+      NO_EXISTING,
+      REF_FILES,
+    );
+    expect(prompt).toContain("## 참고 자료 (반드시 먼저 읽을 것)");
+    expect(prompt).toContain(`- ${REF_FILES[0]}`);
+    expect(prompt).toContain(`- ${REF_FILES[1]}`);
+    expect(prompt).toContain("자료에 없는 내용을 기억이나 추측으로 출제하지 마세요");
+    expect(prompt).toContain("자료와 당신의 기억이 다르면 자료를 우선하세요");
+    expect(prompt).toContain("읽을 수 없는 파일이 있으면 그 파일은 무시하고");
+  });
+
+  it("파일이 없으면 섹션을 생략한다 (기본값 포함)", () => {
+    const withEmpty = buildCliGenerationPrompt(
+      "주제",
+      "",
+      "D:\\r.json",
+      NO_EXISTING,
+      [],
+    );
+    const withDefault = buildCliGenerationPrompt(
+      "주제",
+      "",
+      "D:\\r.json",
+      NO_EXISTING,
+    );
+    expect(withEmpty).not.toContain("## 참고 자료");
+    expect(withDefault).not.toContain("## 참고 자료");
+  });
+});
+
+describe("buildCliVerifyPrompt 참고 자료 섹션", () => {
+  it("파일 목록과 근거 기반 판정 지시를 포함한다", () => {
+    const prompt = buildCliVerifyPrompt(
+      "AIP-C01 D1",
+      VERIFY_ITEMS,
+      "D:\\v.json",
+      REF_FILES,
+    );
+    expect(prompt).toContain("## 참고 자료 (반드시 먼저 읽을 것)");
+    expect(prompt).toContain(`- ${REF_FILES[0]}`);
+    expect(prompt).toContain("판정하기 전에 아래 파일들을 모두 읽으세요");
+    expect(prompt).toContain("자료와 당신의 기억이 다르면 자료를 우선하세요");
+  });
+
+  it("파일이 없으면 섹션을 생략한다", () => {
+    const prompt = buildCliVerifyPrompt("주제", VERIFY_ITEMS, "D:\\v.json");
+    expect(prompt).not.toContain("## 참고 자료");
   });
 });
