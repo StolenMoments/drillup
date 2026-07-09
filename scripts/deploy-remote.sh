@@ -14,11 +14,9 @@ UNIT_PATH="$UNIT_DIR/drillup.service"
 
 mkdir -p "$UNIT_DIR"
 
-if [ ! -f "$UNIT_PATH" ]; then
-  sed "s|__DEPLOY_PATH__|$DEPLOY_PATH|g" "$DEPLOY_PATH/deploy/drillup.service" > "$UNIT_PATH"
-  systemctl --user daemon-reload
-  systemctl --user enable drillup
-fi
+sed "s|__DEPLOY_PATH__|$DEPLOY_PATH|g" "$DEPLOY_PATH/deploy/drillup.service" > "$UNIT_PATH"
+systemctl --user daemon-reload
+systemctl --user enable drillup
 
 systemctl --user restart drillup
 systemctl --user status drillup --no-pager
