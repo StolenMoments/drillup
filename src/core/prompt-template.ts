@@ -10,7 +10,7 @@ function promptBody(topicName: string): string {
     {
       "type": "mcq",
       "question": "질문 텍스트",
-      "choices": ["보기1", "보기2", "보기3", "보기4"],
+      "choices": ["보기1", "보기2", "보기3", "보기4", "보기5"],
       "answer_index": 0,
       "explanation": "정답에 대한 간결한 해설"
     },
@@ -29,7 +29,7 @@ function promptBody(topicName: string): string {
 
 ## 규칙
 
-- mcq: choices는 정확히 4개, 중복 금지, answer_index는 0~3.
+- mcq: choices는 4~6개, 가능하면 5~6개 사용, 중복 금지, answer_index는 choices 배열 기준 정답의 0-based 인덱스.
 - cloze: text의 {{n}} 자리표시자와 blanks의 id가 정확히 일치해야 함.
 - cloze: distractors는 1개 이상이며 정답 단어와 겹치면 안 됨.
 - cloze: 빈칸은 문장의 핵심 개념 단어에만 넣을 것.

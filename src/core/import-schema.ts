@@ -5,15 +5,25 @@ const PLACEHOLDER_RE = /\{\{(\d+)\}\}/g;
 
 const mcqBase = z.object({
   question: nonBlank,
-  choices: z.array(nonBlank).length(4, "보기는 정확히 4개여야 합니다"),
+  choices: z
+    .array(nonBlank)
+    .min(4, "보기는 4~6개여야 합니다")
+    .max(6, "보기는 4~6개여야 합니다"),
   answer_index: z
     .number()
     .int()
-    .min(0, "answer_index는 0~3이어야 합니다")
-    .max(3, "answer_index는 0~3이어야 합니다"),
+    .min(0, "answer_index는 보기 범위 안이어야 합니다"),
 });
 
 function refineMcq(question: z.infer<typeof mcqBase>, ctx: z.RefinementCtx) {
+  if (question.answer_index >= question.choices.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["answer_index"],
+      message: "answer_index는 보기 범위 안이어야 합니다",
+    });
+  }
+
   if (
     new Set(question.choices.map((choice) => choice.trim())).size !==
     question.choices.length

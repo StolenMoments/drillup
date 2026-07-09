@@ -37,21 +37,53 @@ describe("parseImportJson fatal errors", () => {
 });
 
 describe("parseImportJson MCQ", () => {
-  it("accepts a valid question", () => {
+  it("accepts a valid question with four choices", () => {
     const result = parseOne(validMcq);
     if (!result.ok) throw new Error("expected ok");
 
     expect(result.items[0].ok).toBe(true);
   });
 
-  it("rejects choices that do not contain exactly four items", () => {
+  it("accepts a valid question with five choices", () => {
+    const result = parseOne({
+      ...validMcq,
+      choices: ["1", "2", "3", "4", "5"],
+      answer_index: 4,
+    });
+    if (!result.ok) throw new Error("expected ok");
+
+    expect(result.items[0].ok).toBe(true);
+  });
+
+  it("accepts a valid question with six choices", () => {
+    const result = parseOne({
+      ...validMcq,
+      choices: ["1", "2", "3", "4", "5", "6"],
+      answer_index: 5,
+    });
+    if (!result.ok) throw new Error("expected ok");
+
+    expect(result.items[0].ok).toBe(true);
+  });
+
+  it("rejects choices with fewer than four items", () => {
     const result = parseOne({ ...validMcq, choices: ["1", "2", "3"] });
     if (!result.ok) throw new Error("expected ok");
 
     expect(result.items[0].ok).toBe(false);
   });
 
-  it("rejects answer_index outside the 0 to 3 range", () => {
+  it("rejects choices with more than six items", () => {
+    const result = parseOne({
+      ...validMcq,
+      choices: ["1", "2", "3", "4", "5", "6", "7"],
+    });
+    if (!result.ok) throw new Error("expected ok");
+
+    expect(result.items[0].ok).toBe(false);
+  });
+
+  it("rejects answer_index outside the available choices", () => {
     const result = parseOne({ ...validMcq, answer_index: 4 });
     if (!result.ok) throw new Error("expected ok");
 

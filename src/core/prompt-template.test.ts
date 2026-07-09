@@ -11,6 +11,7 @@ describe("buildGenerationPrompt (기존 수동용)", () => {
     expect(prompt).toContain('"리눅스 기초"');
     expect(prompt).toContain("여기에 범위, 난이도, 문제 수 같은 조건을 추가해 사용하세요");
     expect(prompt).toContain('"questions"');
+    expect(prompt).toContain("choices는 4~6개");
   });
 });
 
