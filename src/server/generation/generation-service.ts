@@ -353,6 +353,7 @@ export async function deleteJob(id: number): Promise<void> {
 
 export async function listJobs(): Promise<GenerationJobSummaryDto[]> {
   const jobs = await prisma.generationJob.findMany({
+    where: { approvedAt: null },
     orderBy: { createdAt: "desc" },
     take: 50,
     include: { topic: { select: { name: true } } },
