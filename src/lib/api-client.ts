@@ -1,6 +1,7 @@
 import type {
   GenerationEngineDto,
   GenerationJobDto,
+  GenerationJobSummaryDto,
   QuestionDetailDto,
   QuestionListPageDto,
   QuestionListParams,
@@ -128,6 +129,8 @@ export const api = {
       }),
     get: (id: number) =>
       request<{ job: GenerationJobDto }>(`/api/generate/${id}`),
+    list: () =>
+      request<{ jobs: GenerationJobSummaryDto[] }>("/api/generate"),
   },
   study: {
     queue: (mode: "srs" | "practice", topicId?: number) =>

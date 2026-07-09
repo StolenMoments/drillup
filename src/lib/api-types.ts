@@ -137,3 +137,18 @@ export interface GenerationJobDto {
   approvedAt: string | null;
   savedCount: number;
 }
+
+export interface GenerationJobSummaryDto {
+  id: number;
+  topicId: number;
+  topicName: string;
+  engine: GenerationEngineDto;
+  verifyEngine: GenerationEngineDto;
+  status: GenerationStatusDto;
+  itemCount: number | null;
+  savedCount: number;
+  approvedAt: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+}

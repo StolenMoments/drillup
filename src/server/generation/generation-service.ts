@@ -9,7 +9,12 @@ import {
 } from "@/core/prompt-template";
 import { capSummaries, summarizeQuestionPayload } from "@/core/question-summary";
 import { mergeVerdicts, parseVerifyJson } from "@/core/verify-schema";
-import type { GenerationEngineDto, GenerationJobDto } from "@/lib/api-types";
+import type {
+  GenerationEngineDto,
+  GenerationItemDto,
+  GenerationJobDto,
+  GenerationJobSummaryDto,
+} from "@/lib/api-types";
 import { prisma } from "../db";
 import { ServiceError } from "../errors";
 import { resolveReferenceFiles } from "./reference";
@@ -35,6 +40,26 @@ function toDto(job: GenerationJob): GenerationJobDto {
     finishedAt: job.finishedAt?.toISOString() ?? null,
     approvedAt: job.approvedAt?.toISOString() ?? null,
     savedCount: job.savedCount,
+  };
+}
+
+function toSummaryDto(
+  job: GenerationJob & { topic: { name: string } },
+): GenerationJobSummaryDto {
+  const items = job.result as unknown as GenerationItemDto[] | null;
+  return {
+    id: job.id,
+    topicId: job.topicId,
+    topicName: job.topic.name,
+    engine: job.engine,
+    verifyEngine: job.verifyEngine,
+    status: job.status,
+    itemCount: job.status === "SUCCEEDED" && items ? items.length : null,
+    savedCount: job.savedCount,
+    approvedAt: job.approvedAt?.toISOString() ?? null,
+    errorMessage: job.errorMessage,
+    createdAt: job.createdAt.toISOString(),
+    finishedAt: job.finishedAt?.toISOString() ?? null,
   };
 }
 
@@ -261,4 +286,13 @@ export async function getJob(id: number): Promise<GenerationJobDto> {
   }
 
   return toDto(job);
+}
+
+export async function listJobs(): Promise<GenerationJobSummaryDto[]> {
+  const jobs = await prisma.generationJob.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 50,
+    include: { topic: { select: { name: true } } },
+  });
+  return jobs.map(toSummaryDto);
 }

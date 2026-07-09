@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createJob } from "@/server/generation/generation-service";
+import { createJob, listJobs } from "@/server/generation/generation-service";
 import { handleApiError, jsonOk, parseBody } from "@/server/http";
 
 const createSchema = z.object({
@@ -14,6 +14,14 @@ export async function POST(req: Request) {
   try {
     const input = await parseBody(req, createSchema);
     return jsonOk({ job: await createJob(input) }, 202);
+  } catch (e) {
+    return handleApiError(e);
+  }
+}
+
+export async function GET() {
+  try {
+    return jsonOk({ jobs: await listJobs() });
   } catch (e) {
     return handleApiError(e);
   }
