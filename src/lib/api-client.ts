@@ -4,6 +4,7 @@ import type {
   QuestionDetailDto,
   QuestionListPageDto,
   QuestionListParams,
+  ReferenceFileListDto,
   ReviewResultDto,
   StatsOverviewDto,
   StudyQuestionDto,
@@ -79,6 +80,8 @@ export const api = {
       }),
     remove: (id: number) =>
       request<{ ok: true }>(`/api/topics/${id}`, { method: "DELETE" }),
+    referenceFiles: (id: number) =>
+      request<ReferenceFileListDto>(`/api/topics/${id}/reference-files`),
   },
   questions: {
     list: (params: QuestionListParams = {}) => {

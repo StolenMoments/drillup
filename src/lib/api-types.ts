@@ -95,6 +95,16 @@ export interface StatsOverviewDto {
   topics: TopicStatsDto[];
 }
 
+export interface ReferenceFileDto {
+  path: string;
+  size: number;
+}
+
+export interface ReferenceFileListDto {
+  files: ReferenceFileDto[];
+  dirExists: boolean;
+}
+
 export type GenerationEngineDto = "CLAUDE" | "CODEX" | "ANTIGRAVITY";
 export type GenerationStatusDto =
   | "RUNNING"
