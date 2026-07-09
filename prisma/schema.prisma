@@ -33,6 +33,7 @@ model Topic {
   id             Int             @id @default(autoincrement())
   name           String          @unique @db.VarChar(100)
   description    String?         @db.Text
+  referenceDir   String?         @map("reference_dir") @db.VarChar(200)
   createdAt      DateTime        @default(now()) @map("created_at")
   questions      Question[]
   generationJobs GenerationJob[]
@@ -91,6 +92,7 @@ model GenerationJob {
   errorMessage  String?          @map("error_message") @db.Text
   verifyWarning String?          @map("verify_warning") @db.Text
   rawOutput     String?          @map("raw_output") @db.MediumText
+  referenceFiles Json?            @map("reference_files")
   createdAt     DateTime         @default(now()) @map("created_at")
   finishedAt    DateTime?        @map("finished_at")
   topic         Topic            @relation(fields: [topicId], references: [id], onDelete: Cascade)
