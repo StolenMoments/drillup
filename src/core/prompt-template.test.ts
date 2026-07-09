@@ -200,9 +200,14 @@ describe("buildAnswerExplanationPrompt", () => {
       "D:\\explain\\1-claude\\result.json",
     );
     expect(prompt).toContain("리눅스 커널을 만든 사람은?");
-    expect(prompt).toContain("1. 리누스 토르발스 (정답)");
-    expect(prompt).toContain("2. 데니스 리치");
+    expect(prompt).toContain("- 리누스 토르발스");
+    expect(prompt).toContain("- 데니스 리치");
+    expect(prompt).toContain('정답: "리누스 토르발스"');
     expect(prompt).toContain("각 오답 보기가 왜 틀렸는지");
+    expect(prompt).toContain("보기 텍스트를 그대로 인용");
+    expect(prompt).toContain("번호나 순서");
+    expect(prompt).not.toContain("1. 리누스 토르발스");
+    expect(prompt).not.toContain("(정답)");
     expect(prompt).toContain("D:\\explain\\1-claude\\result.json");
     expect(prompt).toContain("stdout에 출력하지 마세요");
     expect(prompt).toContain('"explanation"');
@@ -222,6 +227,7 @@ describe("buildAnswerExplanationPrompt", () => {
     expect(prompt).toContain("1번 = 리눅스");
     expect(prompt).toContain("윈도우, 맥OS");
     expect(prompt).toContain("각 오답 후보(distractor)가 왜 그 빈칸에 맞지 않는지");
+    expect(prompt).not.toContain("번호나 순서");
     expect(prompt).toContain("D:\\explain\\2-codex\\result.json");
   });
 });

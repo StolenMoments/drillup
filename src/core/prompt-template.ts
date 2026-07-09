@@ -131,18 +131,18 @@ ${extra || "(없음)"}
 }
 
 function mcqExplanationSection(payload: McqPayload): string {
-  const choices = payload.choices
-    .map(
-      (choice, i) =>
-        `${i + 1}. ${choice}${i === payload.answer_index ? " (정답)" : ""}`,
-    )
+  const correctText = payload.choices[payload.answer_index];
+  const choiceLines = payload.choices
+    .map((choice) => `- ${choice}`)
     .join("\n");
   return `## 문제 (객관식)
 
 질문: ${payload.question}
 
 보기:
-${choices}`;
+${choiceLines}
+
+정답: "${correctText}"`;
 }
 
 function clozeExplanationSection(payload: ClozePayload): string {
@@ -168,8 +168,12 @@ export function buildAnswerExplanationPrompt(
       : clozeExplanationSection(payload as ClozePayload);
   const wrongGuide =
     type === "MCQ"
-      ? "각 오답 보기가 왜 틀렸는지 보기마다 각각 설명하세요."
+      ? "각 오답 보기가 왜 틀렸는지, 보기 텍스트를 그대로 인용해서 보기마다 각각 설명하세요."
       : "각 오답 후보(distractor)가 왜 그 빈칸에 맞지 않는지 각각 설명하세요.";
+  const numberingGuide =
+    type === "MCQ"
+      ? "\n- 보기를 가리킬 때 번호나 순서(1번, 2번, 첫 번째, 마지막 등)로 지칭하지 마세요. 학습자 화면에 표시되는 보기 순서는 매번 무작위로 바뀌므로, 반드시 보기 텍스트를 그대로 인용하거나 그 내용을 풀어서 설명하세요."
+      : "";
 
   return `당신은 학습 문제 해설 전문가입니다. 아래 문제에 대해 정답 근거와 오답이 틀린 이유를 설명해 주세요.
 
@@ -178,7 +182,7 @@ ${questionSection}
 ## 요구 사항
 
 - 정답(빈칸 정답 포함)이 왜 맞는지 먼저 설명하세요.
-- ${wrongGuide}
+- ${wrongGuide}${numberingGuide}
 - 한국어로, 학습자가 이해하기 쉽게 간결히 작성하세요. 마크다운 기호(#, *, - 등) 없이 일반 문장과 줄바꿈만 사용하세요.
 
 ## 출력 형식
