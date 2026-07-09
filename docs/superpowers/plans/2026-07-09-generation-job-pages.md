@@ -1,6 +1,6 @@
 # AI 생성 작업 목록·상세 페이지 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> 태스크를 순서대로 하나씩 구현한다. 각 태스크는 독립적으로 검증·커밋 가능하다. 진행 추적은 체크박스(`- [ ]`)로 한다.
 
 **Goal:** AI 문제 생성의 시작·확인을 분리해, 생성 폼(`/generate/new`) → 상세·승인(`/generate/[id]`) → 작업 목록(`/generate`) 세 페이지로 재구성한다.
 
