@@ -69,7 +69,10 @@ export const api = {
         method: "POST",
         body: JSON.stringify(input),
       }),
-    update: (id: number, input: { name?: string; description?: string }) =>
+    update: (
+      id: number,
+      input: { name?: string; description?: string; referenceDir?: string | null },
+    ) =>
       request<TopicDto>(`/api/topics/${id}`, {
         method: "PATCH",
         body: JSON.stringify(input),

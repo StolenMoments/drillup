@@ -8,12 +8,14 @@ function toDto(topic: {
   id: number;
   name: string;
   description: string | null;
+  referenceDir: string | null;
   _count: { questions: number };
 }): TopicDto {
   return {
     id: topic.id,
     name: topic.name,
     description: topic.description,
+    referenceDir: topic.referenceDir,
     questionCount: topic._count.questions,
   };
 }
@@ -46,7 +48,7 @@ export async function createTopic(input: {
 
 export async function updateTopic(
   id: number,
-  input: { name?: string; description?: string },
+  input: { name?: string; description?: string; referenceDir?: string | null },
 ): Promise<TopicDto> {
   const existing = await prisma.topic.findUnique({ where: { id } });
   if (!existing) {
