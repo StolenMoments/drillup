@@ -48,12 +48,14 @@ http://localhost:3000 접속 후 APP_PASSWORD로 로그인.
 `master`에 push하면 `.github/workflows/deploy.yml`이 실행되어:
 
 1. `npm ci` -> `npm run lint` -> `npm test` (실패 시 배포 중단)
-2. 소스를 rsync로 Ampere 인스턴스(`146.56.170.98`)에 전송
+2. 소스를 rsync로 Ampere 인스턴스(`SSH_HOST` 시크릿에 설정된 서버)에 전송
    (`.env`, `node_modules/`, `.next/` 등은 제외되어 서버 쪽 상태가
    보존됨)
 3. 서버에서 `scripts/deploy-remote.sh` 실행: `npm ci` -> `npx prisma
    migrate deploy` -> `npm run build` -> systemd user 서비스(`drillup`)
-   재시작
+   재시작 (`prisma migrate deploy`가 `npm run build`보다 먼저 실행되므로,
+   빌드가 실패해도 DB 마이그레이션은 이미 적용되어 있을 수 있다 -
+   배포 실패 시 롤백 대신 수정 커밋을 push할 것)
 
 ### 필요한 GitHub Secrets
 

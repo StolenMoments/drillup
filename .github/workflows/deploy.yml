@@ -4,6 +4,10 @@ on:
   push:
     branches: [master]
 
+concurrency:
+  group: deploy-master
+  cancel-in-progress: false
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -27,11 +31,13 @@ jobs:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           : "${SSH_HOST:?SSH_HOST secret is not set}"
           : "${SSH_USER:?SSH_USER secret is not set}"
           : "${DEPLOY_PATH:?DEPLOY_PATH secret is not set}"
+          : "${SSH_PRIVATE_KEY:?SSH_PRIVATE_KEY secret is not set}"
 
       - name: Configure SSH
         env:

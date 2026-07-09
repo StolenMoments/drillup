@@ -14,7 +14,8 @@ UNIT_PATH="$UNIT_DIR/drillup.service"
 
 mkdir -p "$UNIT_DIR"
 
-sed "s|__DEPLOY_PATH__|$DEPLOY_PATH|g" "$DEPLOY_PATH/deploy/drillup.service" > "$UNIT_PATH"
+NPM_BIN="$(command -v npm)"
+sed -e "s|__DEPLOY_PATH__|$DEPLOY_PATH|g" -e "s|__NPM_BIN__|$NPM_BIN|g" "$DEPLOY_PATH/deploy/drillup.service" > "$UNIT_PATH"
 systemctl --user daemon-reload
 systemctl --user enable drillup
 

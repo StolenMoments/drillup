@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=__DEPLOY_PATH__
-ExecStart=/usr/bin/npm start
+ExecStart=__NPM_BIN__ start
 Restart=on-failure
 RestartSec=5
 Environment=PORT=3000
