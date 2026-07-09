@@ -194,6 +194,7 @@ export default function GeneratePage() {
         engine,
         verifyEngine,
         instructions,
+        referenceFiles: [],
       });
       storeActiveJob(created.id, topicId);
       setJob(created);

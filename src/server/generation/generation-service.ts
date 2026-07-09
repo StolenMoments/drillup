@@ -12,6 +12,7 @@ import { mergeVerdicts, parseVerifyJson } from "@/core/verify-schema";
 import type { GenerationEngineDto, GenerationJobDto } from "@/lib/api-types";
 import { prisma } from "../db";
 import { ServiceError } from "../errors";
+import { resolveReferenceFiles } from "./reference";
 import { generationTimeoutMs, jobOutputDir, runEngine } from "./run-engine";
 
 const ORPHAN_GRACE_MS = 60_000;
@@ -63,6 +64,7 @@ export async function createJob(input: {
   engine: GenerationEngineDto;
   verifyEngine: GenerationEngineDto;
   instructions: string;
+  referenceFiles: string[];
 }): Promise<GenerationJobDto> {
   const topic = await prisma.topic.findUnique({ where: { id: input.topicId } });
   if (!topic) {
@@ -80,6 +82,10 @@ export async function createJob(input: {
     );
   }
 
+  const referenceAbsPaths = await resolveReferenceFiles(
+    topic.referenceDir,
+    input.referenceFiles,
+  );
   const existing = await loadExistingQuestions(input.topicId);
 
   const job = await prisma.generationJob.create({
@@ -88,10 +94,17 @@ export async function createJob(input: {
       engine: input.engine,
       verifyEngine: input.verifyEngine,
       instructions: input.instructions,
+      referenceFiles: input.referenceFiles,
     },
   });
 
-  void runJob(job.id, topic.name, input.instructions, existing).catch((e) => {
+  void runJob(
+    job.id,
+    topic.name,
+    input.instructions,
+    existing,
+    referenceAbsPaths,
+  ).catch((e) => {
     console.error(`generation job ${job.id} failed unexpectedly`, e);
   });
 
@@ -103,6 +116,7 @@ async function runJob(
   topicName: string,
   instructions: string,
   existing: ExistingQuestions,
+  referenceAbsPaths: string[],
 ): Promise<void> {
   const dir = jobOutputDir(jobId);
   const resultPath = path.join(dir, "result.json");
@@ -111,6 +125,7 @@ async function runJob(
     instructions,
     resultPath,
     existing,
+    referenceAbsPaths,
   );
 
   const job = await prisma.generationJob.findUnique({ where: { id: jobId } });
@@ -163,6 +178,7 @@ async function runJob(
     topicName,
     validItems.map((item) => ({ index: item.index, question: item.question })),
     verifyResultPath,
+    referenceAbsPaths,
   );
 
   let finalItems = unverifiedItems;

@@ -120,6 +120,7 @@ export const api = {
       engine: GenerationEngineDto;
       verifyEngine: GenerationEngineDto;
       instructions: string;
+      referenceFiles: string[];
     }) =>
       request<{ job: GenerationJobDto }>("/api/generate", {
         method: "POST",

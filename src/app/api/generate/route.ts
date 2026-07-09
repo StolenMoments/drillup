@@ -7,6 +7,7 @@ const createSchema = z.object({
   engine: z.enum(["CLAUDE", "CODEX", "ANTIGRAVITY"]),
   verifyEngine: z.enum(["CLAUDE", "CODEX", "ANTIGRAVITY"]),
   instructions: z.string().max(4000),
+  referenceFiles: z.array(z.string().min(1).max(300)).max(100).default([]),
 });
 
 export async function POST(req: Request) {
