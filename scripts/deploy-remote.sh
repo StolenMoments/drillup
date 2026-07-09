@@ -5,9 +5,9 @@ set -euo pipefail
 
 cd "$DEPLOY_PATH"
 
-npm ci --include=dev
-./node_modules/.bin/prisma migrate deploy
+NODE_ENV=development NPM_CONFIG_PRODUCTION=false npm ci --include=dev --ignore-scripts
 ./node_modules/.bin/prisma generate
+./node_modules/.bin/prisma migrate deploy
 npm run build
 
 UNIT_DIR="$HOME/.config/systemd/user"
