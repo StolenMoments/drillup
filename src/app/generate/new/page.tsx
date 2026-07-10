@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api-client";
 import type {
   GenerationEngineDto,
@@ -15,8 +15,18 @@ const ENGINES: Array<{ value: GenerationEngineDto; label: string }> = [
   { value: "ANTIGRAVITY", label: "antigravity" },
 ];
 
-export default function GenerationNewPage() {
+function GenerationNewForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const sourceQuestionIds = useMemo(() => {
+    const raw = searchParams.get("sourceQuestionIds");
+    if (!raw) return [];
+    return raw
+      .split(",")
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value > 0)
+      .slice(0, 10);
+  }, [searchParams]);
   const [topics, setTopics] = useState<TopicDto[]>([]);
   const [topicId, setTopicId] = useState<number | "">("");
   const [newTopicName, setNewTopicName] = useState("");
@@ -36,7 +46,13 @@ export default function GenerationNewPage() {
     async function load() {
       try {
         const list = await api.topics.list();
-        if (!ignore) setTopics(list);
+        if (!ignore) {
+          setTopics(list);
+          const preset = Number(searchParams.get("topicId"));
+          if (Number.isInteger(preset) && list.some((topic) => topic.id === preset)) {
+            setTopicId(preset);
+          }
+        }
       } catch (error) {
         if (!ignore) {
           setMessage(
@@ -49,7 +65,7 @@ export default function GenerationNewPage() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     const topic = topics.find((item) => item.id === topicId);
@@ -124,6 +140,8 @@ export default function GenerationNewPage() {
         verifyEngine,
         instructions,
         referenceFiles: selectedTopic?.referenceDir ? [...selectedFiles] : [],
+        sourceQuestionIds:
+          sourceQuestionIds.length > 0 ? sourceQuestionIds : undefined,
       });
       router.push("/generate");
     } catch (error) {
@@ -142,6 +160,16 @@ export default function GenerationNewPage() {
           </p>
         </div>
       </div>
+
+      {sourceQuestionIds.length > 0 && (
+        <section className="surface surface-pad space-y-1">
+          <h2 className="section-title">🔀 변형 출제</h2>
+          <p className="muted text-sm">
+            원본 문제 {sourceQuestionIds.length}개(#{sourceQuestionIds.join(", #")})와 같은
+            개념을 다른 각도로 묻는 문제를 생성합니다.
+          </p>
+        </section>
+      )}
 
       <section className="surface surface-pad space-y-3">
         <h2 className="section-title">주제 선택</h2>
@@ -268,5 +296,13 @@ export default function GenerationNewPage() {
 
       {message && <p className="text-sm text-[color:var(--brand)]">{message}</p>}
     </div>
+  );
+}
+
+export default function GenerationNewPage() {
+  return (
+    <Suspense fallback={<p className="muted">불러오는 중...</p>}>
+      <GenerationNewForm />
+    </Suspense>
   );
 }

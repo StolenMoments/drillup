@@ -98,6 +98,9 @@ export default function GenerationListPage() {
               <Link href={`/generate/${job.id}`} className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <span className="subtle">#{job.id}</span>
+                  {job.kind === "KEYWORD_TAG" && (
+                    <span className="chip">🏷️ 키워드 부여</span>
+                  )}
                   <span className="font-bold">{job.topicName}</span>
                   <span className="chip">
                     {job.engine}→{job.verifyEngine}

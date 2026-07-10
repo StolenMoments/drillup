@@ -11,7 +11,11 @@ import type { GenerationJobDto } from "@/lib/api-types";
 const POLL_INTERVAL_MS = 3000;
 
 function selectValidItems(job: GenerationJobDto): Set<number> {
-  if (job.status !== "SUCCEEDED" || !job.items) return new Set<number>();
+  if (job.status !== "SUCCEEDED") return new Set<number>();
+  if (job.kind === "KEYWORD_TAG") {
+    return new Set((job.keywordItems ?? []).map((item) => item.id));
+  }
+  if (!job.items) return new Set<number>();
   return new Set(
     job.items
       .filter((item) => item.ok && item.verdict !== "fail")
@@ -123,7 +127,11 @@ export default function GenerationDetailPage() {
     try {
       const result = await api.generate.approve(job.id, [...selected]);
       setJob(result.job);
-      setMessage(`✅ ${result.savedCount}개 문제를 저장했습니다`);
+      setMessage(
+        job.kind === "KEYWORD_TAG"
+          ? `✅ ${result.savedCount}개 문제에 키워드를 적용했습니다`
+          : `✅ ${result.savedCount}개 문제를 저장했습니다`,
+      );
       router.push("/generate");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "저장에 실패했습니다");
@@ -152,7 +160,16 @@ export default function GenerationDetailPage() {
         <section className="surface surface-pad space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="chip">{statusLabel(job, elapsed)}</span>
-            <span className="chip">{job.engine}→{job.verifyEngine}</span>
+            {job.kind === "KEYWORD_TAG" ? (
+              <span className="chip">🏷️ 키워드 부여 · {job.engine}</span>
+            ) : (
+              <span className="chip">{job.engine}→{job.verifyEngine}</span>
+            )}
+            {job.kind === "QUESTION" && job.sourceQuestionIds && (
+              <span className="chip">
+                🔀 변형 (원본 #{job.sourceQuestionIds.join(", #")})
+              </span>
+            )}
             {job.savedCount > 0 && (
               <span className="chip text-[color:var(--warning)]">
                 ⚠️ 이미 {job.savedCount}개 저장함
@@ -177,7 +194,7 @@ export default function GenerationDetailPage() {
         </section>
       )}
 
-      {job?.status === "SUCCEEDED" && job.items && (
+      {job?.status === "SUCCEEDED" && job.kind === "QUESTION" && job.items && (
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="section-title">미리보기 및 저장</h2>
@@ -251,6 +268,13 @@ export default function GenerationDetailPage() {
                     question={item.question as ImportQuestion}
                     revealed={revealed.has(item.index)}
                   />
+                  {(item.question as ImportQuestion).keywords?.length ? (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {(item.question as ImportQuestion).keywords?.map((keyword) => (
+                        <span key={keyword} className="chip">🏷️ {keyword}</span>
+                      ))}
+                    </div>
+                  ) : null}
                   {item.verdict === "fail" && item.verdictComment && (
                     <p className="mt-2 whitespace-pre-wrap break-all rounded-[12px] border border-[color:var(--warning)] bg-[color:var(--warning-soft)] p-2 text-sm">
                       ⚠️ {item.verdictComment}
@@ -267,6 +291,46 @@ export default function GenerationDetailPage() {
                   ))}
                 </ul>
               )}
+            </div>
+          ))}
+        </section>
+      )}
+
+      {job?.status === "SUCCEEDED" && job.kind === "KEYWORD_TAG" && (
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="section-title">제안된 키워드 확인 및 적용</h2>
+            <button
+              onClick={save}
+              disabled={selected.size === 0 || saving}
+              className="btn btn-success"
+            >
+              {saving ? "적용 중..." : `선택한 ${selected.size}개 문제에 적용`}
+            </button>
+          </div>
+          {(job.keywordItems ?? []).length === 0 && (
+            <p className="muted text-sm">제안된 키워드가 없습니다.</p>
+          )}
+          {(job.keywordItems ?? []).map((item) => (
+            <div key={item.id} className="surface surface-pad">
+              <div className="flex items-start gap-3 text-sm">
+                <label className="flex shrink-0 items-center gap-2 pt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(item.id)}
+                    onChange={() => toggle(item.id)}
+                  />
+                  <span className="subtle">#{item.id}</span>
+                </label>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <p className="break-all">{item.summary}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {item.keywords.map((keyword) => (
+                      <span key={keyword} className="chip">🏷️ {keyword}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           ))}
         </section>
