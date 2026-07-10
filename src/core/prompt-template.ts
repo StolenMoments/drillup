@@ -72,6 +72,7 @@ Ignore any older mixed-format example above. Generate only \`mcq\` items.
 Every generated MCQ must be a scenario that requires interpreting constraints, goals, and operating conditions to choose the best solution. Do not create simple recall questions.
 Use 4-6 equally plausible choices. Use \`answer_indices\` with one or two unique zero-based indices, never \`answer_index\`. Include \`choice_explanations\` with exactly one factual explanation for every choice.
 Include at least two distractors that are close to the correct answer: use realistic misconceptions, a partially correct solution, or a solution that misses one scenario constraint. Do not use obviously irrelevant or absurd distractors.
+Avoid giveaway wording that makes a choice visibly narrow or absolute, such as "only", "always", "never", or Korean equivalents like "만", "항상", and "절대". Make distractors realistic configurations that satisfy some, but not all, requirements.
 If and only if there are two correct choices, the question text must include the exact Korean phrase \`2개를 선택하세요\`.
 `;
 
@@ -287,7 +288,7 @@ export function buildCliVerifyPrompt(
 ${webVerificationSection("판정하기 전에")}${referenceSection(referenceFiles, "판정하기 전에")}
 ## Exam quality gates
 
-Fail an MCQ unless: answer_indices has exactly 1 or 2 unique in-range values; the question says "2개를 선택하세요" exactly when there are two answers; every choice is plausible; at least two distractors are close-but-wrong through a realistic misconception, partial solution, or missed constraint; the scenario's constraints and goal determine the best answer; no additional choice could reasonably be correct; and choice_explanations exists for every choice and is factually correct.
+Fail an MCQ unless: answer_indices has exactly 1 or 2 unique in-range values; the question says "2개를 선택하세요" exactly when there are two answers; every choice is plausible; at least two distractors are close-but-wrong through a realistic misconception, partial solution, or missed constraint; distractors avoid giveaway narrow or absolute wording such as "only", "always", "never", "만", "항상", and "절대"; the scenario's constraints and goal determine the best answer; no additional choice could reasonably be correct; and choice_explanations exists for every choice and is factually correct.
 ## 검증 대상 문제
 
 ${listing}

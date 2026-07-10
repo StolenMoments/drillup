@@ -244,7 +244,9 @@ describe("exam distractor requirements", () => {
     const verification = buildCliVerifyPrompt("topic", VERIFY_ITEMS, "D:\\v.json");
     expect(generation).toContain("at least two distractors");
     expect(generation).toContain("realistic misconceptions");
+    expect(generation).toContain("Avoid giveaway wording");
     expect(verification).toContain("at least two distractors are close-but-wrong");
+    expect(verification).toContain("avoid giveaway narrow or absolute wording");
   });
 });
 
