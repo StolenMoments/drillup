@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { api } from "@/lib/api-client";
+import type { KeywordDto, KeywordRefDto } from "@/lib/api-types";
 
 export default function QuestionEditPage() {
   const params = useParams<{ id: string }>();
@@ -14,6 +16,10 @@ export default function QuestionEditPage() {
   const [type, setType] = useState<"MCQ" | "CLOZE" | null>(null);
   const [message, setMessage] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [topicId, setTopicId] = useState<number | null>(null);
+  const [keywords, setKeywords] = useState<KeywordRefDto[]>([]);
+  const [allKeywords, setAllKeywords] = useState<KeywordDto[]>([]);
+  const [newKeyword, setNewKeyword] = useState("");
 
   useEffect(() => {
     api.questions
@@ -22,6 +28,8 @@ export default function QuestionEditPage() {
         setPayloadText(JSON.stringify(question.payload, null, 2));
         setExplanation(question.explanation ?? "");
         setType(question.type);
+        setTopicId(question.topicId);
+        setKeywords(question.keywords);
         setLoaded(true);
       })
       .catch((error: unknown) =>
@@ -31,6 +39,11 @@ export default function QuestionEditPage() {
             : "문제를 불러오지 못했습니다",
         ),
       );
+
+    api.keywords
+      .list()
+      .then((data) => setAllKeywords(data.keywords))
+      .catch(() => setAllKeywords([]));
   }, [id]);
 
   async function save() {
@@ -50,6 +63,37 @@ export default function QuestionEditPage() {
       router.push("/questions");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "저장에 실패했습니다");
+    }
+  }
+
+  async function addKeyword() {
+    const name = newKeyword.trim();
+    if (!name) return;
+    try {
+      const added = await api.questions.addKeyword(id, name);
+      setKeywords((prev) =>
+        prev.some((keyword) => keyword.id === added.id)
+          ? prev
+          : [...prev, added].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      setNewKeyword("");
+      setMessage("");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "키워드 추가에 실패했습니다",
+      );
+    }
+  }
+
+  async function removeKeyword(keywordId: number) {
+    try {
+      await api.questions.removeKeyword(id, keywordId);
+      setKeywords((prev) => prev.filter((keyword) => keyword.id !== keywordId));
+      setMessage("");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "키워드 삭제에 실패했습니다",
+      );
     }
   }
 
@@ -85,6 +129,54 @@ export default function QuestionEditPage() {
           className="textarea"
         />
       </div>
+      <div className="surface surface-pad space-y-2">
+        <label className="text-sm font-semibold text-[color:var(--muted)]">키워드</label>
+        <div className="flex flex-wrap items-center gap-2">
+          {keywords.length === 0 && (
+            <span className="muted text-sm">아직 키워드가 없습니다.</span>
+          )}
+          {keywords.map((keyword) => (
+            <span key={keyword.id} className="chip gap-1">
+              {keyword.name}
+              <button
+                type="button"
+                onClick={() => removeKeyword(keyword.id)}
+                aria-label={`${keyword.name} 키워드 삭제`}
+                className="text-[color:var(--danger)]"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input
+            value={newKeyword}
+            onChange={(event) => setNewKeyword(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void addKeyword();
+              }
+            }}
+            list="keyword-options"
+            placeholder="키워드 추가 (예: TCP)"
+            className="field min-w-0 flex-1"
+          />
+          <datalist id="keyword-options">
+            {allKeywords.map((keyword) => (
+              <option key={keyword.id} value={keyword.name} />
+            ))}
+          </datalist>
+          <button
+            onClick={addKeyword}
+            disabled={newKeyword.trim().length === 0}
+            className="btn btn-secondary shrink-0"
+          >
+            추가
+          </button>
+        </div>
+      </div>
       {message && <p className="text-sm text-[color:var(--danger)]">{message}</p>}
       <div className="flex gap-2">
         <button
@@ -99,6 +191,14 @@ export default function QuestionEditPage() {
         >
           취소
         </button>
+        {topicId !== null && (
+          <Link
+            href={`/generate/new?topicId=${topicId}&sourceQuestionIds=${id}`}
+            className="btn btn-secondary ml-auto"
+          >
+            🤖 변형 문제 생성
+          </Link>
+        )}
       </div>
     </div>
   );
