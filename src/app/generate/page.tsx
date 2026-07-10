@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
 import type { GenerationJobSummaryDto } from "@/lib/api-types";
 
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = 5000;
 
 function statusBadge(job: GenerationJobSummaryDto): string {
   switch (job.status) {

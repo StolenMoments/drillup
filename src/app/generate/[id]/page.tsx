@@ -8,7 +8,7 @@ import type { ImportQuestion } from "@/core/import-schema";
 import { api } from "@/lib/api-client";
 import type { GenerationEngineDto, GenerationJobDto } from "@/lib/api-types";
 
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = 5000;
 const ENGINES: Array<{ value: GenerationEngineDto; label: string }> = [
   { value: "CLAUDE", label: "Claude" },
   { value: "CODEX", label: "Codex" },
