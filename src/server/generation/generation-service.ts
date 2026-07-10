@@ -1,24 +1,27 @@
 import { rm } from "node:fs/promises";
 import path from "node:path";
-import type { GenerationJob, Prisma } from "@prisma/client";
+import { Prisma, type GenerationItemRevision, type GenerationJob } from "@prisma/client";
 import { parseImportJson, type ImportQuestion } from "@/core/import-schema";
 import { extractJsonObject } from "@/core/json-extract";
 import { parseKeywordTagJson } from "@/core/keyword-tag-schema";
 import {
   buildCliGenerationPrompt,
   buildCliKeywordTagPrompt,
+  buildCliRevisionPrompt,
   buildCliVerifyPrompt,
   type ExistingQuestions,
   type VariantSource,
 } from "@/core/prompt-template";
 import { capSummaries, summarizeQuestionPayload } from "@/core/question-summary";
 import { mergeVerdicts, parseVerifyJson } from "@/core/verify-schema";
+import { parseRevisionJson } from "@/core/revision-schema";
 import type {
   GenerationEngineDto,
   GenerationItemDto,
   GenerationJobDto,
   GenerationJobKindDto,
   GenerationJobSummaryDto,
+  GenerationItemRevisionDto,
   KeywordTagItemDto,
 } from "@/lib/api-types";
 import { prisma } from "../db";
@@ -34,7 +37,23 @@ const VARIANT_SOURCE_LIMIT = 10;
 const EXISTING_KEYWORD_LIMIT = 50;
 const KEYWORD_TAG_BATCH_LIMIT = 50;
 
-function toDto(job: GenerationJob): GenerationJobDto {
+function toRevisionDto(revision: GenerationItemRevision): GenerationItemRevisionDto {
+  return {
+    status: revision.status,
+    engine: revision.engine,
+    verdict: revision.verdict === "PASS" ? "pass" : revision.verdict === "FAIL" ? "fail" : null,
+    comment: revision.comment,
+    proposedQuestion: revision.proposedQuestion,
+    appliedQuestion: revision.appliedQuestion,
+    errorMessage: revision.errorMessage,
+  };
+}
+
+function toDto(job: GenerationJob, revisions: GenerationItemRevision[] = []): GenerationJobDto {
+  const revisionByIndex = new Map(revisions.map((revision) => [revision.itemIndex, revision]));
+  const storedItems = job.kind === "QUESTION" && job.status === "SUCCEEDED"
+    ? (job.result as unknown as Array<Exclude<GenerationItemDto, { index: number; ok: false; errors: string[] }>> | null)
+    : null;
   return {
     id: job.id,
     topicId: job.topicId,
@@ -42,10 +61,12 @@ function toDto(job: GenerationJob): GenerationJobDto {
     verifyEngine: job.verifyEngine,
     status: job.status,
     kind: job.kind as GenerationJobKindDto,
-    items:
-      job.kind === "QUESTION" && job.status === "SUCCEEDED"
-        ? (job.result as unknown as GenerationJobDto["items"])
+    items: storedItems?.map((item) => ({
+      ...item,
+      revision: revisionByIndex.has(item.index)
+        ? toRevisionDto(revisionByIndex.get(item.index) as GenerationItemRevision)
         : null,
+    })) ?? null,
     keywordItems:
       job.kind === "KEYWORD_TAG" && job.status === "SUCCEEDED"
         ? (job.result as unknown as KeywordTagItemDto[])
@@ -428,8 +449,95 @@ async function failJob(
   });
 }
 
+function jobItems(job: GenerationJob): GenerationItemDto[] {
+  return (job.result as unknown as GenerationItemDto[] | null) ?? [];
+}
+
+export async function createItemRevision(input: {
+  jobId: number;
+  itemIndex: number;
+  engine: GenerationEngineDto;
+  instructions: string;
+}): Promise<GenerationJobDto> {
+  const job = await prisma.generationJob.findUnique({
+    where: { id: input.jobId },
+    include: { topic: true },
+  });
+  if (!job) throw new ServiceError("JOB_NOT_FOUND", "생성 작업을 찾을 수 없습니다", 404);
+  if (job.kind !== "QUESTION" || job.status !== "SUCCEEDED" || job.approvedAt) {
+    throw new ServiceError("JOB_NOT_REVISIONABLE", "저장 전 완료된 문제 생성 작업만 재검증할 수 있습니다", 409);
+  }
+  const item = jobItems(job).find((candidate) => candidate.index === input.itemIndex);
+  if (!item || !item.ok) {
+    throw new ServiceError("ITEM_NOT_FOUND", "재검증할 문제를 찾을 수 없습니다", 404);
+  }
+  const existing = await prisma.generationItemRevision.findUnique({
+    where: { generationJobId_itemIndex: { generationJobId: job.id, itemIndex: input.itemIndex } },
+  });
+  if (existing?.status === "RUNNING") {
+    throw new ServiceError("REVISION_RUNNING", "이 문제의 AI 재검증이 진행 중입니다", 409);
+  }
+  const sourceQuestion = (existing?.appliedQuestion as unknown as ImportQuestion | null) ?? item.question as ImportQuestion;
+  const revision = await prisma.generationItemRevision.upsert({
+    where: { generationJobId_itemIndex: { generationJobId: job.id, itemIndex: input.itemIndex } },
+    create: { generationJobId: job.id, itemIndex: input.itemIndex, engine: input.engine, instructions: input.instructions },
+    update: {
+      engine: input.engine, instructions: input.instructions, status: "RUNNING", verdict: null,
+      comment: null, proposedQuestion: Prisma.JsonNull, errorMessage: null, rawOutput: null, finishedAt: null,
+    },
+  });
+  const references = await resolveReferenceFiles(
+    job.topic.referenceDir,
+    (job.referenceFiles as unknown as string[] | null) ?? [],
+  );
+  void runItemRevision(revision.id, job.id, job.topic.name, sourceQuestion, references).catch((error) => {
+    console.error(`generation item revision ${revision.id} failed unexpectedly`, error);
+  });
+  return getJob(job.id);
+}
+
+async function runItemRevision(
+  revisionId: number,
+  jobId: number,
+  topicName: string,
+  question: ImportQuestion,
+  referenceFiles: string[],
+): Promise<void> {
+  const revision = await prisma.generationItemRevision.findUnique({ where: { id: revisionId } });
+  if (!revision || revision.status !== "RUNNING") return;
+  const dir = path.join(jobOutputDir(jobId), "revisions", String(revision.itemIndex));
+  const resultPath = path.join(dir, "result.json");
+  const prompt = buildCliRevisionPrompt(topicName, question, revision.instructions, resultPath, referenceFiles);
+  const run = await runEngine(revision.engine, prompt, dir);
+  if (!run.ok) {
+    await prisma.generationItemRevision.update({ where: { id: revisionId }, data: { status: "FAILED", errorMessage: run.failureReason, finishedAt: new Date() } });
+    return;
+  }
+  const parsed = parseRevisionJson(extractJsonObject(run.resultText));
+  if (!parsed.ok) {
+    await prisma.generationItemRevision.update({ where: { id: revisionId }, data: { status: "FAILED", errorMessage: parsed.fatal, rawOutput: run.resultText, finishedAt: new Date() } });
+    return;
+  }
+  await prisma.generationItemRevision.update({
+    where: { id: revisionId },
+    data: { status: "SUCCEEDED", verdict: parsed.verdict === "pass" ? "PASS" : "FAIL", comment: parsed.comment, proposedQuestion: parsed.question as unknown as Prisma.InputJsonValue, rawOutput: run.resultText, finishedAt: new Date() },
+  });
+}
+
+export async function setItemRevisionUsage(jobId: number, itemIndex: number, useRevision: boolean): Promise<GenerationJobDto> {
+  const job = await prisma.generationJob.findUnique({ where: { id: jobId } });
+  if (!job) throw new ServiceError("JOB_NOT_FOUND", "생성 작업을 찾을 수 없습니다", 404);
+  if (job.approvedAt) throw new ServiceError("JOB_APPROVED", "저장된 작업의 수정본은 바꿀 수 없습니다", 409);
+  const revision = await prisma.generationItemRevision.findUnique({ where: { generationJobId_itemIndex: { generationJobId: jobId, itemIndex } } });
+  if (!revision || revision.status !== "SUCCEEDED" || !revision.proposedQuestion) {
+    throw new ServiceError("REVISION_NOT_READY", "적용할 AI 수정본이 없습니다", 409);
+  }
+  await prisma.generationItemRevision.update({ where: { id: revision.id }, data: { appliedQuestion: useRevision ? revision.proposedQuestion : Prisma.JsonNull } });
+  return getJob(jobId);
+}
+
 export async function getJob(id: number): Promise<GenerationJobDto> {
-  const job = await prisma.generationJob.findUnique({ where: { id } });
+  const job = await prisma.generationJob.findUnique({ where: { id }, include: { itemRevisions: true } });
   if (!job) {
     throw new ServiceError("JOB_NOT_FOUND", "생성 작업을 찾을 수 없습니다", 404);
   }
@@ -447,7 +555,7 @@ export async function getJob(id: number): Promise<GenerationJobDto> {
         finishedAt: new Date(),
       },
     });
-    return toDto(updated);
+    return getJob(updated.id);
   }
 
   if (job.status === "VERIFYING" && isStale) {
@@ -460,10 +568,10 @@ export async function getJob(id: number): Promise<GenerationJobDto> {
         finishedAt: new Date(),
       },
     });
-    return toDto(updated);
+    return getJob(updated.id);
   }
 
-  return toDto(job);
+  return toDto(job, job.itemRevisions);
 }
 
 export async function approveJob(
@@ -528,6 +636,10 @@ export async function approveJob(
 
   const items = job.result as unknown as GenerationItemDto[] | null;
   const byIndex = new Map(items?.map((item) => [item.index, item]) ?? []);
+  const revisions = await prisma.generationItemRevision.findMany({
+    where: { generationJobId: id, appliedQuestion: { not: Prisma.JsonNull } },
+  });
+  const appliedByIndex = new Map(revisions.map((revision) => [revision.itemIndex, revision.appliedQuestion]));
   const questions: ImportQuestion[] = [];
   for (const index of indices) {
     const item = byIndex.get(index);
@@ -538,7 +650,7 @@ export async function approveJob(
         400,
       );
     }
-    questions.push(item.question as unknown as ImportQuestion);
+    questions.push((appliedByIndex.get(index) ?? item.question) as unknown as ImportQuestion);
   }
   if (questions.length === 0) {
     throw new ServiceError("INVALID_ITEMS", "저장할 항목이 없습니다", 400);

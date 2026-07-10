@@ -330,6 +330,46 @@ ${existingKeywordsSection(existingKeywords)}## 출력 형식
 `;
 }
 
+export function buildCliRevisionPrompt(
+  topicName: string,
+  question: unknown,
+  instructions: string,
+  resultPath: string,
+  referenceFiles: string[] = [],
+): string {
+  return `당신은 학습 문제 검증 및 개선 전문가입니다. 주제 "${topicName}"의 아래 문제를 검증하고 개선하세요.
+
+${webVerificationSection("검증하기 전에")}${referenceSection(referenceFiles, "검증하기 전에")}## 대상 문제
+
+\`\`\`json
+${JSON.stringify(question, null, 2)}
+\`\`\`
+
+## 검증 기준
+
+- 정답과 answer_index 또는 빈칸 답이 사실에 맞는지 확인합니다.
+- 질문의 명확성, 복수 정답 가능성, 해설의 일관성을 확인합니다.
+- 문제 유형(mcq 또는 cloze)은 유지하고, 수정이 필요하면 더 정확하고 명확한 문제로 고칩니다.
+
+## 추가 요청
+
+${instructions.trim() || "(없음)"}
+
+## 출력 형식
+
+다른 설명 없이 아래 JSON만 ${resultPath}에 UTF-8로 저장하세요. stdout에는 결과 JSON을 출력하지 마세요.
+
+{
+  "verdict": "pass",
+  "comment": "검증 결과와 수정 이유",
+  "revised_question": { "type": "mcq" }
+}
+
+- revised_question은 반드시 완전한 가져오기 문제 형식이어야 합니다.
+- 이미 적절한 문제여도 revised_question에는 검증한 문제 전체를 넣으세요.
+`;
+}
+
 export function buildKeywordSuggestionPrompt(
   topicName: string,
   question: { type: QuestionType; payload: unknown; explanation: string | null },

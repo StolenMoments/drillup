@@ -174,6 +174,20 @@ export const api = {
         method: "POST",
         body: JSON.stringify(input),
       }),
+    reviseItem: (
+      id: number,
+      index: number,
+      input: { engine: GenerationEngineDto; instructions?: string },
+    ) =>
+      request<{ job: GenerationJobDto }>(`/api/generate/${id}/items/${index}/revision`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    setRevisionUsage: (id: number, index: number, useRevision: boolean) =>
+      request<{ job: GenerationJobDto }>(`/api/generate/${id}/items/${index}/revision`, {
+        method: "PATCH",
+        body: JSON.stringify({ useRevision }),
+      }),
   },
   study: {
     queue: (mode: "srs" | "practice", topicId?: number, keywordId?: number) => {

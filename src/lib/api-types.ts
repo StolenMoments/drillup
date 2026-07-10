@@ -135,6 +135,17 @@ export type GenerationStatusDto =
   | "FAILED";
 export type GenerationVerdictDto = "pass" | "fail" | "unverified";
 export type GenerationJobKindDto = "QUESTION" | "KEYWORD_TAG";
+export type GenerationItemRevisionStatusDto = "RUNNING" | "SUCCEEDED" | "FAILED";
+
+export interface GenerationItemRevisionDto {
+  status: GenerationItemRevisionStatusDto;
+  engine: GenerationEngineDto;
+  verdict: "pass" | "fail" | null;
+  comment: string | null;
+  proposedQuestion: unknown | null;
+  appliedQuestion: unknown | null;
+  errorMessage: string | null;
+}
 
 export interface KeywordTagItemDto {
   id: number;
@@ -149,6 +160,7 @@ export type GenerationItemDto =
       question: unknown;
       verdict: GenerationVerdictDto;
       verdictComment: string | null;
+      revision: GenerationItemRevisionDto | null;
     }
   | { index: number; ok: false; errors: string[] };
 
