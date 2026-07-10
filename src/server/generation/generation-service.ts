@@ -704,14 +704,15 @@ export async function approveJob(
   const questions: ImportQuestion[] = [];
   for (const index of indices) {
     const item = byIndex.get(index);
-    if (!item || !item.ok || item.verdict === "fail") {
+    const appliedQuestion = appliedByIndex.get(index);
+    if (!item || !item.ok || (item.verdict === "fail" && !appliedQuestion)) {
       throw new ServiceError(
         "INVALID_ITEMS",
         "저장할 수 없는 항목이 포함되어 있습니다",
         400,
       );
     }
-    questions.push((appliedByIndex.get(index) ?? item.question) as unknown as ImportQuestion);
+    questions.push((appliedQuestion ?? item.question) as unknown as ImportQuestion);
   }
   if (questions.length === 0) {
     throw new ServiceError("INVALID_ITEMS", "저장할 항목이 없습니다", 400);
