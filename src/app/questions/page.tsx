@@ -329,7 +329,12 @@ export default function QuestionsPage() {
               <span className="chip">
                 {question.type === "MCQ" ? "객관식" : "빈칸"}
               </span>
-              <span className="min-w-0 flex-1 truncate">{question.preview}</span>
+              <Link
+                href={`/questions/${question.id}`}
+                className="min-w-0 flex-1 truncate font-medium text-[color:var(--text)] hover:text-[color:var(--brand)] hover:underline focus-visible:rounded-sm"
+              >
+                {question.preview}
+              </Link>
               <span className="shrink-0 text-sm text-[color:var(--muted)]">
                 {accuracyText(question)}
               </span>
