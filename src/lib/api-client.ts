@@ -146,6 +146,7 @@ export const api = {
       verifyEngine: GenerationEngineDto;
       instructions: string;
       referenceFiles: string[];
+      sourceQuestionIds?: number[];
     }) =>
       request<{ job: GenerationJobDto }>("/api/generate", {
         method: "POST",

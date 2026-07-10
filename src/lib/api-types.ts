@@ -153,6 +153,7 @@ export interface GenerationJobDto {
   finishedAt: string | null;
   approvedAt: string | null;
   savedCount: number;
+  sourceQuestionIds: number[] | null;
 }
 
 export interface GenerationJobSummaryDto {

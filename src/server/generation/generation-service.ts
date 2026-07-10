@@ -7,6 +7,7 @@ import {
   buildCliGenerationPrompt,
   buildCliVerifyPrompt,
   type ExistingQuestions,
+  type VariantSource,
 } from "@/core/prompt-template";
 import { capSummaries, summarizeQuestionPayload } from "@/core/question-summary";
 import { mergeVerdicts, parseVerifyJson } from "@/core/verify-schema";
@@ -24,6 +25,8 @@ import { generationTimeoutMs, jobOutputDir, runEngine } from "./run-engine";
 
 const ORPHAN_GRACE_MS = 60_000;
 const EXISTING_QUESTION_LIMIT = 100;
+const VARIANT_SOURCE_LIMIT = 10;
+const EXISTING_KEYWORD_LIMIT = 50;
 
 function toDto(job: GenerationJob): GenerationJobDto {
   return {
@@ -42,6 +45,7 @@ function toDto(job: GenerationJob): GenerationJobDto {
     finishedAt: job.finishedAt?.toISOString() ?? null,
     approvedAt: job.approvedAt?.toISOString() ?? null,
     savedCount: job.savedCount,
+    sourceQuestionIds: (job.sourceQuestionIds as unknown as number[] | null) ?? null,
   };
 }
 
@@ -88,12 +92,23 @@ async function loadExistingQuestions(
   };
 }
 
+async function loadExistingKeywords(topicId: number): Promise<string[]> {
+  const keywords = await prisma.keyword.findMany({
+    where: { questions: { some: { question: { topicId } } } },
+    orderBy: { questions: { _count: "desc" } },
+    take: EXISTING_KEYWORD_LIMIT,
+    select: { name: true },
+  });
+  return keywords.map((keyword) => keyword.name);
+}
+
 export async function createJob(input: {
   topicId: number;
   engine: GenerationEngineDto;
   verifyEngine: GenerationEngineDto;
   instructions: string;
   referenceFiles: string[];
+  sourceQuestionIds?: number[];
 }): Promise<GenerationJobDto> {
   const topic = await prisma.topic.findUnique({ where: { id: input.topicId } });
   if (!topic) {
@@ -117,6 +132,29 @@ export async function createJob(input: {
   );
   const existing = await loadExistingQuestions(input.topicId);
 
+  let variantSources: VariantSource[] = [];
+  const sourceQuestionIds = input.sourceQuestionIds?.slice(0, VARIANT_SOURCE_LIMIT);
+  if (sourceQuestionIds && sourceQuestionIds.length > 0) {
+    const sourceQuestions = await prisma.question.findMany({
+      where: { id: { in: sourceQuestionIds } },
+    });
+    if (sourceQuestions.length !== new Set(sourceQuestionIds).size) {
+      throw new ServiceError("NOT_FOUND", "원본 문제를 찾을 수 없습니다", 404);
+    }
+    variantSources = sourceQuestions.map((question) => ({
+      question: JSON.stringify(
+        {
+          type: question.type === "MCQ" ? "mcq" : "cloze",
+          ...(question.payload as Record<string, unknown>),
+          ...(question.explanation ? { explanation: question.explanation } : {}),
+        },
+        null,
+        2,
+      ),
+    }));
+  }
+  const existingKeywords = await loadExistingKeywords(input.topicId);
+
   const job = await prisma.generationJob.create({
     data: {
       topicId: input.topicId,
@@ -124,6 +162,8 @@ export async function createJob(input: {
       verifyEngine: input.verifyEngine,
       instructions: input.instructions,
       referenceFiles: input.referenceFiles,
+      sourceQuestionIds:
+        sourceQuestionIds && sourceQuestionIds.length > 0 ? sourceQuestionIds : undefined,
     },
   });
 
@@ -133,6 +173,8 @@ export async function createJob(input: {
     input.instructions,
     existing,
     referenceAbsPaths,
+    existingKeywords,
+    variantSources,
   ).catch((e) => {
     console.error(`generation job ${job.id} failed unexpectedly`, e);
   });
@@ -146,6 +188,8 @@ async function runJob(
   instructions: string,
   existing: ExistingQuestions,
   referenceAbsPaths: string[],
+  existingKeywords: string[],
+  variantSources: VariantSource[],
 ): Promise<void> {
   const dir = jobOutputDir(jobId);
   const resultPath = path.join(dir, "result.json");
@@ -155,6 +199,8 @@ async function runJob(
     resultPath,
     existing,
     referenceAbsPaths,
+    existingKeywords,
+    variantSources,
   );
 
   const job = await prisma.generationJob.findUnique({ where: { id: jobId } });
