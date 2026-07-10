@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseImportJson } from "./import-schema";
+import { importMcqSchema, parseImportJson } from "./import-schema";
 
 const validMcq = {
   type: "mcq",
@@ -144,5 +144,50 @@ describe("parseImportJson mixed results", () => {
     expect(
       result.items[1].ok === false && result.items[1].errors.length,
     ).toBeGreaterThan(0);
+  });
+});
+
+describe("keywords 필드", () => {
+  const baseMcq = {
+    type: "mcq",
+    question: "질문",
+    choices: ["a", "b", "c", "d"],
+    answer_index: 0,
+  };
+
+  it("keywords가 있으면 통과하고 값을 유지한다", () => {
+    const result = importMcqSchema.safeParse({
+      ...baseMcq,
+      keywords: ["TCP", "3-way handshake"],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.keywords).toEqual(["TCP", "3-way handshake"]);
+    }
+  });
+
+  it("keywords가 없어도 통과한다", () => {
+    expect(importMcqSchema.safeParse(baseMcq).success).toBe(true);
+  });
+
+  it("keywords가 6개 이상이면 거부한다", () => {
+    const result = importMcqSchema.safeParse({
+      ...baseMcq,
+      keywords: ["1", "2", "3", "4", "5", "6"],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("빈 문자열 키워드는 거부한다", () => {
+    const result = importMcqSchema.safeParse({ ...baseMcq, keywords: ["  "] });
+    expect(result.success).toBe(false);
+  });
+
+  it("50자를 넘는 키워드는 거부한다", () => {
+    const result = importMcqSchema.safeParse({
+      ...baseMcq,
+      keywords: ["a".repeat(51)],
+    });
+    expect(result.success).toBe(false);
   });
 });

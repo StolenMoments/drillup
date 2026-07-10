@@ -1,7 +1,13 @@
 import { z } from "zod";
+import { KEYWORD_MAX_LENGTH } from "./keyword";
 
 const nonBlank = z.string().trim().min(1, "빈 문자열은 허용하지 않습니다");
 const PLACEHOLDER_RE = /\{\{(\d+)\}\}/g;
+
+const keywordListSchema = z
+  .array(nonBlank.max(KEYWORD_MAX_LENGTH, `키워드는 ${KEYWORD_MAX_LENGTH}자 이하여야 합니다`))
+  .max(5, "키워드는 최대 5개입니다")
+  .optional();
 
 const mcqBase = z.object({
   question: nonBlank,
@@ -88,11 +94,19 @@ export const mcqPayloadSchema = mcqBase.superRefine(refineMcq);
 export const clozePayloadSchema = clozeBase.superRefine(refineCloze);
 
 export const importMcqSchema = mcqBase
-  .extend({ type: z.literal("mcq"), explanation: z.string().optional() })
+  .extend({
+    type: z.literal("mcq"),
+    explanation: z.string().optional(),
+    keywords: keywordListSchema,
+  })
   .superRefine(refineMcq);
 
 export const importClozeSchema = clozeBase
-  .extend({ type: z.literal("cloze"), explanation: z.string().optional() })
+  .extend({
+    type: z.literal("cloze"),
+    explanation: z.string().optional(),
+    keywords: keywordListSchema,
+  })
   .superRefine(refineCloze);
 
 export type ImportQuestion =
