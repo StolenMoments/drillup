@@ -238,6 +238,16 @@ describe("키워드/변형 확장", () => {
   });
 });
 
+describe("exam distractor requirements", () => {
+  it("requires and verifies at least two close-but-wrong distractors", () => {
+    const generation = buildCliGenerationPrompt("topic", "", "D:\\r.json", NO_EXISTING);
+    const verification = buildCliVerifyPrompt("topic", VERIFY_ITEMS, "D:\\v.json");
+    expect(generation).toContain("at least two distractors");
+    expect(generation).toContain("realistic misconceptions");
+    expect(verification).toContain("at least two distractors are close-but-wrong");
+  });
+});
+
 describe("buildKeywordSuggestionPrompt", () => {
   it("문제·기존 키워드·이미 부여된 키워드·최대 5개 규칙을 포함한다", () => {
     const prompt = buildKeywordSuggestionPrompt(
