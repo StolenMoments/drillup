@@ -1,9 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api-client";
 import type {
+  GenerationEngineDto,
+  KeywordDto,
   QuestionListPageDto,
   QuestionListSortDto,
   QuestionTypeDto,
@@ -31,8 +34,13 @@ function accuracyText(question: QuestionListPageDto["items"][number]): string {
 }
 
 export default function QuestionsPage() {
+  const router = useRouter();
   const [topics, setTopics] = useState<TopicDto[]>([]);
   const [topicId, setTopicId] = useState<number | "">("");
+  const [keywordId, setKeywordId] = useState<number | "">("");
+  const [keywords, setKeywords] = useState<KeywordDto[]>([]);
+  const [tagEngine, setTagEngine] = useState<GenerationEngineDto>("CLAUDE");
+  const [tagging, setTagging] = useState(false);
   const [typeFilter, setTypeFilter] = useState<QuestionTypeDto | "">("");
   const [sort, setSort] = useState<QuestionListSortDto>("latest");
   const [page, setPage] = useState(1);
@@ -43,19 +51,25 @@ export default function QuestionsPage() {
   const reload = useCallback(
     async (options: {
       selectedTopicId: number | "";
+      selectedKeywordId: number | "";
       selectedType: QuestionTypeDto | "";
       selectedSort: QuestionListSortDto;
       selectedPage: number;
     }) => {
       const requestId = ++requestIdRef.current;
       try {
-        const [topicList, questionPage] = await Promise.all([
+        const [topicList, keywordList, questionPage] = await Promise.all([
           api.topics.list(),
+          api.keywords.list(),
           api.questions.list({
             topicId:
               options.selectedTopicId === ""
                 ? undefined
                 : options.selectedTopicId,
+            keywordId:
+              options.selectedKeywordId === ""
+                ? undefined
+                : options.selectedKeywordId,
             type: options.selectedType === "" ? undefined : options.selectedType,
             sort: options.selectedSort,
             page: options.selectedPage,
@@ -63,6 +77,7 @@ export default function QuestionsPage() {
         ]);
         if (requestId !== requestIdRef.current) return;
         setTopics(topicList);
+        setKeywords(keywordList.keywords);
         setPageData(questionPage);
         if (questionPage.page !== options.selectedPage) {
           setPage(questionPage.page);
@@ -82,12 +97,13 @@ export default function QuestionsPage() {
     void Promise.resolve().then(() =>
       reload({
         selectedTopicId: topicId,
+        selectedKeywordId: keywordId,
         selectedType: typeFilter,
         selectedSort: sort,
         selectedPage: page,
       }),
     );
-  }, [topicId, typeFilter, sort, page, reload]);
+  }, [topicId, keywordId, typeFilter, sort, page, reload]);
 
   function resetPage() {
     setPage(1);
@@ -104,6 +120,7 @@ export default function QuestionsPage() {
 
     await reload({
       selectedTopicId: topicId,
+      selectedKeywordId: keywordId,
       selectedType: typeFilter,
       selectedSort: sort,
       selectedPage: pageData.page,
@@ -120,6 +137,7 @@ export default function QuestionsPage() {
       await api.topics.update(topicId, { name: name.trim() });
       await reload({
         selectedTopicId: topicId,
+        selectedKeywordId: keywordId,
         selectedType: typeFilter,
         selectedSort: sort,
         selectedPage: page,
@@ -145,6 +163,7 @@ export default function QuestionsPage() {
       });
       await reload({
         selectedTopicId: topicId,
+        selectedKeywordId: keywordId,
         selectedType: typeFilter,
         selectedSort: sort,
         selectedPage: page,
@@ -169,6 +188,20 @@ export default function QuestionsPage() {
     await api.topics.remove(topicId);
     setTopicId("");
     resetPage();
+  }
+
+  async function runKeywordTag() {
+    if (topicId === "" || tagging) return;
+    setTagging(true);
+    try {
+      const { job } = await api.generate.keywordTag({ topicId, engine: tagEngine });
+      router.push(`/generate/${job.id}`);
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "키워드 부여 요청에 실패했습니다",
+      );
+      setTagging(false);
+    }
   }
 
   const questions = pageData.items;
@@ -213,6 +246,21 @@ export default function QuestionsPage() {
           <option value="CLOZE">빈칸</option>
         </select>
         <select
+          value={keywordId}
+          onChange={(event) => {
+            setKeywordId(event.target.value ? Number(event.target.value) : "");
+            resetPage();
+          }}
+          className="field w-auto min-w-44"
+        >
+          <option value="">전체 키워드</option>
+          {keywords.map((keyword) => (
+            <option key={keyword.id} value={keyword.id}>
+              {keyword.name} ({keyword.questionCount})
+            </option>
+          ))}
+        </select>
+        <select
           value={sort}
           onChange={(event) => {
             setSort(event.target.value as QuestionListSortDto);
@@ -243,6 +291,25 @@ export default function QuestionsPage() {
               className="btn btn-danger min-h-9 px-3 text-sm"
             >
               주제 삭제
+            </button>
+            <select
+              value={tagEngine}
+              onChange={(event) =>
+                setTagEngine(event.target.value as GenerationEngineDto)
+              }
+              className="field w-auto min-w-32"
+            >
+              <option value="CLAUDE">claude code</option>
+              <option value="CODEX">codex</option>
+              <option value="ANTIGRAVITY">antigravity</option>
+            </select>
+            <button
+              type="button"
+              onClick={runKeywordTag}
+              disabled={tagging}
+              className="btn btn-secondary min-h-9 px-3 text-sm"
+            >
+              {tagging ? "요청 중..." : "🏷️ 키워드 일괄 부여"}
             </button>
           </>
         )}
