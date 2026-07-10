@@ -6,9 +6,14 @@ import { useEffect, useState } from "react";
 import QuestionPreview from "@/components/QuestionPreview";
 import type { ImportQuestion } from "@/core/import-schema";
 import { api } from "@/lib/api-client";
-import type { GenerationJobDto } from "@/lib/api-types";
+import type { GenerationEngineDto, GenerationJobDto } from "@/lib/api-types";
 
 const POLL_INTERVAL_MS = 3000;
+const ENGINES: Array<{ value: GenerationEngineDto; label: string }> = [
+  { value: "CLAUDE", label: "Claude" },
+  { value: "CODEX", label: "Codex" },
+  { value: "ANTIGRAVITY", label: "agy" },
+];
 
 function selectValidItems(job: GenerationJobDto): Set<number> {
   if (job.status !== "SUCCEEDED") return new Set<number>();
@@ -46,6 +51,7 @@ export default function GenerationDetailPage() {
   const [elapsed, setElapsed] = useState(0);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [revisionInputs, setRevisionInputs] = useState<Record<number, { engine: GenerationEngineDto; instructions: string }>>({});
 
   useEffect(() => {
     let ignore = false;
@@ -80,12 +86,15 @@ export default function GenerationDetailPage() {
   }, [jobId]);
 
   useEffect(() => {
-    if (!job || (job.status !== "RUNNING" && job.status !== "VERIFYING")) return;
-    const startedAt = new Date(job.createdAt).getTime();
+    if (!job) return;
+    const currentJob = job;
+    const hasRunningRevision = currentJob.items?.some((item) => item.ok && item.revision?.status === "RUNNING") ?? false;
+    if (currentJob.status !== "RUNNING" && currentJob.status !== "VERIFYING" && !hasRunningRevision) return;
+    const startedAt = new Date(currentJob.createdAt).getTime();
     const timer = setInterval(async () => {
       setElapsed(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
       try {
-        const { job: next } = await api.generate.get(job.id);
+        const { job: next } = await api.generate.get(currentJob.id);
         setJob(next);
         if (next.status === "SUCCEEDED") setSelected(selectValidItems(next));
       } catch {
@@ -94,6 +103,38 @@ export default function GenerationDetailPage() {
     }, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [job]);
+
+  function revisionInput(index: number) {
+    return revisionInputs[index] ?? { engine: job?.verifyEngine ?? "CLAUDE", instructions: "" };
+  }
+
+  function updateRevisionInput(index: number, update: Partial<{ engine: GenerationEngineDto; instructions: string }>) {
+    setRevisionInputs((prev) => ({ ...prev, [index]: { ...revisionInput(index), ...update } }));
+  }
+
+  async function requestRevision(index: number) {
+    if (!job) return;
+    const input = revisionInput(index);
+    setMessage("");
+    try {
+      const result = await api.generate.reviseItem(job.id, index, input);
+      setJob(result.job);
+      setMessage("✅ AI 재검증을 시작했습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "❌ AI 재검증을 시작하지 못했습니다.");
+    }
+  }
+
+  async function setRevisionUsage(index: number, useRevision: boolean) {
+    if (!job) return;
+    try {
+      const result = await api.generate.setRevisionUsage(job.id, index, useRevision);
+      setJob(result.job);
+      setMessage(useRevision ? "✅ 수정본을 적용했습니다." : "✅ 원문으로 되돌렸습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "❌ 수정본을 적용하지 못했습니다.");
+    }
+  }
 
   function toggle(index: number) {
     setSelected((prev) => {
@@ -211,8 +252,13 @@ export default function GenerationDetailPage() {
               ⚠️ 검증을 수행하지 못했습니다: {job.verifyWarning}
             </p>
           )}
-          {job.items.map((item) => (
-            <div
+          {job.items.map((item) => {
+            const currentQuestion = item.ok
+              ? (item.revision?.appliedQuestion ?? item.question) as ImportQuestion
+              : null;
+            const revision = item.ok ? item.revision : null;
+            const input = revisionInput(item.index);
+            return <div
               key={item.index}
               className={`surface surface-pad ${
                 item.ok ? "" : "border-[color:var(--danger)] bg-[color:var(--danger-soft)]"
@@ -265,7 +311,7 @@ export default function GenerationDetailPage() {
               {item.ok ? (
                 <>
                   <QuestionPreview
-                    question={item.question as ImportQuestion}
+                    question={currentQuestion as ImportQuestion}
                     revealed={revealed.has(item.index)}
                   />
                   {(item.question as ImportQuestion).keywords?.length ? (
@@ -283,6 +329,50 @@ export default function GenerationDetailPage() {
                   {item.verdict === "pass" && item.verdictComment && (
                     <p className="subtle mt-2 text-xs">{item.verdictComment}</p>
                   )}
+                  <details className="mt-3 border-t border-[color:var(--border)] pt-3">
+                    <summary className="cursor-pointer text-sm font-semibold text-[color:var(--brand)]">
+                      ✨ AI 재검증 및 수정
+                    </summary>
+                    <div className="mt-3 space-y-3">
+                      <p className="muted text-sm">
+                        엔진을 고르고 추가 요청을 남기세요. 비워도 기본 검증 기준으로 수정본을 제안합니다.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {ENGINES.map(({ value, label }) => (
+                          <label key={value} className="chip gap-2">
+                            <input type="radio" name={`revision-engine-${item.index}`} checked={input.engine === value}
+                              onChange={() => updateRevisionInput(item.index, { engine: value })}
+                              disabled={revision?.status === "RUNNING"} />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                      <textarea value={input.instructions} rows={3} className="textarea text-sm"
+                        placeholder="추가로 확인하거나 개선할 사항 (선택)"
+                        onChange={(event) => updateRevisionInput(item.index, { instructions: event.target.value })}
+                        disabled={revision?.status === "RUNNING"} />
+                      <button type="button" onClick={() => void requestRevision(item.index)}
+                        disabled={revision?.status === "RUNNING"} className="btn btn-secondary text-sm">
+                        {revision?.status === "RUNNING" ? "AI 재검증 중…" : "AI 재검증 및 수정본 받기"}
+                      </button>
+                      {revision?.status === "FAILED" && (
+                        <p className="text-sm text-[color:var(--danger)]">❌ {revision.errorMessage}</p>
+                      )}
+                      {revision?.status === "SUCCEEDED" && Boolean(revision.proposedQuestion) && (
+                        <div className="space-y-3 border-t border-[color:var(--border)] pt-3">
+                          <p className="text-sm"><span className="chip">AI 판정: {revision.verdict === "pass" ? "통과" : "개선 권장"}</span> {revision.comment}</p>
+                          <div className="grid gap-3 lg:grid-cols-2">
+                            <div className="space-y-2"><p className="text-sm font-semibold">현재 저장될 버전</p><QuestionPreview question={currentQuestion as ImportQuestion} revealed={revealed.has(item.index)} /></div>
+                            <div className="space-y-2"><p className="text-sm font-semibold">AI 수정 제안</p><QuestionPreview question={revision.proposedQuestion as ImportQuestion} revealed={revealed.has(item.index)} /></div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button type="button" onClick={() => void setRevisionUsage(item.index, true)} className="btn btn-primary text-sm">수정본 적용</button>
+                            {Boolean(revision.appliedQuestion) && <button type="button" onClick={() => void setRevisionUsage(item.index, false)} className="btn btn-secondary text-sm">원문으로 되돌리기</button>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </details>
                 </>
               ) : (
                 <ul className="list-inside list-disc text-sm text-[color:var(--danger)]">
@@ -291,8 +381,8 @@ export default function GenerationDetailPage() {
                   ))}
                 </ul>
               )}
-            </div>
-          ))}
+            </div>;
+          })}
         </section>
       )}
 
