@@ -112,6 +112,13 @@ export async function submitReview(input: {
       throw new ServiceError("BAD_REQUEST", "답안 형식이 문제 유형과 다릅니다", 400);
     }
     const payload = question.payload as unknown as McqPayload;
+    if (input.answer.selected_index >= payload.choices.length) {
+      throw new ServiceError(
+        "VALIDATION",
+        "선택한 보기가 문제의 보기 범위를 벗어났습니다",
+        400,
+      );
+    }
     isCorrect = gradeMcq(payload, {
       selected_index: input.answer.selected_index,
     });
