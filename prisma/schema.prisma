@@ -29,6 +29,11 @@ enum GenerationStatus {
   FAILED
 }
 
+enum GenerationJobKind {
+  QUESTION
+  KEYWORD_TAG
+}
+
 model Topic {
   id             Int             @id @default(autoincrement())
   name           String          @unique @db.VarChar(100)
@@ -53,6 +58,7 @@ model Question {
   srsState           SrsState?
   reviewLogs         ReviewLog[]
   answerExplanations AnswerExplanation[]
+  keywords           QuestionKeyword[]
 
   @@map("question")
 }
@@ -94,6 +100,8 @@ model GenerationJob {
   verifyWarning  String?          @map("verify_warning") @db.Text
   rawOutput      String?          @map("raw_output") @db.MediumText
   referenceFiles Json?            @map("reference_files")
+  kind              GenerationJobKind @default(QUESTION)
+  sourceQuestionIds Json?             @map("source_question_ids")
   createdAt      DateTime         @default(now()) @map("created_at")
   finishedAt     DateTime?        @map("finished_at")
   approvedAt     DateTime?        @map("approved_at")
@@ -113,4 +121,23 @@ model AnswerExplanation {
 
   @@unique([questionId, engine])
   @@map("answer_explanation")
+}
+
+model Keyword {
+  id        Int               @id @default(autoincrement())
+  name      String            @unique @db.VarChar(50)
+  createdAt DateTime          @default(now()) @map("created_at")
+  questions QuestionKeyword[]
+
+  @@map("keyword")
+}
+
+model QuestionKeyword {
+  questionId Int      @map("question_id")
+  keywordId  Int      @map("keyword_id")
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  keyword    Keyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+
+  @@id([questionId, keywordId])
+  @@map("question_keyword")
 }
