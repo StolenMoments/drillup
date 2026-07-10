@@ -165,7 +165,7 @@ removeQuestionKeyword(questionId: number, keywordId: number): Promise<void>
 ```
 GET    /api/keywords?topicId=            → 200 { keywords: KeywordDto[] }
 POST   /api/questions/{id}/keywords      요청 { name } → 200 KeywordDto
-DELETE /api/questions/{id}/keywords/{keywordId} → 204
+DELETE /api/questions/{id}/keywords/{keywordId} → 200 { ok: true } (기존 DELETE 라우트 규약)
 GET    /api/questions?keywordId=         (기존 라우트에 필터 추가 — 키워드 페이지의 문제 목록도 이 필터를 사용)
 GET    /api/study/queue?mode=practice&keywordId=  (기존 라우트에 파라미터 추가)
 POST   /api/generate                     요청에 sourceQuestionIds?: number[] 추가
