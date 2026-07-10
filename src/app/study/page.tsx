@@ -26,20 +26,23 @@ function modeLabel(mode: "srs" | "practice"): string {
 function StudySession({
   mode,
   topicId,
+  keywordId,
 }: {
   mode: "srs" | "practice";
   topicId?: number;
+  keywordId?: number;
 }) {
   const [queue, setQueue] = useState<StudyQuestionDto[] | null>(null);
   const [index, setIndex] = useState(0);
   const [result, setResult] = useState<ReviewResultDto | null>(null);
   const [error, setError] = useState("");
+  const [keywordName, setKeywordName] = useState<string | null>(null);
 
   useEffect(() => {
     let ignore = false;
 
     api.study
-      .queue(mode, topicId)
+      .queue(mode, topicId, keywordId)
       .then((questions) => {
         if (!ignore) setQueue(questions);
       })
@@ -54,7 +57,27 @@ function StudySession({
     return () => {
       ignore = true;
     };
-  }, [mode, topicId]);
+  }, [mode, topicId, keywordId]);
+
+  useEffect(() => {
+    if (!keywordId) return;
+
+    let ignore = false;
+    api.keywords
+      .list()
+      .then((data) => {
+        if (ignore) return;
+        const match = data.keywords.find((keyword) => keyword.id === keywordId);
+        setKeywordName(match?.name ?? null);
+      })
+      .catch(() => {
+        // 라벨 표시용 조회 실패는 무시한다.
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [keywordId]);
 
   const current = queue?.[index];
 
@@ -105,7 +128,12 @@ function StudySession({
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="surface surface-pad flex items-center justify-between gap-3 text-sm">
-        <span className="font-semibold">{modeLabel(mode)}</span>
+        <span className="font-semibold">
+          {modeLabel(mode)}
+          {keywordName && (
+            <span className="chip ml-2">🏷️ {keywordName}</span>
+          )}
+        </span>
         <span className="chip">
           {index + 1} / {queue.length}
         </span>
@@ -145,12 +173,15 @@ function StudyContent() {
     params.get("mode") === "practice" ? "practice" : "srs";
   const topicIdRaw = params.get("topicId");
   const topicId = topicIdRaw ? Number(topicIdRaw) : undefined;
+  const keywordIdRaw = params.get("keywordId");
+  const keywordId = keywordIdRaw ? Number(keywordIdRaw) : undefined;
 
   return (
     <StudySession
-      key={`${mode}-${topicId ?? "all"}`}
+      key={`${mode}-${topicId ?? "all"}-${keywordId ?? "all"}`}
       mode={mode}
       topicId={topicId}
+      keywordId={keywordId}
     />
   );
 }
