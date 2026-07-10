@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildAnswerExplanationPrompt,
   buildCliGenerationPrompt,
+  buildCliKeywordTagPrompt,
   buildCliVerifyPrompt,
   buildGenerationPrompt,
 } from "./prompt-template";
@@ -185,6 +186,54 @@ describe("buildCliVerifyPrompt 참고 자료 섹션", () => {
   it("파일이 없으면 섹션을 생략한다", () => {
     const prompt = buildCliVerifyPrompt("주제", VERIFY_ITEMS, "D:\\v.json");
     expect(prompt).not.toContain("## 참고 자료");
+  });
+});
+
+describe("키워드/변형 확장", () => {
+  const existing = { summaries: [], truncated: false };
+
+  it("출력 형식 예시에 keywords 필드가 포함된다", () => {
+    const prompt = buildCliGenerationPrompt("주제", "", "/tmp/r.json", existing);
+    expect(prompt).toContain('"keywords"');
+  });
+
+  it("existingKeywords가 있으면 키워드 규칙 섹션과 목록이 포함된다", () => {
+    const prompt = buildCliGenerationPrompt(
+      "주제", "", "/tmp/r.json", existing, [], ["TCP", "UDP"],
+    );
+    expect(prompt).toContain("## 키워드 규칙");
+    expect(prompt).toContain("- TCP");
+    expect(prompt).toContain("- UDP");
+  });
+
+  it("existingKeywords가 비어 있으면 키워드 규칙 섹션이 없다", () => {
+    const prompt = buildCliGenerationPrompt("주제", "", "/tmp/r.json", existing);
+    expect(prompt).not.toContain("## 키워드 규칙");
+  });
+
+  it("variantSources가 있으면 변형 출제 섹션에 원본 JSON이 포함된다", () => {
+    const prompt = buildCliGenerationPrompt(
+      "주제", "", "/tmp/r.json", existing, [], [],
+      [{ question: '{"type":"mcq","question":"원본Q"}' }],
+    );
+    expect(prompt).toContain("## 변형 출제 (원본 문제)");
+    expect(prompt).toContain("원본Q");
+    expect(prompt).toContain("표현만 바꾼 문제는 금지");
+  });
+
+  it("buildCliKeywordTagPrompt가 문제 목록·기존 키워드·저장 경로를 포함한다", () => {
+    const prompt = buildCliKeywordTagPrompt(
+      "네트워크",
+      [{ id: 7, summary: "TCP 연결 수립 절차는?" }],
+      ["TCP"],
+      "/tmp/result.json",
+    );
+    expect(prompt).toContain("(id=7)");
+    expect(prompt).toContain("TCP 연결 수립 절차는?");
+    expect(prompt).toContain("## 키워드 규칙");
+    expect(prompt).toContain('"assignments"');
+    expect(prompt).toContain("/tmp/result.json");
+    expect(prompt).toContain("stdout에 출력하지 마세요");
   });
 });
 

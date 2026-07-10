@@ -14,7 +14,8 @@ function promptBody(topicName: string): string {
       "question": "질문 텍스트",
       "choices": ["보기1", "보기2", "보기3", "보기4", "보기5"],
       "answer_index": 0,
-      "explanation": "정답에 대한 간결한 해설"
+      "explanation": "정답에 대한 간결한 해설",
+      "keywords": ["핵심 개념 키워드1", "핵심 개념 키워드2"]
     },
     {
       "type": "cloze",
@@ -24,7 +25,8 @@ function promptBody(topicName: string): string {
         { "id": 2, "answer": "빈칸2의 정답 단어" }
       ],
       "distractors": ["그럴듯한 오답 단어1", "오답 단어2"],
-      "explanation": "해설"
+      "explanation": "해설",
+      "keywords": ["핵심 개념 키워드1", "핵심 개념 키워드2"]
     }
   ]
 }
@@ -37,6 +39,7 @@ function promptBody(topicName: string): string {
 - cloze: 빈칸은 문장의 핵심 개념 단어에만 넣을 것.
 - explanation은 한두 문장으로 간결하게 작성.
 - 두 유형(mcq, cloze)을 섞어서 출제할 것.
+- keywords: 문제가 다루는 핵심 개념 키워드 1~3개. 짧은 명사구로 작성.
 `;
 }
 
@@ -65,6 +68,43 @@ function webVerificationSection(lead: string): string {
     "- 참고 자료와 최신 공식 웹 문서가 다르면 최신 공식 웹 문서를 우선하세요.",
     "- 웹 검색 도구를 사용할 수 없으면 추측하지 말고, 사용 가능한 참고 자료와 지식 기준으로만 진행하세요.",
     "- 출력 JSON에는 별도 출처 필드를 추가하지 마세요.",
+    "",
+  ].join("\n");
+}
+
+export function existingKeywordsSection(names: string[]): string {
+  if (names.length === 0) return "";
+  return [
+    "## 키워드 규칙",
+    "",
+    "- 가능하면 아래 기존 키워드를 재사용하고, 딱 맞는 것이 없을 때만 새 키워드를 만드세요.",
+    "- 표기 변형(대소문자, 조사, 축약형)으로 사실상 같은 키워드를 새로 만들지 마세요.",
+    "",
+    "### 기존 키워드 목록",
+    "",
+    ...names.map((name) => `- ${name}`),
+    "",
+  ].join("\n");
+}
+
+export interface VariantSource {
+  question: string; // 원본 문제 JSON 직렬화 (payload + explanation)
+}
+
+function variantSection(sources: VariantSource[]): string {
+  if (sources.length === 0) return "";
+  return [
+    "## 변형 출제 (원본 문제)",
+    "",
+    "아래 원본 문제들과 같은 개념을 다른 각도·형태·상황으로 묻는 문제를 만드세요.",
+    "",
+    ...sources.map(
+      (source, i) =>
+        `### 원본 ${i + 1}\n\n\`\`\`json\n${source.question}\n\`\`\``,
+    ),
+    "",
+    "- 원본과 표현만 바꾼 문제는 금지합니다 (중복 금지 규칙과 같은 기준).",
+    "- 원본이 mcq면 cloze로, cloze면 mcq로 바꾸는 유형 전환도 좋은 변형입니다.",
     "",
   ].join("\n");
 }
@@ -113,10 +153,12 @@ export function buildCliGenerationPrompt(
   resultPath: string,
   existing: ExistingQuestions,
   referenceFiles: string[] = [],
+  existingKeywords: string[] = [],
+  variantSources: VariantSource[] = [],
 ): string {
   const extra = instructions.trim();
   return `${promptBody(topicName)}
-${webVerificationSection("문제를 만들기 전에")}${referenceSection(referenceFiles, "문제를 만들기 전에")}${dedupSection(existing)}
+${webVerificationSection("문제를 만들기 전에")}${referenceSection(referenceFiles, "문제를 만들기 전에")}${variantSection(variantSources)}${existingKeywordsSection(existingKeywords)}${dedupSection(existing)}
 
 ## 추가 지시
 
@@ -242,6 +284,43 @@ ${listing}
 - index는 위 "문제 N" 제목의 N을 그대로 사용하세요.
 - verdict는 "pass" 또는 "fail"만 허용됩니다.
 - comment는 fail이면 사유를 반드시 적고, pass면 빈 문자열이나 짧은 의견을 적으세요.
+
+## 결과 저장 (반드시 준수)
+
+- 결과 JSON을 stdout에 출력하지 마세요.
+- 결과 JSON은 다음 경로에 UTF-8 텍스트 파일로만 저장하세요: ${resultPath}
+- 파일 내용은 위 출력 형식의 JSON만 포함해야 하며, 코드 펜스나 설명 문장을 추가하지 마세요.
+`;
+}
+
+export function buildCliKeywordTagPrompt(
+  topicName: string,
+  questions: Array<{ id: number; summary: string }>,
+  existingKeywords: string[],
+  resultPath: string,
+): string {
+  const listing = questions
+    .map((question) => `- (id=${question.id}) ${question.summary}`)
+    .join("\n");
+
+  return `당신은 학습 문제 분류 전문가입니다. 주제 "${topicName}"의 아래 문제들에 핵심 개념 키워드를 부여해 주세요.
+
+## 대상 문제 목록
+
+${listing}
+
+${existingKeywordsSection(existingKeywords)}## 출력 형식
+
+다른 설명 없이 아래 구조의 JSON만 작성하세요.
+
+{
+  "assignments": [
+    { "id": 123, "keywords": ["키워드1", "키워드2"] }
+  ]
+}
+
+- 위 목록의 모든 문제에 대해 assignment를 하나씩 만드세요. id는 목록의 (id=N)을 그대로 사용하세요.
+- keywords는 문제가 다루는 핵심 개념 1~3개. 짧은 명사구로 작성하세요.
 
 ## 결과 저장 (반드시 준수)
 
