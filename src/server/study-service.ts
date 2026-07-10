@@ -51,6 +51,7 @@ function toStudyDto(question: {
 export async function getStudyQueue(
   mode: "srs" | "practice",
   topicId?: number,
+  keywordId?: number,
 ): Promise<StudyQuestionDto[]> {
   if (mode === "srs") {
     const rows = await prisma.srsState.findMany({
@@ -66,7 +67,10 @@ export async function getStudyQueue(
   }
 
   const rows = await prisma.question.findMany({
-    where: topicId ? { topicId } : undefined,
+    where: {
+      ...(topicId ? { topicId } : {}),
+      ...(keywordId ? { keywords: { some: { keywordId } } } : {}),
+    },
     select: { id: true },
   });
   const pickedIds = shuffle(rows.map((row) => row.id)).slice(

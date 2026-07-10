@@ -27,6 +27,14 @@ export async function GET(req: Request) {
     ) {
       throw new ServiceError("BAD_REQUEST", "잘못된 topicId입니다", 400);
     }
+    const keywordIdRaw = url.searchParams.get("keywordId");
+    const keywordId = keywordIdRaw ? Number(keywordIdRaw) : undefined;
+    if (
+      keywordIdRaw &&
+      (!Number.isInteger(keywordId) || keywordId === undefined || keywordId <= 0)
+    ) {
+      throw new ServiceError("BAD_REQUEST", "잘못된 keywordId입니다", 400);
+    }
     if (typeRaw && !questionTypes.has(typeRaw as QuestionTypeDto)) {
       throw new ServiceError("BAD_REQUEST", "잘못된 type입니다", 400);
     }
@@ -38,6 +46,7 @@ export async function GET(req: Request) {
     return jsonOk(
       await listQuestions({
         topicId,
+        keywordId,
         type: typeRaw ? (typeRaw as QuestionTypeDto) : undefined,
         sort: sortRaw ? (sortRaw as QuestionListSortDto) : undefined,
         page: Number.isInteger(page) && page !== undefined && page > 0 ? page : 1,

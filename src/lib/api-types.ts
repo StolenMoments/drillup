@@ -6,6 +6,7 @@ export type QuestionListSortDto =
 
 export interface QuestionListParams {
   topicId?: number;
+  keywordId?: number;
   type?: QuestionTypeDto;
   sort?: QuestionListSortDto;
   page?: number;
@@ -52,6 +53,7 @@ export interface QuestionDetailDto {
   type: QuestionTypeDto;
   payload: unknown;
   explanation: string | null;
+  keywords: KeywordRefDto[];
 }
 
 export interface McqChoiceDto {

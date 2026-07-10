@@ -14,8 +14,16 @@ export async function GET(req: Request) {
     ) {
       throw new ServiceError("BAD_REQUEST", "잘못된 topicId입니다", 400);
     }
+    const keywordIdRaw = url.searchParams.get("keywordId");
+    const keywordId = keywordIdRaw ? Number(keywordIdRaw) : undefined;
+    if (
+      keywordIdRaw &&
+      (!Number.isInteger(keywordId) || keywordId === undefined || keywordId <= 0)
+    ) {
+      throw new ServiceError("BAD_REQUEST", "잘못된 keywordId입니다", 400);
+    }
 
-    return jsonOk(await getStudyQueue(mode, topicId));
+    return jsonOk(await getStudyQueue(mode, topicId, keywordId));
   } catch (e) {
     return handleApiError(e);
   }

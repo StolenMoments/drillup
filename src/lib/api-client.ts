@@ -91,6 +91,7 @@ export const api = {
     list: (params: QuestionListParams = {}) => {
       const searchParams = new URLSearchParams();
       if (params.topicId) searchParams.set("topicId", String(params.topicId));
+      if (params.keywordId) searchParams.set("keywordId", String(params.keywordId));
       if (params.type) searchParams.set("type", params.type);
       if (params.sort) searchParams.set("sort", params.sort);
       if (params.page) searchParams.set("page", String(params.page));
@@ -163,10 +164,12 @@ export const api = {
       request<{ ok: true }>(`/api/generate/${id}`, { method: "DELETE" }),
   },
   study: {
-    queue: (mode: "srs" | "practice", topicId?: number) =>
-      request<StudyQuestionDto[]>(
-        `/api/study/queue?mode=${mode}${topicId ? `&topicId=${topicId}` : ""}`,
-      ),
+    queue: (mode: "srs" | "practice", topicId?: number, keywordId?: number) => {
+      const searchParams = new URLSearchParams({ mode });
+      if (topicId) searchParams.set("topicId", String(topicId));
+      if (keywordId) searchParams.set("keywordId", String(keywordId));
+      return request<StudyQuestionDto[]>(`/api/study/queue?${searchParams}`);
+    },
     submitReview: (input: SubmitReviewInput) =>
       request<ReviewResultDto>("/api/reviews", {
         method: "POST",

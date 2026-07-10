@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import type { ClozePayload, McqPayload } from "@/core/types";
 import { clozePayloadSchema, mcqPayloadSchema } from "@/core/import-schema";
 import type {
+  KeywordRefDto,
   QuestionDetailDto,
   QuestionListItemDto,
   QuestionListPageDto,
@@ -64,7 +65,12 @@ export async function listQuestions(
   params: QuestionListParams = {},
 ): Promise<QuestionListPageDto> {
   const questions = await prisma.question.findMany({
-    where: params.topicId ? { topicId: params.topicId } : undefined,
+    where: {
+      ...(params.topicId ? { topicId: params.topicId } : {}),
+      ...(params.keywordId
+        ? { keywords: { some: { keywordId: params.keywordId } } }
+        : {}),
+    },
     include: { reviewLogs: { select: { isCorrect: true } } },
     orderBy: { id: "desc" },
   });
@@ -98,18 +104,42 @@ export async function listQuestions(
   };
 }
 
-export async function getQuestion(id: number): Promise<QuestionDetailDto> {
-  const q = await prisma.question.findUnique({ where: { id } });
-  if (!q) {
-    throw new ServiceError("NOT_FOUND", "문제를 찾을 수 없습니다", 404);
-  }
+const KEYWORDS_INCLUDE = {
+  keywords: {
+    include: { keyword: true },
+    orderBy: { keyword: { name: "asc" } },
+  },
+} as const;
+
+function toDetailDto(q: {
+  id: number;
+  topicId: number;
+  type: QuestionTypeDto;
+  payload: unknown;
+  explanation: string | null;
+  keywords: Array<{ keyword: { id: number; name: string } }>;
+}): QuestionDetailDto {
   return {
     id: q.id,
     topicId: q.topicId,
     type: q.type,
     payload: q.payload,
     explanation: q.explanation,
+    keywords: q.keywords.map(
+      (link): KeywordRefDto => ({ id: link.keyword.id, name: link.keyword.name }),
+    ),
   };
+}
+
+export async function getQuestion(id: number): Promise<QuestionDetailDto> {
+  const q = await prisma.question.findUnique({
+    where: { id },
+    include: KEYWORDS_INCLUDE,
+  });
+  if (!q) {
+    throw new ServiceError("NOT_FOUND", "문제를 찾을 수 없습니다", 404);
+  }
+  return toDetailDto(q);
 }
 
 export async function updateQuestion(
@@ -140,14 +170,9 @@ export async function updateQuestion(
       payload: parsed.data as Prisma.InputJsonValue,
       explanation: input.explanation,
     },
+    include: KEYWORDS_INCLUDE,
   });
-  return {
-    id: q.id,
-    topicId: q.topicId,
-    type: q.type,
-    payload: q.payload,
-    explanation: q.explanation,
-  };
+  return toDetailDto(q);
 }
 
 export async function deleteQuestion(id: number): Promise<void> {
