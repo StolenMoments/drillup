@@ -4,7 +4,34 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api-client";
-import type { KeywordDto, KeywordRefDto } from "@/lib/api-types";
+import type {
+  GenerationEngineDto,
+  KeywordDto,
+  KeywordRefDto,
+} from "@/lib/api-types";
+
+const KEYWORD_ENGINES: Array<{ value: GenerationEngineDto; label: string }> = [
+  { value: "CLAUDE", label: "Claude" },
+  { value: "CODEX", label: "Codex" },
+  { value: "ANTIGRAVITY", label: "agy" },
+];
+
+type KeywordSuggestionState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "done"; keywords: string[] }
+  | { status: "error"; message: string };
+
+function initialSuggestionStates(): Record<
+  GenerationEngineDto,
+  KeywordSuggestionState
+> {
+  return {
+    CLAUDE: { status: "idle" },
+    CODEX: { status: "idle" },
+    ANTIGRAVITY: { status: "idle" },
+  };
+}
 
 export default function QuestionEditPage() {
   const params = useParams<{ id: string }>();
@@ -20,6 +47,9 @@ export default function QuestionEditPage() {
   const [keywords, setKeywords] = useState<KeywordRefDto[]>([]);
   const [allKeywords, setAllKeywords] = useState<KeywordDto[]>([]);
   const [newKeyword, setNewKeyword] = useState("");
+  const [suggestionStates, setSuggestionStates] = useState<
+    Record<GenerationEngineDto, KeywordSuggestionState>
+  >(initialSuggestionStates);
 
   useEffect(() => {
     api.questions
@@ -94,6 +124,29 @@ export default function QuestionEditPage() {
       setMessage(
         error instanceof Error ? error.message : "키워드 삭제에 실패했습니다",
       );
+    }
+  }
+
+  async function suggestKeywords(engine: GenerationEngineDto) {
+    setSuggestionStates((prev) => ({
+      ...prev,
+      [engine]: { status: "loading" },
+    }));
+    try {
+      const result = await api.questions.suggestKeywords(id, engine);
+      setSuggestionStates((prev) => ({
+        ...prev,
+        [engine]: { status: "done", keywords: result.keywords },
+      }));
+    } catch (error) {
+      setSuggestionStates((prev) => ({
+        ...prev,
+        [engine]: {
+          status: "error",
+          message:
+            error instanceof Error ? error.message : "키워드 추천에 실패했습니다",
+        },
+      }));
     }
   }
 
@@ -175,6 +228,74 @@ export default function QuestionEditPage() {
           >
             추가
           </button>
+        </div>
+        <div className="space-y-2 border-t border-[color:var(--border)] pt-3">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <p className="text-sm font-semibold text-[color:var(--muted)]">
+              🤖 AI 키워드 추천
+            </p>
+            <p className="subtle text-xs">
+              추천은 저장되지 않으며, 선택 후 추가 버튼을 눌러 반영합니다.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {KEYWORD_ENGINES.map(({ value, label }) => {
+              const state = suggestionStates[value];
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => void suggestKeywords(value)}
+                  disabled={state.status === "loading"}
+                  className="btn btn-secondary min-h-9 px-3 text-sm"
+                >
+                  {state.status === "loading"
+                    ? `${label} 추천 중...`
+                    : state.status === "done"
+                      ? `${label} 다시 추천`
+                      : `${label}로 추천받기`}
+                </button>
+              );
+            })}
+          </div>
+          {KEYWORD_ENGINES.map(({ value, label }) => {
+            const state = suggestionStates[value];
+            if (state.status === "error") {
+              return (
+                <p key={value} className="text-sm text-[color:var(--danger)]">
+                  ❌ {label} 추천을 가져오지 못했습니다: {state.message}
+                </p>
+              );
+            }
+            if (state.status !== "done") return null;
+            return (
+              <div key={value} className="space-y-1">
+                <p className="chip">{label} 추천</p>
+                {state.keywords.length === 0 ? (
+                  <p className="muted text-sm">추가할 키워드가 없습니다.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {state.keywords.map((keyword) => {
+                      const alreadyAssigned = keywords.some(
+                        (item) => item.name === keyword,
+                      );
+                      return (
+                        <button
+                          key={keyword}
+                          type="button"
+                          disabled={alreadyAssigned}
+                          onClick={() => setNewKeyword(keyword)}
+                          className="chip border border-[color:var(--border)] hover:border-[color:var(--brand)] hover:text-[color:var(--brand)] disabled:opacity-50"
+                        >
+                          {alreadyAssigned ? `${keyword} · 추가됨` : `+ ${keyword}`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
       {message && <p className="text-sm text-[color:var(--danger)]">{message}</p>}

@@ -5,6 +5,7 @@ import type {
   GenerationJobSummaryDto,
   KeywordDto,
   KeywordRefDto,
+  KeywordSuggestionDto,
   QuestionDetailDto,
   QuestionListPageDto,
   QuestionListParams,
@@ -124,6 +125,11 @@ export const api = {
     removeKeyword: (id: number, keywordId: number) =>
       request<{ ok: true }>(`/api/questions/${id}/keywords/${keywordId}`, {
         method: "DELETE",
+      }),
+    suggestKeywords: (id: number, engine: GenerationEngineDto) =>
+      request<KeywordSuggestionDto>(`/api/questions/${id}/keyword-suggestions`, {
+        method: "POST",
+        body: JSON.stringify({ engine }),
       }),
   },
   keywords: {

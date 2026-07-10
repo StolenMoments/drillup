@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { dedupeKeywordNames } from "./keyword";
+import { dedupeKeywordNames, KEYWORD_MAX_LENGTH } from "./keyword";
 
 const assignmentSchema = z.object({
   id: z.number().int().positive(),
@@ -14,6 +14,17 @@ export interface KeywordAssignment {
 export type KeywordTagParseResult =
   | { ok: true; assignments: KeywordAssignment[] }
   | { ok: false; fatal: string };
+
+export type KeywordSuggestionParseResult =
+  | { ok: true; keywords: string[] }
+  | { ok: false; fatal: string };
+
+const suggestionSchema = z.object({
+  keywords: z
+    .array(z.string().trim().min(1).max(KEYWORD_MAX_LENGTH))
+    .min(1)
+    .max(5),
+});
 
 export function parseKeywordTagJson(rawText: string): KeywordTagParseResult {
   let data: unknown;
@@ -41,4 +52,26 @@ export function parseKeywordTagJson(rawText: string): KeywordTagParseResult {
     parsed.push({ id: result.data.id, keywords });
   }
   return { ok: true, assignments: parsed };
+}
+
+export function parseKeywordSuggestionJson(
+  rawText: string,
+): KeywordSuggestionParseResult {
+  let data: unknown;
+  try {
+    data = JSON.parse(rawText);
+  } catch {
+    return { ok: false, fatal: "올바른 JSON이 아닙니다" };
+  }
+
+  const result = suggestionSchema.safeParse(data);
+  if (!result.success) {
+    return { ok: false, fatal: "keywords는 1~5개의 유효한 문자열이어야 합니다" };
+  }
+
+  const keywords = dedupeKeywordNames(result.data.keywords);
+  if (keywords.length === 0) {
+    return { ok: false, fatal: "유효한 키워드가 없습니다" };
+  }
+  return { ok: true, keywords };
 }

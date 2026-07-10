@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseKeywordTagJson } from "./keyword-tag-schema";
+import {
+  parseKeywordSuggestionJson,
+  parseKeywordTagJson,
+} from "./keyword-tag-schema";
 
 describe("parseKeywordTagJson", () => {
   it("정상 JSON을 파싱한다", () => {
@@ -49,5 +52,33 @@ describe("parseKeywordTagJson", () => {
       JSON.stringify({ assignments: [{ id: 1, keywords: ["   "] }] }),
     );
     expect(result).toEqual({ ok: true, assignments: [] });
+  });
+});
+
+describe("parseKeywordSuggestionJson", () => {
+  it("최대 5개의 키워드를 정규화해 파싱한다", () => {
+    expect(
+      parseKeywordSuggestionJson(
+        JSON.stringify({ keywords: ["TCP", " TCP ", "UDP"] }),
+      ),
+    ).toEqual({ ok: true, keywords: ["TCP", "UDP"] });
+  });
+
+  it("6개 이상의 키워드를 거부한다", () => {
+    expect(
+      parseKeywordSuggestionJson(
+        JSON.stringify({ keywords: ["1", "2", "3", "4", "5", "6"] }),
+      ),
+    ).toEqual({
+      ok: false,
+      fatal: "keywords는 1~5개의 유효한 문자열이어야 합니다",
+    });
+  });
+
+  it("형식이 잘못되면 오류를 반환한다", () => {
+    expect(parseKeywordSuggestionJson("not json")).toEqual({
+      ok: false,
+      fatal: "올바른 JSON이 아닙니다",
+    });
   });
 });

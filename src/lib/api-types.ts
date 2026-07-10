@@ -21,6 +21,11 @@ export interface KeywordDto extends KeywordRefDto {
   questionCount: number;
 }
 
+export interface KeywordSuggestionDto {
+  engine: GenerationEngineDto;
+  keywords: string[];
+}
+
 export interface TopicDto {
   id: number;
   name: string;

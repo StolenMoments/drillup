@@ -5,6 +5,7 @@ import {
   buildCliKeywordTagPrompt,
   buildCliVerifyPrompt,
   buildGenerationPrompt,
+  buildKeywordSuggestionPrompt,
 } from "./prompt-template";
 
 describe("buildGenerationPrompt (기존 수동용)", () => {
@@ -234,6 +235,35 @@ describe("키워드/변형 확장", () => {
     expect(prompt).toContain('"assignments"');
     expect(prompt).toContain("/tmp/result.json");
     expect(prompt).toContain("stdout에 출력하지 마세요");
+  });
+});
+
+describe("buildKeywordSuggestionPrompt", () => {
+  it("문제·기존 키워드·이미 부여된 키워드·최대 5개 규칙을 포함한다", () => {
+    const prompt = buildKeywordSuggestionPrompt(
+      "네트워크",
+      {
+        type: "MCQ",
+        payload: {
+          question: "TCP 연결 수립 절차는?",
+          choices: ["3-way handshake", "ARP", "DNS", "NAT"],
+          answer_index: 0,
+        },
+        explanation: "TCP의 연결 수립 절차다.",
+      },
+      ["TCP", "UDP"],
+      ["TCP"],
+      "D:\\suggestions\\result.json",
+    );
+
+    expect(prompt).toContain("TCP 연결 수립 절차는?");
+    expect(prompt).toContain("3-way handshake");
+    expect(prompt).toContain("## 기존 키워드 목록");
+    expect(prompt).toContain("## 이미 부여된 키워드");
+    expect(prompt).toContain("위 키워드는 결과에 다시 넣지 마세요");
+    expect(prompt).toContain("5개 이하");
+    expect(prompt).toContain('"keywords"');
+    expect(prompt).toContain("D:\\suggestions\\result.json");
   });
 });
 

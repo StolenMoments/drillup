@@ -329,3 +329,61 @@ ${existingKeywordsSection(existingKeywords)}## 출력 형식
 - 파일 내용은 위 출력 형식의 JSON만 포함해야 하며, 코드 펜스나 설명 문장을 추가하지 마세요.
 `;
 }
+
+export function buildKeywordSuggestionPrompt(
+  topicName: string,
+  question: { type: QuestionType; payload: unknown; explanation: string | null },
+  existingKeywords: string[],
+  assignedKeywords: string[],
+  resultPath: string,
+): string {
+  const existingSection = existingKeywords.length
+    ? [
+        "## 기존 키워드 목록",
+        "",
+        "가능하면 아래 표준 표기를 재사용하세요.",
+        "",
+        ...existingKeywords.map((name) => `- ${name}`),
+        "",
+      ].join("\n")
+    : "";
+  const assignedSection = assignedKeywords.length
+    ? [
+        "## 이미 부여된 키워드",
+        "",
+        ...assignedKeywords.map((name) => `- ${name}`),
+        "",
+        "위 키워드는 결과에 다시 넣지 마세요.",
+        "",
+      ].join("\n")
+    : "";
+
+  return `당신은 학습 문제 분류 전문가입니다. 주제 "${topicName}"의 한 문제를 보고 추가할 핵심 개념 키워드를 추천해 주세요.
+
+## 대상 문제
+
+\`\`\`json
+${JSON.stringify(question, null, 2)}
+\`\`\`
+
+${existingSection}${assignedSection}## 출력 형식
+
+다른 설명 없이 아래 구조의 JSON만 작성하세요.
+
+{
+  "keywords": ["키워드1", "키워드2"]
+}
+
+## 규칙
+
+- 문제가 직접 다루는 핵심 개념만 짧은 명사구로 추천하세요.
+- keywords는 1개 이상, 5개 이하만 반환하세요.
+- 중복, 표기 변형, 이미 부여된 키워드는 넣지 마세요.
+
+## 결과 저장 (반드시 준수)
+
+- 결과 JSON을 stdout에 출력하지 마세요.
+- 결과 JSON은 다음 경로에 UTF-8 텍스트 파일로만 저장하세요: ${resultPath}
+- 파일 내용은 위 출력 형식의 JSON만 포함해야 하며, 코드 펜스나 설명 문장을 추가하지 마세요.
+`;
+}
