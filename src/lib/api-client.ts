@@ -3,6 +3,8 @@ import type {
   GenerationEngineDto,
   GenerationJobDto,
   GenerationJobSummaryDto,
+  KeywordDto,
+  KeywordRefDto,
   QuestionDetailDto,
   QuestionListPageDto,
   QuestionListParams,
@@ -113,6 +115,21 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ engine }),
       }),
+    addKeyword: (id: number, name: string) =>
+      request<KeywordRefDto>(`/api/questions/${id}/keywords`, {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      }),
+    removeKeyword: (id: number, keywordId: number) =>
+      request<{ ok: true }>(`/api/questions/${id}/keywords/${keywordId}`, {
+        method: "DELETE",
+      }),
+  },
+  keywords: {
+    list: (topicId?: number) =>
+      request<{ keywords: KeywordDto[] }>(
+        `/api/keywords${topicId ? `?topicId=${topicId}` : ""}`,
+      ),
   },
   import: {
     submit: (topicId: number, questions: unknown[]) =>

@@ -11,6 +11,15 @@ export interface QuestionListParams {
   page?: number;
 }
 
+export interface KeywordRefDto {
+  id: number;
+  name: string;
+}
+
+export interface KeywordDto extends KeywordRefDto {
+  questionCount: number;
+}
+
 export interface TopicDto {
   id: number;
   name: string;

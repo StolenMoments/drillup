@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import type { ImportQuestion } from "@/core/import-schema";
 import { prisma } from "./db";
 import { ServiceError } from "./errors";
+import { attachKeywords } from "./keyword-service";
 
 function toPayload(q: ImportQuestion) {
   if (q.type === "mcq") {
@@ -37,6 +38,9 @@ export async function importQuestions(
         select: { id: true },
       });
       await tx.srsState.create({ data: { questionId: created.id } });
+      if (question.keywords && question.keywords.length > 0) {
+        await attachKeywords(tx, created.id, question.keywords);
+      }
     }
   });
 
