@@ -3,8 +3,10 @@ import path from "node:path";
 import type { GenerationJob, Prisma } from "@prisma/client";
 import { parseImportJson, type ImportQuestion } from "@/core/import-schema";
 import { extractJsonObject } from "@/core/json-extract";
+import { parseKeywordTagJson } from "@/core/keyword-tag-schema";
 import {
   buildCliGenerationPrompt,
+  buildCliKeywordTagPrompt,
   buildCliVerifyPrompt,
   type ExistingQuestions,
   type VariantSource,
@@ -15,11 +17,14 @@ import type {
   GenerationEngineDto,
   GenerationItemDto,
   GenerationJobDto,
+  GenerationJobKindDto,
   GenerationJobSummaryDto,
+  KeywordTagItemDto,
 } from "@/lib/api-types";
 import { prisma } from "../db";
 import { ServiceError } from "../errors";
 import { importQuestions } from "../import-service";
+import { attachKeywords } from "../keyword-service";
 import { resolveReferenceFiles } from "./reference";
 import { generationTimeoutMs, jobOutputDir, runEngine } from "./run-engine";
 
@@ -27,6 +32,7 @@ const ORPHAN_GRACE_MS = 60_000;
 const EXISTING_QUESTION_LIMIT = 100;
 const VARIANT_SOURCE_LIMIT = 10;
 const EXISTING_KEYWORD_LIMIT = 50;
+const KEYWORD_TAG_BATCH_LIMIT = 50;
 
 function toDto(job: GenerationJob): GenerationJobDto {
   return {
@@ -35,9 +41,14 @@ function toDto(job: GenerationJob): GenerationJobDto {
     engine: job.engine,
     verifyEngine: job.verifyEngine,
     status: job.status,
+    kind: job.kind as GenerationJobKindDto,
     items:
-      job.status === "SUCCEEDED"
+      job.kind === "QUESTION" && job.status === "SUCCEEDED"
         ? (job.result as unknown as GenerationJobDto["items"])
+        : null,
+    keywordItems:
+      job.kind === "KEYWORD_TAG" && job.status === "SUCCEEDED"
+        ? (job.result as unknown as KeywordTagItemDto[])
         : null,
     errorMessage: job.errorMessage,
     verifyWarning: job.verifyWarning,
@@ -52,7 +63,6 @@ function toDto(job: GenerationJob): GenerationJobDto {
 function toSummaryDto(
   job: GenerationJob & { topic: { name: string } },
 ): GenerationJobSummaryDto {
-  const items = job.result as unknown as GenerationItemDto[] | null;
   return {
     id: job.id,
     topicId: job.topicId,
@@ -60,7 +70,11 @@ function toSummaryDto(
     engine: job.engine,
     verifyEngine: job.verifyEngine,
     status: job.status,
-    itemCount: job.status === "SUCCEEDED" && items ? items.length : null,
+    kind: job.kind as GenerationJobKindDto,
+    itemCount:
+      job.status === "SUCCEEDED" && Array.isArray(job.result)
+        ? (job.result as unknown[]).length
+        : null,
     savedCount: job.savedCount,
     approvedAt: job.approvedAt?.toISOString() ?? null,
     errorMessage: job.errorMessage,
@@ -180,6 +194,122 @@ export async function createJob(input: {
   });
 
   return toDto(job);
+}
+
+export async function createKeywordTagJob(input: {
+  topicId: number;
+  engine: GenerationEngineDto;
+}): Promise<GenerationJobDto> {
+  const topic = await prisma.topic.findUnique({ where: { id: input.topicId } });
+  if (!topic) {
+    throw new ServiceError("TOPIC_NOT_FOUND", "주제를 찾을 수 없습니다", 404);
+  }
+
+  const running = await prisma.generationJob.findFirst({
+    where: { topicId: input.topicId, status: { in: ["RUNNING", "VERIFYING"] } },
+  });
+  if (running) {
+    throw new ServiceError(
+      "JOB_ALREADY_RUNNING",
+      "이미 생성 중인 작업이 있습니다",
+      409,
+    );
+  }
+
+  const untagged = await prisma.question.findMany({
+    where: { topicId: input.topicId, keywords: { none: {} } },
+    orderBy: { id: "asc" },
+    take: KEYWORD_TAG_BATCH_LIMIT,
+    select: { id: true, type: true, payload: true },
+  });
+  const targets = untagged
+    .map((question) => ({
+      id: question.id,
+      summary: summarizeQuestionPayload(question.type, question.payload),
+    }))
+    .filter((target) => target.summary);
+  if (targets.length === 0) {
+    throw new ServiceError(
+      "NO_UNTAGGED_QUESTIONS",
+      "키워드를 부여할 문제가 없습니다",
+      400,
+    );
+  }
+
+  const existingKeywords = await loadExistingKeywords(input.topicId);
+
+  const job = await prisma.generationJob.create({
+    data: {
+      topicId: input.topicId,
+      engine: input.engine,
+      verifyEngine: input.engine,
+      instructions: "",
+      kind: "KEYWORD_TAG",
+    },
+  });
+
+  void runKeywordTagJob(job.id, topic.name, targets, existingKeywords).catch(
+    (e) => {
+      console.error(`keyword tag job ${job.id} failed unexpectedly`, e);
+    },
+  );
+
+  return toDto(job);
+}
+
+async function runKeywordTagJob(
+  jobId: number,
+  topicName: string,
+  targets: Array<{ id: number; summary: string }>,
+  existingKeywords: string[],
+): Promise<void> {
+  const dir = jobOutputDir(jobId);
+  const resultPath = path.join(dir, "result.json");
+  const prompt = buildCliKeywordTagPrompt(
+    topicName,
+    targets,
+    existingKeywords,
+    resultPath,
+  );
+
+  const job = await prisma.generationJob.findUnique({ where: { id: jobId } });
+  if (!job || job.status !== "RUNNING") return;
+
+  const run = await runEngine(job.engine, prompt, dir);
+  if (!run.ok) {
+    await failJob(jobId, run.failureReason, null);
+    return;
+  }
+
+  const parsed = parseKeywordTagJson(extractJsonObject(run.resultText));
+  if (!parsed.ok) {
+    await failJob(
+      jobId,
+      `${parsed.fatal}; 원문 앞 300자: ${run.resultText.slice(0, 300)}`,
+      run.resultText,
+    );
+    return;
+  }
+
+  const summaryById = new Map(targets.map((target) => [target.id, target.summary]));
+  // 요청에 없던 문제 id는 무시한다.
+  const items: KeywordTagItemDto[] = parsed.assignments
+    .filter((assignment) => summaryById.has(assignment.id))
+    .map((assignment) => ({
+      id: assignment.id,
+      summary: summaryById.get(assignment.id) as string,
+      keywords: assignment.keywords,
+    }));
+
+  await prisma.generationJob.update({
+    where: { id: jobId },
+    data: {
+      status: "SUCCEEDED",
+      result: items as unknown as Prisma.InputJsonValue,
+      rawOutput: run.resultText,
+      finishedAt: new Date(),
+    },
+  });
 }
 
 async function runJob(
@@ -350,6 +480,50 @@ export async function approveJob(
       "완료된 작업만 저장할 수 있습니다",
       409,
     );
+  }
+
+  if (job.kind === "KEYWORD_TAG") {
+    const items = (job.result as unknown as KeywordTagItemDto[] | null) ?? [];
+    const byId = new Map(items.map((item) => [item.id, item]));
+    const picked: KeywordTagItemDto[] = [];
+    for (const id of indices) {
+      const item = byId.get(id);
+      if (!item) {
+        throw new ServiceError(
+          "INVALID_ITEMS",
+          "저장할 수 없는 항목이 포함되어 있습니다",
+          400,
+        );
+      }
+      picked.push(item);
+    }
+    if (picked.length === 0) {
+      throw new ServiceError("INVALID_ITEMS", "저장할 항목이 없습니다", 400);
+    }
+
+    // 잡 실행 후 삭제된 문제는 건너뛴다.
+    const existingIds = new Set(
+      (
+        await prisma.question.findMany({
+          where: { id: { in: picked.map((item) => item.id) } },
+          select: { id: true },
+        })
+      ).map((question) => question.id),
+    );
+    let applied = 0;
+    await prisma.$transaction(async (tx) => {
+      for (const item of picked) {
+        if (!existingIds.has(item.id)) continue;
+        await attachKeywords(tx, item.id, item.keywords);
+        applied += 1;
+      }
+    });
+
+    const updated = await prisma.generationJob.update({
+      where: { id },
+      data: { approvedAt: new Date(), savedCount: { increment: applied } },
+    });
+    return { savedCount: applied, job: toDto(updated) };
   }
 
   const items = job.result as unknown as GenerationItemDto[] | null;

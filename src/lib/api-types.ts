@@ -129,6 +129,13 @@ export type GenerationStatusDto =
   | "SUCCEEDED"
   | "FAILED";
 export type GenerationVerdictDto = "pass" | "fail" | "unverified";
+export type GenerationJobKindDto = "QUESTION" | "KEYWORD_TAG";
+
+export interface KeywordTagItemDto {
+  id: number;
+  summary: string;
+  keywords: string[];
+}
 
 export type GenerationItemDto =
   | {
@@ -146,7 +153,9 @@ export interface GenerationJobDto {
   engine: GenerationEngineDto;
   verifyEngine: GenerationEngineDto;
   status: GenerationStatusDto;
+  kind: GenerationJobKindDto;
   items: GenerationItemDto[] | null;
+  keywordItems: KeywordTagItemDto[] | null;
   errorMessage: string | null;
   verifyWarning: string | null;
   createdAt: string;
@@ -163,6 +172,7 @@ export interface GenerationJobSummaryDto {
   engine: GenerationEngineDto;
   verifyEngine: GenerationEngineDto;
   status: GenerationStatusDto;
+  kind: GenerationJobKindDto;
   itemCount: number | null;
   savedCount: number;
   approvedAt: string | null;

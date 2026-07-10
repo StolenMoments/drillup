@@ -163,6 +163,11 @@ export const api = {
       ),
     remove: (id: number) =>
       request<{ ok: true }>(`/api/generate/${id}`, { method: "DELETE" }),
+    keywordTag: (input: { topicId: number; engine: GenerationEngineDto }) =>
+      request<{ job: GenerationJobDto }>("/api/generate/keyword-tag", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
   },
   study: {
     queue: (mode: "srs" | "practice", topicId?: number, keywordId?: number) => {
