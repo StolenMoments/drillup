@@ -98,6 +98,28 @@ HTTPS 리버스 프록시(nginx 등) 구성은 이 워크플로우 범위 밖이
 - 잡 이력은 DB의 `generation_job` 테이블에, 실행 산출물은 `generation_output/jobs/<id>/`(git 미추적)에 남습니다.
 - 타임아웃 기본 10분 — `.env`의 `GENERATION_TIMEOUT_MS`(밀리초)로 조정.
 
+## 키워드 CLI 백필
+
+웹 화면을 거치지 않고, 키워드가 없는 기존 문제를 AI로 자동 태깅한다. 문제는 같은
+주제 안에서 최대 5개씩 묶어 처리하며, 엔진 호출 비율은
+Claude:Codex:Antigravity = 1:1:3이다. Codex 배치는 `gpt-5.6-terra`를 사용한다.
+
+```powershell
+# 먼저 결과만 확인
+npm run keywords:backfill -- --dry-run --limit 20
+
+# 전체 처리
+npm run keywords:backfill
+
+# 특정 주제만 처리하고 호출 사이에 1초 대기
+npm run keywords:backfill -- --topic-id 3 --delay-ms 1000
+```
+
+성공한 문제는 배치마다 즉시 저장하므로, 중단 후 다시 실행하면 이미 처리된 문제는
+자동으로 건너뛴다. AI가 응답에서 누락한 문제와 호출 실패는 기본 2회 재시도하며,
+끝까지 실패한 문제 id는 출력하고 종료 코드 1로 끝난다. 실행 산출물은
+`generation_output/keyword-backfill/`에 남는다.
+
 ### 참고 자료 기반 생성
 
 - 문제 관리에서 주제에 "참고 자료 폴더"를 설정하면(예: `aip-c01`),

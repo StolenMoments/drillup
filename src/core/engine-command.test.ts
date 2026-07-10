@@ -63,6 +63,20 @@ describe("buildEngineCommand - CODEX", () => {
     expect(cmd.promptViaStdin).toBe(true);
   });
 
+  it("요청한 Codex 모델을 인자로 전달한다", () => {
+    const cmd = buildEngineCommand("CODEX", "D:\\p\\prompt.md", env(), {
+      codexModel: "gpt-5.6-terra",
+    });
+
+    expect(cmd.args).toEqual([
+      "exec",
+      "--yolo",
+      "--model",
+      "gpt-5.6-terra",
+      "-",
+    ]);
+  });
+
   it("exe가 없으면 codex.cmd로 폴백한다", () => {
     const cmd = buildEngineCommand("CODEX", "D:\\p\\prompt.md", env());
     expect(cmd.command).toBe("codex.cmd");

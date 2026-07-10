@@ -13,6 +13,10 @@ export interface EngineCommand {
   promptViaStdin: boolean;
 }
 
+export interface EngineCommandOptions {
+  codexModel?: string;
+}
+
 const AGY_MODEL = "Gemini 3.5 Flash (High)";
 
 function winJoin(...parts: string[]): string {
@@ -33,6 +37,7 @@ export function buildEngineCommand(
   engine: EngineName,
   promptPath: string,
   env: EngineEnv,
+  options: EngineCommandOptions = {},
 ): EngineCommand {
   if (engine === "CLAUDE") {
     const command = isWindows(env)
@@ -94,7 +99,16 @@ export function buildEngineCommand(
           env,
           "codex",
         );
-    return { command, args: ["exec", "--yolo", "-"], promptViaStdin: true };
+    return {
+      command,
+      args: [
+        "exec",
+        "--yolo",
+        ...(options.codexModel ? ["--model", options.codexModel] : []),
+        "-",
+      ],
+      promptViaStdin: true,
+    };
   }
 
   const instruction =
