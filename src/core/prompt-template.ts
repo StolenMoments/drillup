@@ -13,7 +13,8 @@ function promptBody(topicName: string): string {
       "type": "mcq",
       "question": "질문 텍스트",
       "choices": ["보기1", "보기2", "보기3", "보기4", "보기5"],
-      "answer_index": 0,
+      "answer_indices": [0],
+      "choice_explanations": ["보기 1 판단 근거", "보기 2 판단 근거", "보기 3 판단 근거", "보기 4 판단 근거", "보기 5 판단 근거"],
       "explanation": "정답에 대한 간결한 해설",
       "keywords": ["핵심 개념 키워드1", "핵심 개념 키워드2"]
     },

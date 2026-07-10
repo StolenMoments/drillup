@@ -3,6 +3,7 @@ import path from "node:path";
 import { Prisma, type GenerationItemRevision, type GenerationJob } from "@prisma/client";
 import { parseImportJson, type ImportQuestion, validateGeneratedQuestions } from "@/core/import-schema";
 import { extractJsonObject } from "@/core/json-extract";
+import { shuffleMcqChoices } from "@/core/random";
 import { parseKeywordTagJson } from "@/core/keyword-tag-schema";
 import {
   buildCliGenerationPrompt,
@@ -374,7 +375,11 @@ async function runJob(
   }
 
   // 이 시점의 verdict는 전부 unverified — 검증이 끝나면 덮어쓴다.
-  const generatedItems = validateGeneratedQuestions(parsed.items.map((item) => item.ok ? item.question : { type: "invalid" }));
+  const generatedItems = validateGeneratedQuestions(parsed.items.map((item) => item.ok ? item.question : { type: "invalid" })).map((item) =>
+    item.ok && item.question.type === "mcq"
+      ? { ...item, question: shuffleMcqChoices(item.question) as ImportQuestion }
+      : item,
+  );
   const unverifiedItems = mergeVerdicts(generatedItems, []);
   const validItems = generatedItems.filter((item) => item.ok);
 
@@ -443,7 +448,13 @@ async function runJob(
       const revision = parseRevisionJson(extractJsonObject(repairRun.resultText));
       if (!revision.ok) continue;
       const validated = validateGeneratedQuestions([revision.question])[0];
-      if (validated?.ok) repaired.push({ index: item.index, question: validated.question, previousComment: item.verdictComment });
+      if (validated?.ok) repaired.push({
+        index: item.index,
+        question: validated.question.type === "mcq"
+          ? shuffleMcqChoices(validated.question) as ImportQuestion
+          : validated.question,
+        previousComment: item.verdictComment,
+      });
     }
     if (repaired.length > 0) {
       const repairVerifyPath = path.join(dir, "repair-verify-result.json");
