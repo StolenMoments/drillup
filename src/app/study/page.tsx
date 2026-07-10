@@ -143,8 +143,8 @@ function StudySession({
           key={`${current.id}-${index}`}
           question={current}
           disabled={result !== null}
-          onSubmit={(selectedIndex) =>
-            submitAnswer({ type: "MCQ", selected_index: selectedIndex })
+          onSubmit={(selectedIndices) =>
+            submitAnswer({ type: "MCQ", selected_indices: selectedIndices })
           }
         />
       ) : (

@@ -5,7 +5,7 @@ import { submitReview } from "@/server/study-service";
 const answerSchema = z.union([
   z.object({
     type: z.literal("MCQ"),
-    selected_index: z.number().int().min(0).max(5),
+    selected_indices: z.array(z.number().int().min(0).max(5)).min(1).max(2),
   }),
   z.object({
     type: z.literal("CLOZE"),

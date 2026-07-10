@@ -1,7 +1,7 @@
-import type { ClozePayload, McqPayload } from "./types";
+import { mcqAnswerIndices, type ClozePayload, type McqPayload } from "./types";
 
 export interface McqAnswer {
-  selected_index: number;
+  selected_indices: number[];
 }
 
 export interface ClozeAnswer {
@@ -9,7 +9,9 @@ export interface ClozeAnswer {
 }
 
 export function gradeMcq(payload: McqPayload, answer: McqAnswer): boolean {
-  return answer.selected_index === payload.answer_index;
+  const expected = mcqAnswerIndices(payload).slice().sort((a, b) => a - b);
+  const selected = [...new Set(answer.selected_indices)].sort((a, b) => a - b);
+  return expected.length === selected.length && expected.every((value, index) => value === selected[index]);
 }
 
 export function gradeCloze(

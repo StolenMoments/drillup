@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { gradeCloze, gradeMcq } from "@/core/grading";
 import { shuffle } from "@/core/random";
 import { applyAnswer } from "@/core/srs";
-import type { ClozePayload, McqPayload } from "@/core/types";
+import { mcqAnswerIndices, type ClozePayload, type McqPayload } from "@/core/types";
 import type {
   ReviewAnswerDto,
   ReviewResultDto,
@@ -26,6 +26,7 @@ function toStudyDto(question: {
       id: question.id,
       type: "MCQ",
       question: payload.question,
+      selectionCount: mcqAnswerIndices(payload).length === 2 ? 2 : 1,
       choices: shuffle(
         payload.choices.map((text, original_index) => ({
           text,
@@ -112,7 +113,8 @@ export async function submitReview(input: {
       throw new ServiceError("BAD_REQUEST", "답안 형식이 문제 유형과 다릅니다", 400);
     }
     const payload = question.payload as unknown as McqPayload;
-    if (input.answer.selected_index >= payload.choices.length) {
+    const answerIndices = mcqAnswerIndices(payload);
+    if (input.answer.selected_indices.length !== answerIndices.length || input.answer.selected_indices.some((index) => index < 0 || index >= payload.choices.length)) {
       throw new ServiceError(
         "VALIDATION",
         "선택한 보기가 문제의 보기 범위를 벗어났습니다",
@@ -120,9 +122,9 @@ export async function submitReview(input: {
       );
     }
     isCorrect = gradeMcq(payload, {
-      selected_index: input.answer.selected_index,
+      selected_indices: input.answer.selected_indices,
     });
-    correct = { type: "MCQ", answer_index: payload.answer_index };
+    correct = { type: "MCQ", answer_indices: answerIndices, choice_explanations: payload.choice_explanations ?? null };
   } else {
     if (input.answer.type !== "CLOZE") {
       throw new ServiceError("BAD_REQUEST", "답안 형식이 문제 유형과 다릅니다", 400);

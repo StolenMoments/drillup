@@ -8,7 +8,7 @@ type McqQuestion = Extract<StudyQuestionDto, { type: "MCQ" }>;
 interface McqCardProps {
   question: McqQuestion;
   disabled: boolean;
-  onSubmit: (selectedOriginalIndex: number) => void;
+  onSubmit: (selectedOriginalIndices: number[]) => void;
 }
 
 export default function McqCard({
@@ -16,27 +16,36 @@ export default function McqCard({
   disabled,
   onSubmit,
 }: McqCardProps) {
-  const [selected, setSelected] = useState<number | null>(null);
+  const [selected, setSelected] = useState<number[]>([]);
+  const isMultiple = question.selectionCount === 2;
+
+  function toggle(index: number) {
+    if (!isMultiple) return setSelected([index]);
+    setSelected((current) => current.includes(index)
+      ? current.filter((value) => value !== index)
+      : current.length === 2 ? current : [...current, index]);
+  }
 
   return (
     <div className="surface surface-pad space-y-5">
       <p className="text-lg leading-8 text-[color:var(--text)]">
         {question.question}
       </p>
+      {isMultiple && <p className="chip">정답 2개를 선택하세요 ({selected.length}/2)</p>}
       <div className="space-y-2">
         {question.choices.map((choice, index) => (
           <button
             key={choice.original_index}
             disabled={disabled}
-            onClick={() => setSelected(index)}
+            onClick={() => toggle(index)}
             className={`w-full rounded-[10px] border px-4 py-3 text-left transition-colors ${
-              selected === index
+              selected.includes(index)
                 ? "border-[color:var(--brand)] bg-[color:var(--brand-strong)] text-white"
                 : "border-[color:var(--border)] bg-[color:var(--bg-soft)] text-[color:var(--text)] hover:border-[color:var(--border-strong)]"
             }`}
           >
             <span
-              className={`mr-2 ${selected === index ? "text-white/80" : "text-[color:var(--subtle)]"}`}
+              className={`mr-2 ${selected.includes(index) ? "text-white/80" : "text-[color:var(--subtle)]"}`}
             >
               {index + 1}
             </span>
@@ -45,10 +54,10 @@ export default function McqCard({
         ))}
       </div>
       <button
-        disabled={disabled || selected === null}
+        disabled={disabled || selected.length !== question.selectionCount}
         onClick={() =>
-          selected !== null &&
-          onSubmit(question.choices[selected].original_index)
+          selected.length === question.selectionCount &&
+          onSubmit(selected.map((index) => question.choices[index].original_index))
         }
         className="btn btn-primary w-full"
       >

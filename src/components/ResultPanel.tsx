@@ -40,15 +40,12 @@ function resultTitle(isCorrect: boolean): string {
 
 function mcqAnswerText(
   question: Extract<StudyQuestionDto, { type: "MCQ" }>,
-  answerIndex: number,
+  answerIndices: number[],
 ): string {
-  const currentIndex = question.choices.findIndex(
-    (choice) => choice.original_index === answerIndex,
-  );
-  if (currentIndex < 0) return `${answerIndex + 1}.`;
-
-  const choice = question.choices[currentIndex];
-  return `${currentIndex + 1}. ${choice.text}`;
+  return answerIndices.map((answerIndex) => {
+    const currentIndex = question.choices.findIndex((choice) => choice.original_index === answerIndex);
+    return currentIndex < 0 ? `${answerIndex + 1}.` : `${currentIndex + 1}. ${question.choices[currentIndex].text}`;
+  }).join(", ");
 }
 
 export default function ResultPanel({
@@ -97,9 +94,17 @@ export default function ResultPanel({
         result.correct.type === "MCQ" &&
         question.type === "MCQ" && (
           <p>
-            정답: {mcqAnswerText(question, result.correct.answer_index)}
+            정답: {mcqAnswerText(question, result.correct.answer_indices)}
           </p>
         )}
+      {result.correct.type === "MCQ" && result.correct.choice_explanations && question.type === "MCQ" && (() => {
+        const choiceExplanations = result.correct.choice_explanations;
+        return (
+        <ul className="space-y-1 text-sm text-[color:var(--muted)]">
+          {question.choices.map((choice) => <li key={choice.original_index}><span className="font-medium text-[color:var(--text)]">{choice.text}</span>: {choiceExplanations[choice.original_index]}</li>)}
+        </ul>
+        );
+      })()}
       {!result.isCorrect && result.correct.type === "CLOZE" && (
         <p>
           정답:{" "}

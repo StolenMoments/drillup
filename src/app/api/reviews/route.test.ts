@@ -20,7 +20,7 @@ describe("POST /api/reviews", () => {
         body: JSON.stringify({
           questionId: 1,
           mode: "PRACTICE",
-          answer: { type: "MCQ", selected_index: 5 },
+          answer: { type: "MCQ", selected_indices: [5] },
         }),
       }),
     );
@@ -29,7 +29,7 @@ describe("POST /api/reviews", () => {
     expect(mocks.submitReview).toHaveBeenCalledWith({
       questionId: 1,
       mode: "PRACTICE",
-      answer: { type: "MCQ", selected_index: 5 },
+      answer: { type: "MCQ", selected_indices: [5] },
     });
   });
 });

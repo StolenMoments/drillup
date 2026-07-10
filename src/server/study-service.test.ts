@@ -20,7 +20,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./db", () => ({ prisma: mocks.prisma }));
 vi.mock("@/core/random", () => ({ shuffle: mocks.shuffle }));
 
-import { ServiceError } from "./errors";
 import { getStudyQueue, submitReview } from "./study-service";
 
 describe("study-service", () => {
@@ -50,6 +49,7 @@ describe("study-service", () => {
         id: 1,
         type: "MCQ",
         question: "Which one is correct?",
+        selectionCount: 1,
         choices: [
           { text: "D", original_index: 3 },
           { text: "C", original_index: 2 },
@@ -78,12 +78,12 @@ describe("study-service", () => {
       submitReview({
         questionId: 1,
         mode: "PRACTICE",
-        answer: { type: "MCQ", selected_index: 5 },
+        answer: { type: "MCQ", selected_indices: [5] },
       }),
     ).resolves.toEqual({
       isCorrect: true,
       explanation: "F is correct.",
-      correct: { type: "MCQ", answer_index: 5 },
+      correct: { type: "MCQ", answer_indices: [5], choice_explanations: null },
     });
     expect(mocks.prisma.reviewLog.create).toHaveBeenCalledOnce();
   });
@@ -105,9 +105,9 @@ describe("study-service", () => {
       submitReview({
         questionId: 1,
         mode: "PRACTICE",
-        answer: { type: "MCQ", selected_index: 4 },
+        answer: { type: "MCQ", selected_indices: [4] },
       }),
-    ).rejects.toMatchObject<ServiceError>({
+    ).rejects.toMatchObject({
       code: "VALIDATION",
       status: 400,
     });

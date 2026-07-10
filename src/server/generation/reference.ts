@@ -6,6 +6,14 @@ import { prisma } from "../db";
 import { ServiceError } from "../errors";
 
 const ALLOWED_EXTENSIONS = new Set([".md", ".txt"]);
+export const AIP_C01_REQUIRED_REFERENCES = [
+  "common/00-exam-guide.md",
+  "common/01-style-examples.md",
+];
+
+export function requiredReferenceFiles(referenceDir: string | null): string[] {
+  return referenceDir === "aip-c01" ? AIP_C01_REQUIRED_REFERENCES : [];
+}
 
 export function referenceRoot(): string {
   return path.resolve(process.env.GENERATION_REFERENCE_DIR ?? "generation_reference");
@@ -58,7 +66,9 @@ export async function resolveReferenceFiles(
   referenceDir: string | null,
   selected: string[],
 ): Promise<string[]> {
-  if (selected.length === 0) return [];
+  const required = requiredReferenceFiles(referenceDir);
+  const requested = [...new Set([...required, ...selected])];
+  if (requested.length === 0) return [];
   if (!referenceDir) {
     throw new ServiceError(
       "VALIDATION",
@@ -68,7 +78,10 @@ export async function resolveReferenceFiles(
   }
   const base = baseDir(referenceDir);
   const resolved: string[] = [];
-  for (const rel of selected) {
+  if (referenceDir === "aip-c01" && !selected.some((file) => !required.includes(file))) {
+    throw new ServiceError("VALIDATION", "AIP-C01은 필수 자료 외에 도메인 참고 자료를 하나 이상 선택해야 합니다", 400);
+  }
+  for (const rel of requested) {
     if (!isSafeReferencePath(rel)) {
       throw new ServiceError("VALIDATION", `잘못된 파일 경로입니다: ${rel}`, 400);
     }

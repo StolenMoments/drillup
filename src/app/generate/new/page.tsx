@@ -14,6 +14,10 @@ const ENGINES: Array<{ value: GenerationEngineDto; label: string }> = [
   { value: "CODEX", label: "codex" },
   { value: "ANTIGRAVITY", label: "antigravity" },
 ];
+const AIP_REQUIRED_FILES = new Set([
+  "common/00-exam-guide.md",
+  "common/01-style-examples.md",
+]);
 
 function GenerationNewForm() {
   const router = useRouter();
@@ -121,6 +125,7 @@ function GenerationNewForm() {
   }
 
   function toggleFile(filePath: string) {
+    if (selectedTopic?.referenceDir === "aip-c01" && AIP_REQUIRED_FILES.has(filePath)) return;
     setSelectedFiles((prev) => {
       const next = new Set(prev);
       if (next.has(filePath)) next.delete(filePath);
@@ -131,6 +136,13 @@ function GenerationNewForm() {
 
   async function startGeneration() {
     if (topicId === "" || starting) return;
+    if (selectedTopic?.referenceDir === "aip-c01") {
+      const domainFiles = [...selectedFiles].filter((file) => !AIP_REQUIRED_FILES.has(file));
+      if (domainFiles.length === 0) {
+        setMessage("AIP-C01은 시험 가이드·스타일 예시와 함께 도메인 참고 자료를 하나 이상 선택해야 합니다.");
+        return;
+      }
+    }
     setStarting(true);
     setMessage("");
     try {
@@ -220,19 +232,23 @@ function GenerationNewForm() {
             </p>
           ) : (
             <div className="space-y-1">
-              {refList.files.map((file) => (
+              {refList.files.map((file) => {
+                const required = selectedTopic.referenceDir === "aip-c01" && AIP_REQUIRED_FILES.has(file.path);
+                return (
                 <label key={file.path} className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
                     checked={selectedFiles.has(file.path)}
                     onChange={() => toggleFile(file.path)}
+                    disabled={required}
                   />
-                  <span className="min-w-0 flex-1 break-all">{file.path}</span>
+                  <span className="min-w-0 flex-1 break-all">{file.path}{required ? " (필수)" : ""}</span>
                   <span className="subtle shrink-0 text-xs">
                     {(file.size / 1024).toFixed(1)} KB
                   </span>
                 </label>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

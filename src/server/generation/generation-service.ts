@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { Prisma, type GenerationItemRevision, type GenerationJob } from "@prisma/client";
-import { parseImportJson, type ImportQuestion } from "@/core/import-schema";
+import { parseImportJson, type ImportQuestion, validateGeneratedQuestions } from "@/core/import-schema";
 import { extractJsonObject } from "@/core/json-extract";
 import { parseKeywordTagJson } from "@/core/keyword-tag-schema";
 import {
@@ -28,7 +28,7 @@ import { prisma } from "../db";
 import { ServiceError } from "../errors";
 import { importQuestions } from "../import-service";
 import { attachKeywords } from "../keyword-service";
-import { resolveReferenceFiles } from "./reference";
+import { requiredReferenceFiles, resolveReferenceFiles } from "./reference";
 import { generationTimeoutMs, jobOutputDir, runEngine } from "./run-engine";
 
 const ORPHAN_GRACE_MS = 60_000;
@@ -196,7 +196,7 @@ export async function createJob(input: {
       engine: input.engine,
       verifyEngine: input.verifyEngine,
       instructions: input.instructions,
-      referenceFiles: input.referenceFiles,
+      referenceFiles: [...new Set([...requiredReferenceFiles(topic.referenceDir), ...input.referenceFiles])],
       sourceQuestionIds:
         sourceQuestionIds && sourceQuestionIds.length > 0 ? sourceQuestionIds : undefined,
     },
@@ -374,8 +374,9 @@ async function runJob(
   }
 
   // 이 시점의 verdict는 전부 unverified — 검증이 끝나면 덮어쓴다.
-  const unverifiedItems = mergeVerdicts(parsed.items, []);
-  const validItems = parsed.items.filter((item) => item.ok);
+  const generatedItems = validateGeneratedQuestions(parsed.items.map((item) => item.ok ? item.question : { type: "invalid" }));
+  const unverifiedItems = mergeVerdicts(generatedItems, []);
+  const validItems = generatedItems.filter((item) => item.ok);
 
   if (validItems.length === 0) {
     await prisma.generationJob.update({
@@ -418,7 +419,56 @@ async function runJob(
     if (!verdicts.ok) {
       verifyWarning = `검증 결과를 해석하지 못했습니다: ${verdicts.fatal}`;
     } else {
-      finalItems = mergeVerdicts(parsed.items, verdicts.verdicts);
+      finalItems = mergeVerdicts(generatedItems, verdicts.verdicts);
+    }
+  }
+
+  // Quality gate: failed items get exactly one automatic repair and a second verdict.
+  const repairTargets = finalItems.filter(
+    (item): item is Extract<typeof item, { ok: true }> => item.ok && item.verdict === "fail",
+  );
+  if (repairTargets.length > 0) {
+    const repaired: Array<{ index: number; question: ImportQuestion; previousComment: string | null }> = [];
+    for (const item of repairTargets) {
+      const repairPath = path.join(dir, `repair-${item.index}.json`);
+      const repairPrompt = buildCliRevisionPrompt(
+        topicName,
+        item.question,
+        `자동 품질 수정입니다. 검증 실패 사유: ${item.verdictComment ?? "품질 기준 미충족"}. 시험형 객관식 규칙, answer_indices와 choice_explanations를 모두 충족하세요.`,
+        repairPath,
+        referenceAbsPaths,
+      );
+      const repairRun = await runEngine(job.engine, repairPrompt, dir, `repair-${item.index}-`);
+      if (!repairRun.ok) continue;
+      const revision = parseRevisionJson(extractJsonObject(repairRun.resultText));
+      if (!revision.ok) continue;
+      const validated = validateGeneratedQuestions([revision.question])[0];
+      if (validated?.ok) repaired.push({ index: item.index, question: validated.question, previousComment: item.verdictComment });
+    }
+    if (repaired.length > 0) {
+      const repairVerifyPath = path.join(dir, "repair-verify-result.json");
+      const repairVerifyPrompt = buildCliVerifyPrompt(topicName, repaired, repairVerifyPath, referenceAbsPaths);
+      const repairVerifyRun = await runEngine(job.verifyEngine, repairVerifyPrompt, dir, "repair-verify-");
+      if (repairVerifyRun.ok) {
+        const repairVerdicts = parseVerifyJson(extractJsonObject(repairVerifyRun.resultText));
+        if (repairVerdicts.ok) {
+          const repairedResults = mergeVerdicts(
+            repaired.map((item) => ({ index: item.index, ok: true as const, question: item.question })),
+            repairVerdicts.verdicts,
+          );
+          const byIndex = new Map(repairedResults.map((item) => [item.index, item]));
+          finalItems = finalItems.map((item) => {
+            const replacement = byIndex.get(item.index);
+            if (!replacement || !replacement.ok) return item;
+            return {
+              ...replacement,
+              verdictComment: replacement.verdictComment
+                ? `자동 수정 후 재검증: ${replacement.verdictComment}`
+                : "자동 수정 후 재검증 완료",
+            };
+          });
+        }
+      }
     }
   }
 
@@ -643,7 +693,7 @@ export async function approveJob(
   const questions: ImportQuestion[] = [];
   for (const index of indices) {
     const item = byIndex.get(index);
-    if (!item || !item.ok) {
+    if (!item || !item.ok || item.verdict === "fail") {
       throw new ServiceError(
         "INVALID_ITEMS",
         "저장할 수 없는 항목이 포함되어 있습니다",

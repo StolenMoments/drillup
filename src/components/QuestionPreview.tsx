@@ -1,4 +1,5 @@
 import type { ImportQuestion } from "@/core/import-schema";
+import { mcqAnswerIndices } from "@/core/types";
 
 export default function QuestionPreview({
   question,
@@ -8,6 +9,7 @@ export default function QuestionPreview({
   revealed: boolean;
 }) {
   if (question.type === "mcq") {
+    const answerIndices = mcqAnswerIndices(question);
     return (
       <div className="space-y-2">
         <p className="leading-7">{question.question}</p>
@@ -16,13 +18,14 @@ export default function QuestionPreview({
             <li
               key={choice}
               className={
-                revealed && index === question.answer_index
+                revealed && answerIndices.includes(index)
                   ? "font-semibold text-[color:var(--success)]"
                   : "text-[color:var(--muted)]"
               }
             >
               {index + 1}. {choice}
-              {revealed && index === question.answer_index ? " (정답)" : ""}
+              {revealed && answerIndices.includes(index) ? " (정답)" : ""}
+              {revealed && question.choice_explanations?.[index] ? ` — ${question.choice_explanations[index]}` : ""}
             </li>
           ))}
         </ol>

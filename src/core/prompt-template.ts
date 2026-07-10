@@ -1,4 +1,4 @@
-import type { ClozePayload, McqPayload, QuestionType } from "./types";
+import { mcqAnswerIndices, type ClozePayload, type McqPayload, type QuestionType } from "./types";
 
 function promptBody(topicName: string): string {
   return `당신은 학습용 문제 출제 전문가입니다. 주제 "${topicName}"에 대한 학습 문제를 생성해 주세요.
@@ -45,6 +45,14 @@ function promptBody(topicName: string): string {
 
 export function buildGenerationPrompt(topicName: string): string {
   return `${promptBody(topicName)}
+${EXAM_MCQ_RULES}
+
+## Exam-style MCQ requirements
+
+- Generate MCQ only; do not generate cloze questions.
+- Each MCQ must contain 4-6 plausible choices, answer_indices (one or two zero-based indices), and choice_explanations with one factual explanation per choice.
+- Use a scenario with constraints, goals, and operating conditions; ask for the best solution rather than a recall fact.
+- When there are two correct answers, the question text must say "2개를 선택하세요".
 ${webVerificationSection("문제를 만들기 전에")}
 ## 추가 지시
 
@@ -56,6 +64,15 @@ export interface ExistingQuestions {
   summaries: string[];
   truncated: boolean;
 }
+
+const EXAM_MCQ_RULES = `
+## Mandatory exam-style MCQ contract
+
+Ignore any older mixed-format example above. Generate only \`mcq\` items.
+Every generated MCQ must be a scenario that requires interpreting constraints, goals, and operating conditions to choose the best solution. Do not create simple recall questions.
+Use 4-6 equally plausible choices. Use \`answer_indices\` with one or two unique zero-based indices, never \`answer_index\`. Include \`choice_explanations\` with exactly one factual explanation for every choice.
+If and only if there are two correct choices, the question text must include the exact Korean phrase \`2개를 선택하세요\`.
+`;
 
 function webVerificationSection(lead: string): string {
   return [
@@ -158,6 +175,7 @@ export function buildCliGenerationPrompt(
 ): string {
   const extra = instructions.trim();
   return `${promptBody(topicName)}
+${EXAM_MCQ_RULES}
 ${webVerificationSection("문제를 만들기 전에")}${referenceSection(referenceFiles, "문제를 만들기 전에")}${variantSection(variantSources)}${existingKeywordsSection(existingKeywords)}${dedupSection(existing)}
 
 ## 추가 지시
@@ -173,7 +191,7 @@ ${extra || "(없음)"}
 }
 
 function mcqExplanationSection(payload: McqPayload): string {
-  const correctText = payload.choices[payload.answer_index];
+  const correctText = mcqAnswerIndices(payload).map((index) => payload.choices[index]).join(", ");
   const choiceLines = payload.choices
     .map((choice) => `- ${choice}`)
     .join("\n");
@@ -266,6 +284,9 @@ export function buildCliVerifyPrompt(
 2. 문제 품질: 질문이 명확하고 모호하지 않은가? mcq 보기 중 정답으로 볼 수 있는 것이 2개 이상은 아닌가? 해설(explanation)이 정답과 모순되지 않는가?
 
 ${webVerificationSection("판정하기 전에")}${referenceSection(referenceFiles, "판정하기 전에")}
+## Exam quality gates
+
+Fail an MCQ unless: answer_indices has exactly 1 or 2 unique in-range values; the question says "2개를 선택하세요" exactly when there are two answers; every choice is plausible; the scenario's constraints and goal determine the best answer; no additional choice could reasonably be correct; and choice_explanations exists for every choice and is factually correct.
 ## 검증 대상 문제
 
 ${listing}

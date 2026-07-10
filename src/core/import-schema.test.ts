@@ -96,6 +96,28 @@ describe("parseImportJson MCQ", () => {
 
     expect(result.items[0].ok).toBe(false);
   });
+
+  it("accepts one or two answer indices and per-choice explanations", () => {
+    const result = parseOne({
+      ...validMcq,
+      answer_index: undefined,
+      answer_indices: [0, 2],
+      choice_explanations: ["a", "b", "c", "d"],
+    });
+    expect(result.ok && result.items[0].ok).toBe(true);
+  });
+
+  it("rejects duplicate or out-of-range indices and mismatched explanations", () => {
+    const cases = [
+      { answer_indices: [0, 0], choice_explanations: ["a", "b", "c", "d"] },
+      { answer_indices: [4], choice_explanations: ["a", "b", "c", "d"] },
+      { answer_indices: [0], choice_explanations: ["a"] },
+    ];
+    for (const candidate of cases) {
+      const result = parseOne({ ...validMcq, answer_index: undefined, ...candidate });
+      expect(result.ok && result.items[0].ok).toBe(false);
+    }
+  });
 });
 
 describe("parseImportJson CLOZE", () => {

@@ -19,11 +19,18 @@ const cloze: ClozePayload = {
 
 describe("gradeMcq", () => {
   it("returns true when the selected index is correct", () => {
-    expect(gradeMcq(mcq, { selected_index: 1 })).toBe(true);
+    expect(gradeMcq(mcq, { selected_indices: [1] })).toBe(true);
   });
 
   it("returns false when the selected index is wrong", () => {
-    expect(gradeMcq(mcq, { selected_index: 0 })).toBe(false);
+    expect(gradeMcq(mcq, { selected_indices: [0] })).toBe(false);
+  });
+
+  it("requires the same two answers regardless of selection order", () => {
+    const twoAnswers: McqPayload = { ...mcq, answer_index: undefined, answer_indices: [0, 2] };
+    expect(gradeMcq(twoAnswers, { selected_indices: [2, 0] })).toBe(true);
+    expect(gradeMcq(twoAnswers, { selected_indices: [0] })).toBe(false);
+    expect(gradeMcq(twoAnswers, { selected_indices: [0, 1] })).toBe(false);
   });
 });
 

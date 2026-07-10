@@ -67,7 +67,7 @@ export interface McqChoiceDto {
 }
 
 export type StudyQuestionDto =
-  | { id: number; type: "MCQ"; question: string; choices: McqChoiceDto[] }
+  | { id: number; type: "MCQ"; question: string; choices: McqChoiceDto[]; selectionCount: 1 | 2 }
   | {
       id: number;
       type: "CLOZE";
@@ -77,7 +77,7 @@ export type StudyQuestionDto =
     };
 
 export type ReviewAnswerDto =
-  | { type: "MCQ"; selected_index: number }
+  | { type: "MCQ"; selected_indices: number[] }
   | { type: "CLOZE"; filled: Record<string, string> };
 
 export interface SubmitReviewInput {
@@ -87,7 +87,7 @@ export interface SubmitReviewInput {
 }
 
 export type CorrectAnswerDto =
-  | { type: "MCQ"; answer_index: number }
+  | { type: "MCQ"; answer_indices: number[]; choice_explanations: string[] | null }
   | { type: "CLOZE"; answers: Record<string, string> };
 
 export interface ReviewResultDto {

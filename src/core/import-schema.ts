@@ -15,19 +15,31 @@ const mcqBase = z.object({
     .array(nonBlank)
     .min(4, "보기는 4~6개여야 합니다")
     .max(6, "보기는 4~6개여야 합니다"),
-  answer_index: z
-    .number()
-    .int()
-    .min(0, "answer_index는 보기 범위 안이어야 합니다"),
+  answer_index: z.number().int().min(0).optional(),
+  answer_indices: z.array(z.number().int().min(0)).min(1).max(2).optional(),
+  choice_explanations: z.array(nonBlank).optional(),
 });
 
 function refineMcq(question: z.infer<typeof mcqBase>, ctx: z.RefinementCtx) {
-  if (question.answer_index >= question.choices.length) {
+  const answerIndices = question.answer_indices ?? (question.answer_index === undefined ? [] : [question.answer_index]);
+  if (answerIndices.length === 0) {
+    ctx.addIssue({ code: "custom", path: ["answer_indices"], message: "answer_indices 또는 answer_index가 필요합니다" });
+  }
+  if (new Set(answerIndices).size !== answerIndices.length) {
+    ctx.addIssue({ code: "custom", path: ["answer_indices"], message: "정답 인덱스는 중복될 수 없습니다" });
+  }
+  if (answerIndices.some((index) => index >= question.choices.length)) {
     ctx.addIssue({
       code: "custom",
-      path: ["answer_index"],
-      message: "answer_index는 보기 범위 안이어야 합니다",
+      path: ["answer_indices"],
+      message: "정답 인덱스는 보기 범위 안이어야 합니다",
     });
+  }
+  if (question.answer_indices && question.answer_index !== undefined) {
+    ctx.addIssue({ code: "custom", path: ["answer_index"], message: "새 형식에서는 answer_indices만 사용합니다" });
+  }
+  if (question.choice_explanations && question.choice_explanations.length !== question.choices.length) {
+    ctx.addIssue({ code: "custom", path: ["choice_explanations"], message: "보기별 해설 수는 보기 수와 같아야 합니다" });
   }
 
   if (
@@ -176,4 +188,15 @@ export function parseImportJson(rawText: string): ImportParseResult {
   }
 
   return { ok: true, items: validateImportQuestions(questions) };
+}
+
+/** Generation is intentionally stricter than manual/legacy import. */
+export function validateGeneratedQuestions(questions: unknown[]): ImportItemResult[] {
+  return validateImportQuestions(questions).map((item) => {
+    if (!item.ok || item.question.type !== "mcq") return item;
+    if (!item.question.answer_indices || !item.question.choice_explanations) {
+      return { index: item.index, ok: false, errors: ["새 객관식 생성에는 answer_indices와 choice_explanations가 필요합니다"] };
+    }
+    return item;
+  });
 }
