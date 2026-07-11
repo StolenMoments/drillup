@@ -1,326 +1,116 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
+import ClozeCard from "@/components/ClozeCard";
+import McqCard from "@/components/McqCard";
+import ResultPanel from "@/components/ResultPanel";
 import { api } from "@/lib/api-client";
 import type {
-  GenerationEngineDto,
-  KeywordDto,
-  KeywordRefDto,
+  ReviewAnswerDto,
+  ReviewResultDto,
+  StudyQuestionDto,
 } from "@/lib/api-types";
 
-const KEYWORD_ENGINES: Array<{ value: GenerationEngineDto; label: string }> = [
-  { value: "CLAUDE", label: "Claude" },
-  { value: "CODEX", label: "Codex" },
-  { value: "ANTIGRAVITY", label: "agy" },
-];
-
-type KeywordSuggestionState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "done"; keywords: string[] }
-  | { status: "error"; message: string };
-
-function initialSuggestionStates(): Record<
-  GenerationEngineDto,
-  KeywordSuggestionState
-> {
-  return {
-    CLAUDE: { status: "idle" },
-    CODEX: { status: "idle" },
-    ANTIGRAVITY: { status: "idle" },
-  };
-}
-
-export default function QuestionEditPage() {
+export default function QuestionPracticePage() {
   const params = useParams<{ id: string }>();
   const id = Number(params.id);
   const router = useRouter();
-
-  const [payloadText, setPayloadText] = useState("");
-  const [explanation, setExplanation] = useState("");
-  const [type, setType] = useState<"MCQ" | "CLOZE" | null>(null);
-  const [message, setMessage] = useState("");
-  const [loaded, setLoaded] = useState(false);
-  const [topicId, setTopicId] = useState<number | null>(null);
-  const [keywords, setKeywords] = useState<KeywordRefDto[]>([]);
-  const [allKeywords, setAllKeywords] = useState<KeywordDto[]>([]);
-  const [newKeyword, setNewKeyword] = useState("");
-  const [suggestionStates, setSuggestionStates] = useState<
-    Record<GenerationEngineDto, KeywordSuggestionState>
-  >(initialSuggestionStates);
+  const [question, setQuestion] = useState<StudyQuestionDto | null>(null);
+  const [result, setResult] = useState<ReviewResultDto | null>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    api.questions
-      .get(id)
-      .then((question) => {
-        setPayloadText(JSON.stringify(question.payload, null, 2));
-        setExplanation(question.explanation ?? "");
-        setType(question.type);
-        setTopicId(question.topicId);
-        setKeywords(question.keywords);
-        setLoaded(true);
-      })
-      .catch((error: unknown) =>
-        setMessage(
-          error instanceof Error
-            ? error.message
-            : "문제를 불러오지 못했습니다",
-        ),
-      );
+    let ignore = false;
 
-    api.keywords
-      .list()
-      .then((data) => setAllKeywords(data.keywords))
-      .catch(() => setAllKeywords([]));
+    api.study
+      .getQuestion(id)
+      .then((loadedQuestion) => {
+        if (!ignore) setQuestion(loadedQuestion);
+      })
+      .catch((loadError: unknown) => {
+        if (!ignore) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "문제를 불러오지 못했습니다",
+          );
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, [id]);
 
-  async function save() {
-    let payload: unknown;
-    try {
-      payload = JSON.parse(payloadText);
-    } catch {
-      setMessage("payload가 올바른 JSON이 아닙니다");
-      return;
-    }
+  async function submitAnswer(answer: ReviewAnswerDto) {
+    if (!question) return;
 
     try {
-      await api.questions.update(id, {
-        payload,
-        explanation: explanation.trim() ? explanation.trim() : null,
-      });
-      router.push("/questions");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "저장에 실패했습니다");
-    }
-  }
-
-  async function addKeyword() {
-    const name = newKeyword.trim();
-    if (!name) return;
-    try {
-      const added = await api.questions.addKeyword(id, name);
-      setKeywords((prev) =>
-        prev.some((keyword) => keyword.id === added.id)
-          ? prev
-          : [...prev, added].sort((a, b) => a.name.localeCompare(b.name)),
+      setResult(
+        await api.study.submitReview({
+          questionId: question.id,
+          mode: "PRACTICE",
+          answer,
+        }),
       );
-      setNewKeyword("");
-      setMessage("");
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "키워드 추가에 실패했습니다",
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : "채점 요청에 실패했습니다",
       );
     }
   }
 
-  async function removeKeyword(keywordId: number) {
-    try {
-      await api.questions.removeKeyword(id, keywordId);
-      setKeywords((prev) => prev.filter((keyword) => keyword.id !== keywordId));
-      setMessage("");
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "키워드 삭제에 실패했습니다",
-      );
-    }
-  }
-
-  async function suggestKeywords(engine: GenerationEngineDto) {
-    setSuggestionStates((prev) => ({
-      ...prev,
-      [engine]: { status: "loading" },
-    }));
-    try {
-      const result = await api.questions.suggestKeywords(id, engine);
-      setSuggestionStates((prev) => ({
-        ...prev,
-        [engine]: { status: "done", keywords: result.keywords },
-      }));
-    } catch (error) {
-      setSuggestionStates((prev) => ({
-        ...prev,
-        [engine]: {
-          status: "error",
-          message:
-            error instanceof Error ? error.message : "키워드 추천에 실패했습니다",
-        },
-      }));
-    }
-  }
-
-  if (!loaded) {
-    return <p className="muted">{message || "불러오는 중..."}</p>;
-  }
+  if (error) return <p className="text-[color:var(--danger)]">{error}</p>;
+  if (!question) return <p className="muted">불러오는 중...</p>;
 
   return (
-    <div className="app-page max-w-4xl">
+    <div className="app-page mx-auto max-w-3xl">
       <div className="page-header">
         <div>
-          <h1 className="page-title">문제 수정 #{id}</h1>
+          <h1 className="page-title">문제 풀기 #{question.id}</h1>
           <p className="page-subtitle">
-            <span className="chip">{type === "MCQ" ? "객관식" : "빈칸"}</span>
+            <span className="chip mr-2">
+              {question.type === "MCQ" ? "객관식" : "빈칸"}
+            </span>
+            자유 연습으로 기록되며 복습 일정은 변경되지 않습니다.
           </p>
         </div>
+        <Link href={`/questions/${question.id}/edit`} className="btn btn-secondary">
+          수정
+        </Link>
       </div>
-      <div className="surface surface-pad space-y-2">
-        <label className="text-sm font-semibold text-[color:var(--muted)]">payload (JSON)</label>
-        <textarea
-          value={payloadText}
-          onChange={(event) => setPayloadText(event.target.value)}
-          rows={14}
-          className="textarea font-mono text-sm"
+
+      {question.type === "MCQ" ? (
+        <McqCard
+          key={question.id}
+          question={question}
+          disabled={result !== null}
+          onSubmit={(selectedIndices) =>
+            submitAnswer({ type: "MCQ", selected_indices: selectedIndices })
+          }
         />
-      </div>
-      <div className="surface surface-pad space-y-2">
-        <label className="text-sm font-semibold text-[color:var(--muted)]">해설</label>
-        <textarea
-          value={explanation}
-          onChange={(event) => setExplanation(event.target.value)}
-          rows={4}
-          className="textarea"
+      ) : (
+        <ClozeCard
+          key={question.id}
+          question={question}
+          disabled={result !== null}
+          onSubmit={(filled) => submitAnswer({ type: "CLOZE", filled })}
         />
-      </div>
-      <div className="surface surface-pad space-y-2">
-        <label className="text-sm font-semibold text-[color:var(--muted)]">키워드</label>
-        <div className="flex flex-wrap items-center gap-2">
-          {keywords.length === 0 && (
-            <span className="muted text-sm">아직 키워드가 없습니다.</span>
-          )}
-          {keywords.map((keyword) => (
-            <span key={keyword.id} className="chip gap-1">
-              {keyword.name}
-              <button
-                type="button"
-                onClick={() => removeKeyword(keyword.id)}
-                aria-label={`${keyword.name} 키워드 삭제`}
-                className="text-[color:var(--danger)]"
-              >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <input
-            value={newKeyword}
-            onChange={(event) => setNewKeyword(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                void addKeyword();
-              }
-            }}
-            list="keyword-options"
-            placeholder="키워드 추가 (예: TCP)"
-            className="field min-w-0 flex-1"
-          />
-          <datalist id="keyword-options">
-            {allKeywords.map((keyword) => (
-              <option key={keyword.id} value={keyword.name} />
-            ))}
-          </datalist>
-          <button
-            onClick={addKeyword}
-            disabled={newKeyword.trim().length === 0}
-            className="btn btn-secondary shrink-0"
-          >
-            추가
-          </button>
-        </div>
-        <div className="space-y-2 border-t border-[color:var(--border)] pt-3">
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <p className="text-sm font-semibold text-[color:var(--muted)]">
-              🤖 AI 키워드 추천
-            </p>
-            <p className="subtle text-xs">
-              추천은 저장되지 않으며, 선택 후 추가 버튼을 눌러 반영합니다.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {KEYWORD_ENGINES.map(({ value, label }) => {
-              const state = suggestionStates[value];
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => void suggestKeywords(value)}
-                  disabled={state.status === "loading"}
-                  className="btn btn-secondary min-h-9 px-3 text-sm"
-                >
-                  {state.status === "loading"
-                    ? `${label} 추천 중...`
-                    : state.status === "done"
-                      ? `${label} 다시 추천`
-                      : `${label}로 추천받기`}
-                </button>
-              );
-            })}
-          </div>
-          {KEYWORD_ENGINES.map(({ value, label }) => {
-            const state = suggestionStates[value];
-            if (state.status === "error") {
-              return (
-                <p key={value} className="text-sm text-[color:var(--danger)]">
-                  ❌ {label} 추천을 가져오지 못했습니다: {state.message}
-                </p>
-              );
-            }
-            if (state.status !== "done") return null;
-            return (
-              <div key={value} className="space-y-1">
-                <p className="chip">{label} 추천</p>
-                {state.keywords.length === 0 ? (
-                  <p className="muted text-sm">추가할 키워드가 없습니다.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {state.keywords.map((keyword) => {
-                      const alreadyAssigned = keywords.some(
-                        (item) => item.name === keyword,
-                      );
-                      return (
-                        <button
-                          key={keyword}
-                          type="button"
-                          disabled={alreadyAssigned}
-                          onClick={() => setNewKeyword(keyword)}
-                          className="chip border border-[color:var(--border)] hover:border-[color:var(--brand)] hover:text-[color:var(--brand)] disabled:opacity-50"
-                        >
-                          {alreadyAssigned ? `${keyword} · 추가됨` : `+ ${keyword}`}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      {message && <p className="text-sm text-[color:var(--danger)]">{message}</p>}
-      <div className="flex gap-2">
-        <button
-          onClick={save}
-          className="btn btn-primary"
-        >
-          저장
-        </button>
-        <button
-          onClick={() => router.push("/questions")}
-          className="btn btn-secondary"
-        >
-          취소
-        </button>
-        {topicId !== null && (
-          <Link
-            href={`/generate/new?topicId=${topicId}&sourceQuestionIds=${id}`}
-            className="btn btn-secondary ml-auto"
-          >
-            🤖 변형 문제 생성
-          </Link>
-        )}
-      </div>
+      )}
+
+      {result && (
+        <ResultPanel
+          question={question}
+          result={result}
+          onNext={() => router.push("/questions")}
+          isLast
+          nextLabel="문제 목록으로"
+        />
+      )}
     </div>
   );
 }

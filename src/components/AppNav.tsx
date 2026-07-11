@@ -14,7 +14,7 @@ const navItems: NavItem[] = [
   { href: "/study?mode=srs", label: "학습", basePath: "/study" },
   { href: "/import", label: "가져오기", basePath: "/import" },
   { href: "/generate", label: "AI 생성", basePath: "/generate" },
-  { href: "/questions", label: "문제 관리", basePath: "/questions" },
+  { href: "/questions", label: "문제 목록", basePath: "/questions" },
   { href: "/keywords", label: "키워드", basePath: "/keywords" },
   { href: "/stats", label: "통계", basePath: "/stats" },
 ] as const;

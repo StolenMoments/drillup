@@ -210,7 +210,7 @@ export default function QuestionsPage() {
     <div className="app-page">
       <div className="page-header">
         <div>
-          <h1 className="page-title">문제 관리</h1>
+          <h1 className="page-title">문제 목록</h1>
           <p className="page-subtitle">
             주제별로 문제를 묶고, 필요한 경우 원본 payload와 해설을 수정합니다.
           </p>
@@ -329,6 +329,9 @@ export default function QuestionsPage() {
               <span className="chip">
                 {question.type === "MCQ" ? "객관식" : "빈칸"}
               </span>
+              <span className="shrink-0 text-sm text-[color:var(--subtle)]">
+                #{question.id}
+              </span>
               <Link
                 href={`/questions/${question.id}`}
                 className="min-w-0 flex-1 truncate font-medium text-[color:var(--text)] hover:text-[color:var(--brand)] hover:underline focus-visible:rounded-sm"
@@ -339,7 +342,7 @@ export default function QuestionsPage() {
                 {accuracyText(question)}
               </span>
               <Link
-                href={`/questions/${question.id}`}
+                href={`/questions/${question.id}/edit`}
                 className="shrink-0 text-sm font-semibold text-[color:var(--brand)]"
               >
                 수정

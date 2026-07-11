@@ -125,7 +125,7 @@ npm run keywords:backfill -- --topic-id 3 --delay-ms 1000
 - 새 AI 생성은 기본적으로 시험형 시나리오 객관식이며, 정답 1개와 2개 선택 문항을 함께 만들고 모든 보기에 해설을 제공합니다.
 - `aip-c01` 주제는 `common/00-exam-guide.md`, `common/01-style-examples.md`를 항상 포함하며, 추가로 도메인 참고 자료를 하나 이상 선택해야 합니다.
 
-- 문제 관리에서 주제에 "참고 자료 폴더"를 설정하면(예: `aip-c01`),
+- 문제 목록에서 주제에 "참고 자료 폴더"를 설정하면(예: `aip-c01`),
   `generation_reference/<폴더>/`의 md/txt 파일을 /generate에서 선택해
   에이전트가 읽고 근거로 출제·검증합니다.
 - 최신 시험처럼 모델 학습 데이터가 부족한 주제에 사용합니다.

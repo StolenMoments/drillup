@@ -140,7 +140,7 @@ export default function KeywordsPage() {
         <p className="muted">불러오는 중...</p>
       ) : keywords.length === 0 ? (
         <p className="empty-state">
-          키워드가 없습니다 — 문제 관리에서 &quot;키워드 일괄 부여&quot;를 실행하거나
+          키워드가 없습니다 — 문제 목록에서 &quot;키워드 일괄 부여&quot;를 실행하거나
           문제 상세에서 직접 추가하세요.
         </p>
       ) : (
@@ -192,7 +192,7 @@ export default function KeywordsPage() {
                 </span>
                 <span className="min-w-0 flex-1 truncate">{question.preview}</span>
                 <Link
-                  href={`/questions/${question.id}`}
+                  href={`/questions/${question.id}/edit`}
                   className="shrink-0 text-sm font-semibold text-[color:var(--brand)]"
                 >
                   수정
@@ -202,7 +202,7 @@ export default function KeywordsPage() {
           </ul>
           {totalQuestions > questions.length && (
             <p className="muted text-sm">
-              첫 {questions.length}개만 표시 — 전체는 문제 관리에서 키워드 필터로
+              첫 {questions.length}개만 표시 — 전체는 문제 목록에서 키워드 필터로
               확인하세요.
             </p>
           )}

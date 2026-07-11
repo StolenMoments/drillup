@@ -50,6 +50,14 @@ function toStudyDto(question: {
   };
 }
 
+export async function getStudyQuestion(id: number): Promise<StudyQuestionDto> {
+  const question = await prisma.question.findUnique({ where: { id } });
+  if (!question) {
+    throw new ServiceError("NOT_FOUND", "문제를 찾을 수 없습니다", 404);
+  }
+  return toStudyDto(question);
+}
+
 export async function getStudyQueue(
   mode: "srs" | "practice" | "unlearned",
   topicId?: number,

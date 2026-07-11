@@ -15,6 +15,7 @@ interface ResultPanelProps {
   result: ReviewResultDto;
   onNext: () => void;
   isLast: boolean;
+  nextLabel?: string;
 }
 
 const ENGINES: { value: GenerationEngineDto; label: string }[] = [
@@ -67,6 +68,7 @@ export default function ResultPanel({
   result,
   onNext,
   isLast,
+  nextLabel,
 }: ResultPanelProps) {
   const [engineStates, setEngineStates] = useState<
     Record<GenerationEngineDto, EngineState>
@@ -338,7 +340,7 @@ export default function ResultPanel({
         onClick={onNext}
         className="btn btn-secondary w-full"
       >
-        {isLast ? "완료" : "다음 문제"}
+        {nextLabel ?? (isLast ? "완료" : "다음 문제")}
       </button>
     </div>
   );
