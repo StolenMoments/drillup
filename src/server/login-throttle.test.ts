@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  LOCKOUT_MS,
-  MAX_FAILURES,
+  BACKOFF_MAX_MS,
+  ENTRY_TTL_MS,
+  MAX_ENTRIES,
   checkLockout,
+  clientKeyFromRequest,
   recordFailure,
   recordSuccess,
   resetThrottleForTest,
+  throttleEntryCountForTest,
 } from "./login-throttle";
 
 describe("login-throttle", () => {
@@ -13,36 +16,73 @@ describe("login-throttle", () => {
     resetThrottleForTest();
   });
 
-  it("초기 상태는 잠기지 않음", () => {
-    expect(checkLockout(0).locked).toBe(false);
+  it("IP별로 실패 상태를 격리함", () => {
+    expect(recordFailure("203.0.113.1", 0).retryAfterMs).toBe(1_000);
+
+    expect(checkLockout("203.0.113.1", 500)).toEqual({
+      locked: true,
+      retryAfterMs: 500,
+    });
+    expect(checkLockout("203.0.113.2", 500)).toEqual({
+      locked: false,
+      retryAfterMs: 0,
+    });
   });
 
-  it("MAX_FAILURES 미만 실패는 잠그지 않음", () => {
-    for (let i = 0; i < MAX_FAILURES - 1; i++) recordFailure(0);
-    expect(checkLockout(0).locked).toBe(false);
+  it("실패할 때마다 backoff를 지수형으로 늘리고 30초로 제한함", () => {
+    const delays: number[] = [];
+    let now = 0;
+
+    for (let i = 0; i < 7; i++) {
+      const state = recordFailure("203.0.113.1", now);
+      delays.push(state.retryAfterMs);
+      now += state.retryAfterMs;
+    }
+
+    expect(delays).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000]);
+    expect(delays.at(-1)).toBe(BACKOFF_MAX_MS);
   });
 
-  it("MAX_FAILURES 연속 실패 시 잠김", () => {
-    for (let i = 0; i < MAX_FAILURES; i++) recordFailure(0);
-    const state = checkLockout(0);
-    expect(state.locked).toBe(true);
-    expect(state.retryAfterMs).toBe(LOCKOUT_MS);
+  it("성공한 IP의 상태만 초기화함", () => {
+    recordFailure("203.0.113.1", 0);
+    recordFailure("203.0.113.2", 0);
+
+    recordSuccess("203.0.113.1");
+
+    expect(checkLockout("203.0.113.1", 500).locked).toBe(false);
+    expect(checkLockout("203.0.113.2", 500).locked).toBe(true);
   });
 
-  it("잠금 시간이 지나면 자동 해제", () => {
-    for (let i = 0; i < MAX_FAILURES; i++) recordFailure(0);
-    expect(checkLockout(LOCKOUT_MS).locked).toBe(false);
+  it("30분 동안 사용하지 않은 상태를 정리함", () => {
+    recordFailure("203.0.113.1", 0);
+
+    expect(checkLockout("203.0.113.2", ENTRY_TTL_MS + 1).locked).toBe(false);
+    expect(throttleEntryCountForTest()).toBe(0);
   });
 
-  it("성공 시 실패 카운터가 초기화됨", () => {
-    for (let i = 0; i < MAX_FAILURES - 1; i++) recordFailure(0);
-    recordSuccess();
-    for (let i = 0; i < MAX_FAILURES - 1; i++) recordFailure(0);
-    expect(checkLockout(0).locked).toBe(false);
+  it("저장하는 IP 상태 수를 제한함", () => {
+    for (let i = 0; i < MAX_ENTRIES + 25; i++) {
+      recordFailure(`client-${i}`, 0);
+    }
+
+    expect(throttleEntryCountForTest()).toBe(MAX_ENTRIES);
   });
 
-  it("잠금 중 남은 시간을 정확히 반환", () => {
-    for (let i = 0; i < MAX_FAILURES; i++) recordFailure(1000);
-    expect(checkLockout(1000 + 60_000).retryAfterMs).toBe(LOCKOUT_MS - 60_000);
+  it("유효한 X-Real-IP를 client key로 사용함", () => {
+    const request = new Request("http://localhost/api/auth/login", {
+      headers: { "X-Real-IP": "203.0.113.10" },
+    });
+
+    expect(clientKeyFromRequest(request)).toBe("203.0.113.10");
+  });
+
+  it("신뢰할 수 없는 IP 헤더는 unknown으로 격리함", () => {
+    const missing = new Request("http://localhost/api/auth/login");
+    const invalid = new Request("http://localhost/api/auth/login", {
+      headers: { "X-Real-IP": "203.0.113.10, 198.51.100.2" },
+    });
+
+    expect(clientKeyFromRequest(missing)).toBe("unknown");
+    expect(clientKeyFromRequest(invalid)).toBe("unknown");
   });
 });
