@@ -23,9 +23,6 @@
 # AI generation job output
 /generation_output/
 
-# AI generation reference materials (저작권 자료 포함 — 커밋 금지)
-/generation_reference/
-
 # misc
 .DS_Store
 *.pem
