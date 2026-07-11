@@ -7,7 +7,10 @@ import { shuffleMcqChoices } from "@/core/random";
 import { parseKeywordTagJson } from "@/core/keyword-tag-schema";
 import {
   buildCliGenerationPrompt,
+  buildCliGenerationFromBlueprintPrompt,
   buildCliKeywordTagPrompt,
+  buildCliQuestionBlueprintPrompt,
+  buildCliQuestionBlueprintRepairPrompt,
   buildCliRevisionPrompt,
   buildCliVerifyPrompt,
   type ExistingQuestions,
@@ -16,6 +19,8 @@ import {
 import { capSummaries, summarizeQuestionPayload } from "@/core/question-summary";
 import { mergeVerdicts, parseVerifyJson } from "@/core/verify-schema";
 import { parseRevisionJson } from "@/core/revision-schema";
+import { assessQuestionBlueprint } from "@/core/question-difficulty";
+import { parseQuestionBlueprintJson, type QuestionBlueprint } from "@/core/question-blueprint";
 import type {
   GenerationEngineDto,
   GenerationItemDto,
@@ -344,19 +349,43 @@ async function runJob(
   variantSources: VariantSource[],
 ): Promise<void> {
   const dir = jobOutputDir(jobId);
-  const resultPath = path.join(dir, "result.json");
-  const prompt = buildCliGenerationPrompt(
-    topicName,
-    instructions,
-    resultPath,
-    existing,
-    referenceAbsPaths,
-    existingKeywords,
-    variantSources,
-  );
-
   const job = await prisma.generationJob.findUnique({ where: { id: jobId } });
   if (!job || job.status !== "RUNNING") return;
+
+  const blueprintPath = path.join(dir, "blueprint-result.json");
+  const blueprintRun = await runEngine(job.engine, buildCliQuestionBlueprintPrompt(topicName, instructions, blueprintPath, existing, referenceAbsPaths, existingKeywords, variantSources), dir, "blueprint-");
+  if (!blueprintRun.ok) {
+    await failJob(jobId, blueprintRun.failureReason, null);
+    return;
+  }
+  const blueprintParsed = parseQuestionBlueprintJson(extractJsonObject(blueprintRun.resultText));
+  if (!blueprintParsed.ok) {
+    await failJob(jobId, blueprintParsed.fatal, blueprintRun.resultText);
+    return;
+  }
+  let assessments = blueprintParsed.blueprints.map((blueprint) => ({ blueprint, assessment: assessQuestionBlueprint(blueprint) }));
+  const failed = assessments.filter((item) => !item.assessment.pass);
+  if (failed.length) {
+    const repairPath = path.join(dir, "blueprint-repair-result.json");
+    const violations = failed.map((item) => `${item.blueprint.id}: ${item.assessment.violations.map((violation) => violation.code).join(", ")}`).join("\n");
+    const repairRun = await runEngine(job.engine, buildCliQuestionBlueprintRepairPrompt(failed.map((item) => item.blueprint), violations, repairPath), dir, "blueprint-repair-");
+    if (repairRun.ok) {
+      const repaired = parseQuestionBlueprintJson(extractJsonObject(repairRun.resultText));
+      if (repaired.ok) {
+        const replacements = new Map(repaired.blueprints.filter((blueprint) => failed.some((item) => item.blueprint.id === blueprint.id)).map((blueprint) => [blueprint.id, blueprint]));
+        assessments = assessments.map((item) => replacements.has(item.blueprint.id) ? { blueprint: replacements.get(item.blueprint.id) as QuestionBlueprint, assessment: assessQuestionBlueprint(replacements.get(item.blueprint.id) as QuestionBlueprint) } : item);
+      }
+    }
+  }
+  const blueprints = assessments.filter((item) => item.assessment.pass).map((item) => item.blueprint);
+  if (!blueprints.length) {
+    await failJob(jobId, "No question blueprints passed the structural difficulty gate.", blueprintRun.resultText);
+    return;
+  }
+  const excluded = assessments.filter((item) => !item.assessment.pass);
+  const blueprintWarning = excluded.length ? `${excluded.length} blueprint(s) were excluded after one repair attempt.` : null;
+  const resultPath = path.join(dir, "result.json");
+  const prompt = buildCliGenerationFromBlueprintPrompt(topicName, blueprints, resultPath, referenceAbsPaths);
 
   const run = await runEngine(job.engine, prompt, dir);
   if (!run.ok) {
@@ -375,11 +404,11 @@ async function runJob(
   }
 
   // 이 시점의 verdict는 전부 unverified — 검증이 끝나면 덮어쓴다.
-  const generatedItems = validateGeneratedQuestions(parsed.items.map((item) => item.ok ? item.question : { type: "invalid" })).map((item) =>
-    item.ok && item.question.type === "mcq"
-      ? { ...item, question: shuffleMcqChoices(item.question) as ImportQuestion }
-      : item,
-  );
+  if (parsed.items.length !== blueprints.length) {
+    await failJob(jobId, `Generated question count (${parsed.items.length}) does not match blueprint count (${blueprints.length}).`, run.resultText);
+    return;
+  }
+  const generatedItems = validateGeneratedQuestions(parsed.items.map((item) => item.ok ? item.question : { type: "invalid" }));
   const unverifiedItems = mergeVerdicts(generatedItems, []);
   const validItems = generatedItems.filter((item) => item.ok);
 
@@ -408,7 +437,7 @@ async function runJob(
   const verifyResultPath = path.join(dir, "verify-result.json");
   const verifyPrompt = buildCliVerifyPrompt(
     topicName,
-    validItems.map((item) => ({ index: item.index, question: item.question })),
+    validItems.map((item) => ({ index: item.index, question: item.question, blueprint: blueprints[item.index] })),
     verifyResultPath,
     referenceAbsPaths,
   );
@@ -442,6 +471,7 @@ async function runJob(
         `자동 품질 수정입니다. 검증 실패 사유: ${item.verdictComment ?? "품질 기준 미충족"}. 시험형 객관식 규칙, answer_indices와 choice_explanations를 모두 충족하세요.`,
         repairPath,
         referenceAbsPaths,
+        blueprints[item.index],
       );
       const repairRun = await runEngine(job.engine, repairPrompt, dir, `repair-${item.index}-`);
       if (!repairRun.ok) continue;
@@ -458,7 +488,7 @@ async function runJob(
     }
     if (repaired.length > 0) {
       const repairVerifyPath = path.join(dir, "repair-verify-result.json");
-      const repairVerifyPrompt = buildCliVerifyPrompt(topicName, repaired, repairVerifyPath, referenceAbsPaths);
+      const repairVerifyPrompt = buildCliVerifyPrompt(topicName, repaired.map((item) => ({ ...item, blueprint: blueprints[item.index] })), repairVerifyPath, referenceAbsPaths);
       const repairVerifyRun = await runEngine(job.verifyEngine, repairVerifyPrompt, dir, "repair-verify-");
       if (repairVerifyRun.ok) {
         const repairVerdicts = parseVerifyJson(extractJsonObject(repairVerifyRun.resultText));
@@ -487,8 +517,10 @@ async function runJob(
     where: { id: jobId },
     data: {
       status: "SUCCEEDED",
-      result: finalItems as unknown as Prisma.InputJsonValue,
-      verifyWarning,
+      result: finalItems.map((item) => item.ok && item.question.type === "mcq"
+        ? { ...item, question: shuffleMcqChoices(item.question) as ImportQuestion }
+        : item) as unknown as Prisma.InputJsonValue,
+      verifyWarning: [blueprintWarning, verifyWarning].filter(Boolean).join(" ") || null,
       finishedAt: new Date(),
     },
   });
