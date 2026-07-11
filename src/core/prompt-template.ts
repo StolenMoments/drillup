@@ -177,9 +177,9 @@ function referenceSection(files: string[], lead: string): string {
     "",
     ...files.map((file) => `- ${file}`),
     "",
-    "- 문제와 정답의 사실 관계는 반드시 위 자료 내용에 근거해야 합니다.",
-    "- 자료에 없는 내용을 기억이나 추측으로 출제하지 마세요.",
-    "- 자료와 당신의 기억이 다르면 자료를 우선하세요.",
+    "- 사실 우선순위: 최신 공식 웹 문서 > 참고 자료 > 당신의 기억.",
+    "- 참고 자료는 출제 범위와 스타일의 근거입니다. 자료에 없는 범위를 기억이나 추측으로 출제하지 마세요.",
+    "- 서비스가 특정 기능을 기본 제공한다는 주장은 자료에 적혀 있어도 공식 웹 문서로 확인하고, 확인할 수 없으면 그 주장을 정답의 근거로 삼지 마세요.",
     "- 읽을 수 없는 파일이 있으면 그 파일은 무시하고 진행하세요.",
     "",
   ].join("\n");
@@ -332,7 +332,7 @@ ${webVerificationSection("판정하기 전에")}${referenceSection(referenceFile
 Fail an MCQ unless: answer_indices has exactly 1 or 2 unique in-range values; the question says "2개를 선택하세요" exactly when there are two answers; every choice is plausible; at least two distractors are close-but-wrong through a realistic misconception, partial solution, or missed constraint; distractors avoid giveaway narrow or absolute wording such as "only", "always", "never", "만", "항상", and "절대"; the scenario's constraints and goal determine the best answer; no additional choice could reasonably be correct; and choice_explanations exists for every choice and is factually correct.
 ## 검증 대상 문제
 
-${blueprintListing ? `## Blueprint conformance\nFacts, correct answers, constraints, and service relationships are immutable. Fail decorative constraints and presentation clues: only correct choices are longer or more specific; only correct choices repeat scenario wording/order; distractors disproportionately use direct implementation, manual work, custom development, or unconditional wording; choices use different architectural granularity; or service names alone reveal the answer.\n${blueprintListing}\n` : ""}
+${blueprintListing ? `## Blueprint conformance\nUse the blueprint as design intent, but factual accuracy overrides the blueprint: if a blueprint fact, the designated correct answer, or a service capability claim contradicts current official documentation, fail that question and explain why. Fail decorative constraints and presentation clues: only correct choices are longer or more specific; only correct choices repeat scenario wording/order; distractors disproportionately use direct implementation, manual work, custom development, or unconditional wording; choices use different architectural granularity; or service names alone reveal the answer.\n${blueprintListing}\n` : ""}
 ${listing}
 
 ## 출력 형식
@@ -466,7 +466,7 @@ export function buildCliRevisionPrompt(
   referenceFiles: string[] = [],
   blueprint?: QuestionBlueprint,
 ): string {
-  const questionWithBlueprint = blueprint ? { question, blueprint, immutable: "Keep blueprint facts, answers, constraints, and service relationships unchanged." } : question;
+  const questionWithBlueprint = blueprint ? { question, blueprint, blueprintGuide: "Keep the blueprint's tested distinction and structure, but correct factual errors: if a blueprint fact or the designated answer contradicts current official documentation, fix the question accordingly and explain in the comment." } : question;
   return `당신은 학습 문제 검증 및 개선 전문가입니다. 주제 "${topicName}"의 아래 문제를 검증하고 개선하세요.
 
 ${webVerificationSection("검증하기 전에")}${referenceSection(referenceFiles, "검증하기 전에")}## 대상 문제

@@ -4,6 +4,7 @@ import {
   buildChoiceHardeningPrompt,
   buildCliGenerationPrompt,
   buildCliKeywordTagPrompt,
+  buildCliRevisionPrompt,
   buildCliVerifyPrompt,
   buildGenerationPrompt,
   buildKeywordSuggestionPrompt,
@@ -147,8 +148,8 @@ describe("buildCliGenerationPrompt 참고 자료 섹션", () => {
     expect(prompt).toContain("## 참고 자료 (반드시 먼저 읽을 것)");
     expect(prompt).toContain(`- ${REF_FILES[0]}`);
     expect(prompt).toContain(`- ${REF_FILES[1]}`);
-    expect(prompt).toContain("자료에 없는 내용을 기억이나 추측으로 출제하지 마세요");
-    expect(prompt).toContain("자료와 당신의 기억이 다르면 자료를 우선하세요");
+    expect(prompt).toContain("자료에 없는 범위를 기억이나 추측으로 출제하지 마세요");
+    expect(prompt).toContain("사실 우선순위: 최신 공식 웹 문서 > 참고 자료 > 당신의 기억");
     expect(prompt).toContain("읽을 수 없는 파일이 있으면 그 파일은 무시하고");
   });
 
@@ -182,7 +183,7 @@ describe("buildCliVerifyPrompt 참고 자료 섹션", () => {
     expect(prompt).toContain("## 참고 자료 (반드시 먼저 읽을 것)");
     expect(prompt).toContain(`- ${REF_FILES[0]}`);
     expect(prompt).toContain("판정하기 전에 아래 파일들을 모두 읽으세요");
-    expect(prompt).toContain("자료와 당신의 기억이 다르면 자료를 우선하세요");
+    expect(prompt).toContain("사실 우선순위: 최신 공식 웹 문서 > 참고 자료 > 당신의 기억");
   });
 
   it("파일이 없으면 섹션을 생략한다", () => {
@@ -326,6 +327,37 @@ describe("buildAnswerExplanationPrompt", () => {
     expect(prompt).not.toContain("번호나 순서");
     expect(prompt).not.toContain('"choice_explanations"');
     expect(prompt).toContain("D:\\explain\\2-codex\\result.json");
+  });
+});
+
+describe("사실 우선순위 지시", () => {
+  const sampleBlueprint = {
+    id: "b1",
+    domainTask: "task",
+    testedDistinction: "distinction",
+    referenceFacts: [{ id: "f1", statement: "fact", sourceFile: "d1/a.md" }],
+    constraints: [{ id: "c1", statement: "constraint", kind: "FUNCTIONAL" as const, factIds: ["f1"] }],
+    choices: [{ id: "a", solution: "solution", serviceNames: ["svc"], satisfiedConstraintIds: ["c1"], violatedConstraintIds: [], misconception: "reason", correct: true }],
+    reasoningSteps: ["step"],
+  };
+
+  it("referenceSection이 공식 문서 우선순위를 명시하고 자료 우선 지시를 제거한다", () => {
+    const prompt = buildCliVerifyPrompt("주제", [{ index: 0, question: {} }], "C:/out/result.json", ["C:/ref/a.md"]);
+    expect(prompt).toContain("사실 우선순위: 최신 공식 웹 문서 > 참고 자료 > 당신의 기억");
+    expect(prompt).toContain("공식 웹 문서로 확인");
+    expect(prompt).not.toContain("자료와 당신의 기억이 다르면 자료를 우선하세요");
+  });
+
+  it("verify 프롬프트에서 사실 정확성이 블루프린트보다 우선한다", () => {
+    const prompt = buildCliVerifyPrompt("주제", [{ index: 0, question: {}, blueprint: sampleBlueprint }], "C:/out/result.json");
+    expect(prompt).toContain("factual accuracy overrides the blueprint");
+    expect(prompt).not.toContain("are immutable");
+  });
+
+  it("revision 프롬프트가 사실 오류 수정을 허용한다", () => {
+    const prompt = buildCliRevisionPrompt("주제", { type: "mcq" }, "지시", "C:/out/result.json", [], sampleBlueprint);
+    expect(prompt).not.toContain("unchanged");
+    expect(prompt).toContain("correct factual errors");
   });
 });
 
