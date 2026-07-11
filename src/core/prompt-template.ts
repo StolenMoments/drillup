@@ -1,4 +1,5 @@
 import { mcqAnswerIndices, type ClozePayload, type McqPayload, type QuestionType } from "./types";
+import type { QuestionBlueprint } from "./question-blueprint";
 
 function promptBody(topicName: string): string {
   return `당신은 학습용 문제 출제 전문가입니다. 주제 "${topicName}"에 대한 학습 문제를 생성해 주세요.
@@ -64,6 +65,23 @@ ${webVerificationSection("문제를 만들기 전에")}
 export interface ExistingQuestions {
   summaries: string[];
   truncated: boolean;
+}
+
+function cliMcqPromptBody(topicName: string): string {
+  return `You are creating exam-quality learning questions for "${topicName}".
+
+Return only this JSON shape, with no markdown fence:
+{
+  "questions": [{
+    "type": "mcq",
+    "question": "scenario question",
+    "choices": ["choice 1", "choice 2", "choice 3", "choice 4"],
+    "answer_indices": [0],
+    "choice_explanations": ["why 1", "why 2", "why 3", "why 4"],
+    "explanation": "short explanation",
+    "keywords": ["keyword"]
+  }]
+}`;
 }
 
 const EXAM_MCQ_RULES = `
@@ -177,7 +195,7 @@ export function buildCliGenerationPrompt(
   variantSources: VariantSource[] = [],
 ): string {
   const extra = instructions.trim();
-  return `${promptBody(topicName)}
+  return `${cliMcqPromptBody(topicName)}
 ${EXAM_MCQ_RULES}
 ${webVerificationSection("문제를 만들기 전에")}${referenceSection(referenceFiles, "문제를 만들기 전에")}${variantSection(variantSources)}${existingKeywordsSection(existingKeywords)}${dedupSection(existing)}
 
@@ -266,7 +284,7 @@ ${questionSection}
 
 export function buildCliVerifyPrompt(
   topicName: string,
-  items: Array<{ index: number; question: unknown }>,
+  items: Array<{ index: number; question: unknown; blueprint?: QuestionBlueprint }>,
   resultPath: string,
   referenceFiles: string[] = [],
 ): string {
@@ -276,6 +294,7 @@ export function buildCliVerifyPrompt(
         `### 문제 ${item.index}\n\n\`\`\`json\n${JSON.stringify(item.question, null, 2)}\n\`\`\``,
     )
     .join("\n\n");
+  const blueprintListing = items.filter((item) => item.blueprint).map((item) => `Question ${item.index}: ${JSON.stringify(item.blueprint)}`).join("\n");
 
   return `당신은 학습용 문제 검수 전문가입니다. 주제 "${topicName}"에 대해 생성된 아래 문제들을 검증해 주세요.
 
@@ -292,6 +311,7 @@ ${webVerificationSection("판정하기 전에")}${referenceSection(referenceFile
 Fail an MCQ unless: answer_indices has exactly 1 or 2 unique in-range values; the question says "2개를 선택하세요" exactly when there are two answers; every choice is plausible; at least two distractors are close-but-wrong through a realistic misconception, partial solution, or missed constraint; distractors avoid giveaway narrow or absolute wording such as "only", "always", "never", "만", "항상", and "절대"; the scenario's constraints and goal determine the best answer; no additional choice could reasonably be correct; and choice_explanations exists for every choice and is factually correct.
 ## 검증 대상 문제
 
+${blueprintListing ? `## Blueprint conformance\nFacts, correct answers, constraints, and service relationships are immutable. Fail decorative constraints and presentation clues: only correct choices are longer or more specific; only correct choices repeat scenario wording/order; distractors disproportionately use direct implementation, manual work, custom development, or unconditional wording; choices use different architectural granularity; or service names alone reveal the answer.\n${blueprintListing}\n` : ""}
 ${listing}
 
 ## 출력 형식
@@ -354,12 +374,76 @@ ${existingKeywordsSection(existingKeywords)}## 출력 형식
 `;
 }
 
+const blueprintContract = `{
+  "blueprints": [{
+    "id": "b1", "domainTask": "task", "testedDistinction": "distinction",
+    "referenceFacts": [{ "id": "f1", "statement": "fact", "sourceFile": "reference file path" }],
+    "constraints": [{ "id": "c1", "statement": "constraint", "kind": "FUNCTIONAL", "factIds": ["f1"] }],
+    "choices": [{ "id": "a", "solution": "solution", "serviceNames": ["service"], "satisfiedConstraintIds": ["c1"], "violatedConstraintIds": [], "misconception": "reason", "correct": true }],
+    "reasoningSteps": ["step one", "step two"]
+  }]
+}`;
+
+export function buildCliQuestionBlueprintPrompt(
+  topicName: string,
+  instructions: string,
+  resultPath: string,
+  existing: ExistingQuestions,
+  referenceFiles: string[] = [],
+  existingKeywords: string[] = [],
+  variantSources: VariantSource[] = [],
+): string {
+  return `Create structural question blueprints for "${topicName}", not final question prose.
+Read every supplied reference first. Each referenceFacts.sourceFile must be one of those exact paths. Design 3-5 independent constraints, 4-6 choices, 1-2 correct choices, and at least two close distractors that each miss exactly one constraint. Use at least three distinct services across choices. Do not choose an answer first and fill distractors afterward.
+Do not expose blueprint metadata in a final question; this output is planning data only.
+${referenceSection(referenceFiles, "Before planning")}${variantSection(variantSources)}${existingKeywordsSection(existingKeywords)}${dedupSection(existing)}
+Additional instructions:
+${instructions.trim() || "(none)"}
+
+Output only JSON matching this contract:
+${blueprintContract}
+
+Write the JSON as UTF-8 to ${resultPath}; do not print it to stdout.`;
+}
+
+export function buildCliQuestionBlueprintRepairPrompt(
+  failedBlueprints: QuestionBlueprint[],
+  violations: string,
+  resultPath: string,
+): string {
+  return `Repair only the requested question blueprints below. Return exactly one repaired blueprint for each listed id, with the same id. Do not add or remove ids. Correct the listed structural violations while retaining the intended domain task and referenced facts.
+Violations:
+${violations}
+Blueprints:
+\`\`\`json
+${JSON.stringify(failedBlueprints, null, 2)}
+\`\`\`
+Output only ${blueprintContract} and write it to ${resultPath}.`;
+}
+
+export function buildCliGenerationFromBlueprintPrompt(
+  topicName: string,
+  blueprints: QuestionBlueprint[],
+  resultPath: string,
+  referenceFiles: string[] = [],
+): string {
+  return `Write final MCQ questions for "${topicName}" from the blueprints below. Preserve their array order and produce exactly one question per blueprint in that order. Preserve facts, correctness, constraints, and service relationships. Do not expose blueprint ids, correctness flags, satisfied/violated constraints, misconceptions, or other planning metadata. Make each scenario naturally include every constraint and make choices comparable in specificity and structure.
+${referenceSection(referenceFiles, "Before writing")}
+Blueprints:
+\`\`\`json
+${JSON.stringify(blueprints, null, 2)}
+\`\`\`
+${cliMcqPromptBody(topicName)}
+Write JSON only to ${resultPath}; do not print it to stdout.`;
+}
+
 export function buildCliRevisionPrompt(
   topicName: string,
   question: unknown,
   instructions: string,
   resultPath: string,
   referenceFiles: string[] = [],
+  blueprint?: QuestionBlueprint,
 ): string {
   return `당신은 학습 문제 검증 및 개선 전문가입니다. 주제 "${topicName}"의 아래 문제를 검증하고 개선하세요.
 

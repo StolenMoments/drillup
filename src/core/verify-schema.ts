@@ -5,12 +5,14 @@ const verdictSchema = z.object({
   index: z.number().int().min(0),
   verdict: z.enum(["pass", "fail"]),
   comment: z.string().optional(),
+  violation_codes: z.array(z.string()).optional(),
 });
 
 export interface VerifyVerdict {
   index: number;
   verdict: "pass" | "fail";
   comment: string | null;
+  violationCodes: string[];
 }
 
 export type VerifyParseResult =
@@ -43,6 +45,7 @@ export function parseVerifyJson(rawText: string): VerifyParseResult {
       index: result.data.index,
       verdict: result.data.verdict,
       comment: comment ? comment : null,
+      violationCodes: [...new Set((result.data.violation_codes ?? []).map((code) => code.trim()).filter(Boolean))],
     });
   }
   return { ok: true, verdicts: parsed };
