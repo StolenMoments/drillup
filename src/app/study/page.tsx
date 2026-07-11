@@ -103,6 +103,18 @@ function StudySession({
     setIndex((currentIndex) => currentIndex + 1);
   }
 
+  async function removeCurrentQuestion() {
+    if (!current) return;
+    if (!window.confirm("이 문제를 영구 삭제할까요? 되돌릴 수 없습니다.")) return;
+    try {
+      await api.questions.remove(current.id);
+      setQueue((q) => (q ? q.filter((item) => item.id !== current.id) : q));
+      setResult(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "문제 삭제에 실패했습니다");
+    }
+  }
+
   if (error) return <p className="text-[color:var(--danger)]">{error}</p>;
   if (!queue) return <p className="muted">불러오는 중...</p>;
 
@@ -134,9 +146,17 @@ function StudySession({
             <span className="chip ml-2">🏷️ {keywordName}</span>
           )}
         </span>
-        <span className="chip">
-          {index + 1} / {queue.length}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="chip">
+            {index + 1} / {queue.length}
+          </span>
+          <button
+            onClick={removeCurrentQuestion}
+            className="btn btn-danger text-sm"
+          >
+            🗑️ 문제 삭제
+          </button>
+        </div>
       </div>
       {current.type === "MCQ" ? (
         <McqCard
