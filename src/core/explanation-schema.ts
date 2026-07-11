@@ -3,7 +3,8 @@ import type { McqPayload, QuestionType } from "./types";
 
 const explanationSchema = z.object({
   explanation: z.string().trim().min(1, "explanation은 비어 있으면 안 됩니다"),
-  factual_concern: z.string().trim().min(1).optional(),
+  // 엔진이 "할 말 없음"을 빈 문자열이나 null로 보내는 경우가 있어 모두 허용한다.
+  factual_concern: z.string().nullish(),
 });
 
 const awsReferenceSchema = z.object({
@@ -64,7 +65,7 @@ export function parseExplanationJson(
         fatal: "explanation 필드가 없거나 형식이 올바르지 않습니다",
       };
     }
-    return { ok: true, explanation: parsed.data.explanation, choiceExplanations: null, factualConcern: parsed.data.factual_concern ?? null };
+    return { ok: true, explanation: parsed.data.explanation, choiceExplanations: null, factualConcern: parsed.data.factual_concern?.trim() || null };
   }
 
   const parsed = mcqExplanationSchema.safeParse(data);
@@ -93,7 +94,7 @@ export function parseExplanationJson(
   return {
     ok: true,
     explanation: parsed.data.explanation,
-    factualConcern: parsed.data.factual_concern ?? null,
+    factualConcern: parsed.data.factual_concern?.trim() || null,
     choiceExplanations: choiceExplanations.map((item) => ({
       choice: item.choice,
       explanation: item.explanation,

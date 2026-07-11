@@ -4,7 +4,8 @@ import { mcqAnswerIndices, type McqPayload } from "./types";
 
 const hardenSchema = z.object({
   comment: z.string().trim().min(1),
-  factual_concern: z.string().trim().min(1).optional(),
+  // 엔진이 "할 말 없음"을 빈 문자열이나 null로 보내는 경우가 있어 모두 허용한다.
+  factual_concern: z.string().nullish(),
   revised: z.unknown(),
 });
 
@@ -68,5 +69,5 @@ export function parseHardenJson(
   if (!distractorChanged) {
     return { ok: false, fatal: "오답 선지가 하나도 변경되지 않았습니다" };
   }
-  return { ok: true, comment: outer.data.comment, payload, factualConcern: outer.data.factual_concern ?? null };
+  return { ok: true, comment: outer.data.comment, payload, factualConcern: outer.data.factual_concern?.trim() || null };
 }

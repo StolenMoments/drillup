@@ -115,4 +115,19 @@ describe("factual_concern", () => {
     const result = parseExplanationJson(JSON.stringify({ explanation: "해설" }));
     expect(result).toMatchObject({ ok: true, factualConcern: null });
   });
+
+  // 엔진이 출력 템플릿의 필드를 "할 말 없음"으로 채워 보내는 경우 — 파싱 실패가 아니라 null이어야 한다.
+  it("빈 문자열이면 null로 정규화한다", () => {
+    const result = parseExplanationJson(
+      JSON.stringify({ explanation: "해설", factual_concern: "" }),
+    );
+    expect(result).toMatchObject({ ok: true, factualConcern: null });
+  });
+
+  it("null이면 null로 정규화한다", () => {
+    const result = parseExplanationJson(
+      JSON.stringify({ explanation: "해설", factual_concern: null }),
+    );
+    expect(result).toMatchObject({ ok: true, factualConcern: null });
+  });
 });
