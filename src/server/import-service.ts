@@ -9,7 +9,10 @@ function toPayload(q: ImportQuestion) {
     return {
       question: q.question,
       choices: q.choices,
-      answer_index: q.answer_index,
+      ...(q.answer_indices
+        ? { answer_indices: q.answer_indices }
+        : { answer_index: q.answer_index }),
+      ...(q.choice_explanations ? { choice_explanations: q.choice_explanations } : {}),
     };
   }
   return { text: q.text, blanks: q.blanks, distractors: q.distractors };

@@ -86,4 +86,32 @@ describe("importQuestions", () => {
       }),
     );
   });
+
+  it("정답 2개(answer_indices)와 choice_explanations를 저장한다", async () => {
+    const multiAnswerMcq: ImportQuestion = {
+      type: "mcq",
+      question: "다음 중 옳은 것을 2개 선택하세요.",
+      choices: ["1", "2", "3", "4"],
+      answer_indices: [0, 2],
+      choice_explanations: ["첫 번째 설명", "두 번째 설명", "세 번째 설명", "네 번째 설명"],
+      explanation: "정답 해설입니다.",
+    };
+
+    await importQuestions(1, [multiAnswerMcq]);
+
+    expect(prismaMock.question.create).toHaveBeenCalledWith({
+      data: {
+        topicId: 1,
+        type: "MCQ",
+        payload: {
+          question: "다음 중 옳은 것을 2개 선택하세요.",
+          choices: ["1", "2", "3", "4"],
+          answer_indices: [0, 2],
+          choice_explanations: ["첫 번째 설명", "두 번째 설명", "세 번째 설명", "네 번째 설명"],
+        },
+        explanation: "정답 해설입니다.",
+      },
+      select: { id: true },
+    });
+  });
 });
