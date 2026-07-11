@@ -198,7 +198,7 @@ export default function ResultPanel({
               <div key={value} className="surface surface-pad space-y-1">
                 <p className="chip">{engineLabel(value)}</p>
                 {state.factualConcern && (
-                  <p className="rounded-md border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  <p className="rounded-[12px] border border-[color:var(--warning)] bg-[color:var(--warning-soft)] px-3 py-2 text-sm">
                     ⚠️ 사실 확인 필요: {state.factualConcern}
                   </p>
                 )}
@@ -274,7 +274,7 @@ export default function ResultPanel({
             <div className="surface surface-pad space-y-2">
               <p className="chip">{engineLabel(harden.preview.engine)}</p>
               {harden.preview.factualConcern && (
-                <p className="rounded-md border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <p className="rounded-[12px] border border-[color:var(--warning)] bg-[color:var(--warning-soft)] px-3 py-2 text-sm">
                   ⚠️ 사실 확인 필요: {harden.preview.factualConcern}
                 </p>
               )}
