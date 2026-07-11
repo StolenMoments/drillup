@@ -40,7 +40,7 @@
   - `ACTIVE_JOBS_SQL: string` — placeholder 2개(cutoff, cutoff)를 받는 카운트 쿼리.
   - `POLL_INTERVAL_MS: number` — 10,000.
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 `scripts/drain-lib.test.ts` 생성:
 
@@ -173,12 +173,12 @@ describe("ACTIVE_JOBS_SQL", () => {
 });
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 Run: `npx vitest run scripts/drain-lib.test.ts`
 Expected: FAIL — `drain-lib.mjs` 모듈이 없어 import 에러.
 
-- [ ] **Step 3: 최소 구현 작성**
+- [x] **Step 3: 최소 구현 작성**
 
 `scripts/drain-lib.mjs` 생성:
 
@@ -273,17 +273,17 @@ export const ACTIVE_JOBS_SQL = `
 `;
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [x] **Step 4: 테스트 통과 확인**
 
 Run: `npx vitest run scripts/drain-lib.test.ts`
 Expected: PASS (전체 케이스 녹색).
 
-- [ ] **Step 5: 전체 테스트·린트 확인**
+- [x] **Step 5: 전체 테스트·린트 확인**
 
 Run: `npm test` 그리고 `npm run lint`
 Expected: 둘 다 성공 (기존 테스트 회귀 없음).
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add scripts/drain-lib.mjs scripts/drain-lib.test.ts
