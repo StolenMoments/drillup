@@ -5,6 +5,7 @@ import { api } from "@/lib/api-client";
 import type {
   ChoiceExplanationDto,
   GenerationEngineDto,
+  HardenPreviewDto,
   ReviewResultDto,
   StudyQuestionDto,
 } from "@/lib/api-types";
@@ -30,6 +31,13 @@ type EngineState =
       content: string;
       choiceExplanations: ChoiceExplanationDto[] | null;
     }
+  | { status: "error"; message: string };
+
+type HardenState =
+  | { status: "idle" }
+  | { status: "loading"; engine: GenerationEngineDto }
+  | { status: "preview"; preview: HardenPreviewDto; applying: boolean }
+  | { status: "applied" }
   | { status: "error"; message: string };
 
 function engineLabel(engine: GenerationEngineDto): string {
@@ -66,6 +74,39 @@ export default function ResultPanel({
     CODEX: { status: "idle" },
     ANTIGRAVITY: { status: "idle" },
   });
+
+  const [harden, setHarden] = useState<HardenState>({ status: "idle" });
+
+  async function requestHarden(engine: GenerationEngineDto) {
+    setHarden({ status: "loading", engine });
+    try {
+      const preview = await api.questions.hardenChoices(question.id, engine);
+      setHarden({ status: "preview", preview, applying: false });
+    } catch (err) {
+      setHarden({
+        status: "error",
+        message: err instanceof Error ? err.message : "요청 실패",
+      });
+    }
+  }
+
+  async function applyHarden() {
+    if (harden.status !== "preview" || harden.applying) return;
+    setHarden({ ...harden, applying: true });
+    try {
+      const detail = await api.questions.get(question.id);
+      await api.questions.update(question.id, {
+        payload: harden.preview.payload,
+        explanation: detail.explanation,
+      });
+      setHarden({ status: "applied" });
+    } catch (err) {
+      setHarden({
+        status: "error",
+        message: err instanceof Error ? err.message : "적용 실패",
+      });
+    }
+  }
 
   async function requestExplanation(engine: GenerationEngineDto) {
     setEngineStates((prev) => ({ ...prev, [engine]: { status: "loading" } }));
@@ -194,6 +235,92 @@ export default function ResultPanel({
           return null;
         })}
       </div>
+
+      {question.type === "MCQ" && (
+        <div className="space-y-2 border-t border-[color:var(--border)] pt-3">
+          <p className="section-title">🎯 선지 난이도 올리기</p>
+          {harden.status !== "applied" && (
+            <div className="flex flex-wrap gap-2">
+              {ENGINES.map(({ value }) => (
+                <button
+                  key={value}
+                  onClick={() => requestHarden(value)}
+                  disabled={
+                    harden.status === "loading" ||
+                    (harden.status === "preview" && harden.applying)
+                  }
+                  className="btn btn-secondary text-sm"
+                >
+                  {harden.status === "loading" && harden.engine === value
+                    ? "수정본 받는 중..."
+                    : `${engineLabel(value)}로 올리기`}
+                </button>
+              ))}
+            </div>
+          )}
+          {harden.status === "error" && (
+            <p className="text-[color:var(--danger)]">
+              ❌ 수정본을 가져오지 못했습니다: {harden.message}
+            </p>
+          )}
+          {harden.status === "preview" && (
+            <div className="surface surface-pad space-y-2">
+              <p className="chip">{engineLabel(harden.preview.engine)}</p>
+              <p className="text-[color:var(--muted)]">
+                {harden.preview.comment}
+              </p>
+              <ul className="space-y-2 text-sm">
+                {harden.preview.payload.choices.map((newText, i) => {
+                  const oldText = question.choices.find(
+                    (choice) => choice.original_index === i,
+                  )?.text;
+                  const isAnswer =
+                    harden.preview.payload.answer_indices.includes(i);
+                  if (isAnswer) {
+                    return (
+                      <li key={i}>
+                        <span className="font-medium text-[color:var(--text)]">
+                          {newText}
+                        </span>{" "}
+                        <span className="chip">정답 유지 ✅</span>
+                      </li>
+                    );
+                  }
+                  if (oldText === newText) {
+                    return (
+                      <li key={i} className="text-[color:var(--muted)]">
+                        {newText}
+                      </li>
+                    );
+                  }
+                  return (
+                    <li key={i} className="space-y-1">
+                      <p className="text-[color:var(--muted)] line-through">
+                        {oldText}
+                      </p>
+                      <p className="font-medium text-[color:var(--text)]">
+                        → {newText}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ul>
+              <button
+                onClick={applyHarden}
+                disabled={harden.applying}
+                className="btn btn-primary text-sm"
+              >
+                {harden.applying ? "적용 중..." : "✅ 적용하기"}
+              </button>
+            </div>
+          )}
+          {harden.status === "applied" && (
+            <p className="text-[color:var(--success)]">
+              적용됨 — 다음 학습부터 새 선지가 나옵니다 🎉
+            </p>
+          )}
+        </div>
+      )}
 
       <button
         onClick={onNext}
