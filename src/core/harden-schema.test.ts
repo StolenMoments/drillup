@@ -117,3 +117,26 @@ describe("parseHardenJson", () => {
     expect(parseHardenJson(revisedJson(), legacy)).toMatchObject({ ok: true });
   });
 });
+
+describe("factual_concern", () => {
+  const original = {
+    question: "Q",
+    choices: ["a", "b", "c", "d"],
+    answer_indices: [0],
+    choice_explanations: ["e1", "e2", "e3", "e4"],
+  };
+  const revised = { ...original, choices: ["a", "x", "c", "d"] };
+
+  it("factual_concern이 있으면 결과에 포함한다", () => {
+    const result = parseHardenJson(
+      JSON.stringify({ comment: "교체", factual_concern: "정답 선지가 공식 문서와 다릅니다", revised }),
+      original,
+    );
+    expect(result).toMatchObject({ ok: true, factualConcern: "정답 선지가 공식 문서와 다릅니다" });
+  });
+
+  it("없으면 null이다", () => {
+    const result = parseHardenJson(JSON.stringify({ comment: "교체", revised }), original);
+    expect(result).toMatchObject({ ok: true, factualConcern: null });
+  });
+});

@@ -148,6 +148,7 @@ export interface HardenedMcqPayloadDto {
 export interface HardenPreviewDto {
   engine: GenerationEngineDto;
   comment: string;
+  factualConcern: string | null;
   payload: HardenedMcqPayloadDto;
 }
 

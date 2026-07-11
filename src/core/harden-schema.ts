@@ -4,11 +4,12 @@ import { mcqAnswerIndices, type McqPayload } from "./types";
 
 const hardenSchema = z.object({
   comment: z.string().trim().min(1),
+  factual_concern: z.string().trim().min(1).optional(),
   revised: z.unknown(),
 });
 
 export type HardenParseResult =
-  | { ok: true; comment: string; payload: McqPayload }
+  | { ok: true; comment: string; payload: McqPayload; factualConcern: string | null }
   | { ok: false; fatal: string };
 
 function sameIndexSet(a: number[], b: number[]): boolean {
@@ -67,5 +68,5 @@ export function parseHardenJson(
   if (!distractorChanged) {
     return { ok: false, fatal: "오답 선지가 하나도 변경되지 않았습니다" };
   }
-  return { ok: true, comment: outer.data.comment, payload };
+  return { ok: true, comment: outer.data.comment, payload, factualConcern: outer.data.factual_concern ?? null };
 }

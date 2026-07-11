@@ -54,6 +54,7 @@ export async function hardenQuestionChoices(
   return {
     engine,
     comment: parsed.comment,
+    factualConcern: parsed.factualConcern,
     payload: {
       question: parsed.payload.question,
       choices: parsed.payload.choices,

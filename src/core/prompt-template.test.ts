@@ -407,3 +407,14 @@ describe("buildChoiceHardeningPrompt", () => {
     expect(prompt).toContain("Mandatory exam-style MCQ contract");
   });
 });
+
+describe("선지 강화 프롬프트 factual_concern", () => {
+  it("이의 제기 지시와 출력 필드를 포함한다", () => {
+    const prompt = buildChoiceHardeningPrompt(
+      "주제",
+      { question: "Q", choices: ["a", "b", "c", "d"], answer_index: 0 },
+      "C:/out/result.json",
+    );
+    expect(prompt).toContain("factual_concern");
+  });
+});
