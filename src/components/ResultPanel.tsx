@@ -30,6 +30,7 @@ type EngineState =
       status: "done";
       content: string;
       choiceExplanations: ChoiceExplanationDto[] | null;
+      factualConcern: string | null;
     }
   | { status: "error"; message: string };
 
@@ -118,6 +119,7 @@ export default function ResultPanel({
           status: "done",
           content: res.content,
           choiceExplanations: res.choiceExplanations,
+          factualConcern: res.factualConcern,
         },
       }));
     } catch (err) {
@@ -195,6 +197,11 @@ export default function ResultPanel({
             return (
               <div key={value} className="surface surface-pad space-y-1">
                 <p className="chip">{engineLabel(value)}</p>
+                {state.factualConcern && (
+                  <p className="rounded-md border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    ⚠️ 사실 확인 필요: {state.factualConcern}
+                  </p>
+                )}
                 <p className="whitespace-pre-wrap text-[color:var(--muted)]">
                   {state.content}
                 </p>
@@ -266,6 +273,11 @@ export default function ResultPanel({
           {harden.status === "preview" && (
             <div className="surface surface-pad space-y-2">
               <p className="chip">{engineLabel(harden.preview.engine)}</p>
+              {harden.preview.factualConcern && (
+                <p className="rounded-md border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  ⚠️ 사실 확인 필요: {harden.preview.factualConcern}
+                </p>
+              )}
               <p className="text-[color:var(--muted)]">
                 {harden.preview.comment}
               </p>
