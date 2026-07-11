@@ -301,7 +301,7 @@ git commit -m "feat: 배포 드레인용 활성 job 판정 함수 추가"
 - Consumes (Task 1): `parseEnvFile`, `connectionConfig`, `drainTimeoutMs`, `staleCutoff`, `ACTIVE_JOBS_SQL`, `POLL_INTERVAL_MS` — 모두 `./drain-lib.mjs`에서 import.
 - Produces (Task 3이 사용): `node scripts/wait-for-generation-drain.mjs` 로 실행 가능한 CLI. 활성 job이 없거나, 최대 대기 초과이거나, `node_modules/mariadb`가 없으면 exit 0. DB 접속 실패 등 예기치 못한 오류는 비정상 종료(exit ≠ 0)로 전파해 배포를 중단시킨다.
 
-- [ ] **Step 1: CLI 스크립트 작성**
+- [x] **Step 1: CLI 스크립트 작성**
 
 `scripts/wait-for-generation-drain.mjs` 생성:
 
@@ -361,7 +361,7 @@ try {
 
 주의: `mariadb`는 최상단 static import가 아니라 존재 확인 **후** dynamic import여야 한다 (없으면 skip이 목적이므로).
 
-- [ ] **Step 2: 로컬 스모크 테스트**
+- [x] **Step 2: 로컬 스모크 테스트**
 
 로컬에 `.env`와 DB가 있는 상태에서 실행:
 
@@ -374,12 +374,12 @@ Expected: `[drain] 활성 생성 job이 없습니다. 배포를 진행합니다.
 Run: `$env:DEPLOY_DRAIN_TIMEOUT_SECONDS = "0"; node scripts/wait-for-generation-drain.mjs`
 Expected: 활성 job이 있어도 즉시 경고 후 exit 0.
 
-- [ ] **Step 3: 린트 확인**
+- [x] **Step 3: 린트 확인**
 
 Run: `npm run lint`
 Expected: 성공.
 
-- [ ] **Step 4: 커밋**
+- [x] **Step 4: 커밋**
 
 ```bash
 git add scripts/wait-for-generation-drain.mjs
