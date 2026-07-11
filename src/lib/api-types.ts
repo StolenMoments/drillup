@@ -125,6 +125,7 @@ export interface AnswerExplanationDto {
   engine: GenerationEngineDto;
   content: string;
   choiceExplanations: ChoiceExplanationDto[] | null;
+  factualConcern: string | null;
   cached: boolean;
 }
 

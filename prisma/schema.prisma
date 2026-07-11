@@ -150,6 +150,7 @@ model AnswerExplanation {
   engine             GenerationEngine
   content            String           @db.Text
   choiceExplanations Json?            @map("choice_explanations")
+  factualConcern     String?          @map("factual_concern") @db.Text
   createdAt          DateTime         @default(now()) @map("created_at")
   question           Question         @relation(fields: [questionId], references: [id], onDelete: Cascade)
 

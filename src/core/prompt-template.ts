@@ -263,6 +263,7 @@ export function buildAnswerExplanationPrompt(
   const outputShape = type === "MCQ"
     ? `{
   "explanation": "여기에 전체 해설 텍스트",
+  "factual_concern": "(선택) 정답 표기가 사실과 다르다고 판단한 이유와 근거 URL",
   "choice_explanations": [
     {
       "choice": "위 보기 텍스트를 그대로 복사",
@@ -275,7 +276,8 @@ export function buildAnswerExplanationPrompt(
   ]
 }`
     : `{
-  "explanation": "여기에 전체 해설 텍스트"
+  "explanation": "여기에 전체 해설 텍스트",
+  "factual_concern": "(선택) 정답 표기가 사실과 다르다고 판단한 이유와 근거 URL"
 }`;
 
   return `당신은 학습 문제 해설 전문가입니다. 아래 문제에 대해 정답 근거와 오답이 틀린 이유를 설명해 주세요.
@@ -287,6 +289,7 @@ ${questionSection}
 - 정답(빈칸 정답 포함)이 왜 맞는지 먼저 설명하세요.
 - ${wrongGuide}${numberingGuide}
 ${mcqSourceGuide}
+- 이 문제의 정답 표기 자체가 최신 공식 문서와 다르다고 판단되면, 해설은 위 지침대로 작성하되 출력 JSON의 factual_concern 필드에 무엇이 왜 다른지와 근거 공식 문서 URL을 함께 적으세요. 확신이 없으면 factual_concern을 넣지 마세요.
 - 한국어로, 학습자가 이해하기 쉽게 간결히 작성하세요. 마크다운 기호(#, *, - 등) 없이 일반 문장과 줄바꿈만 사용하세요.
 
 ## 출력 형식

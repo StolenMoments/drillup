@@ -330,6 +330,18 @@ describe("buildAnswerExplanationPrompt", () => {
   });
 });
 
+describe("해설 프롬프트 factual_concern", () => {
+  it("정답 이의 제기 지시와 출력 필드를 포함한다", () => {
+    const prompt = buildAnswerExplanationPrompt(
+      "MCQ",
+      { question: "Q", choices: ["a", "b"], answer_index: 0 },
+      "C:/out/result.json",
+    );
+    expect(prompt).toContain("factual_concern");
+    expect(prompt).toContain("정답 표기 자체가");
+  });
+});
+
 describe("사실 우선순위 지시", () => {
   const sampleBlueprint = {
     id: "b1",

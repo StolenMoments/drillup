@@ -3,6 +3,7 @@ import type { McqPayload, QuestionType } from "./types";
 
 const explanationSchema = z.object({
   explanation: z.string().trim().min(1, "explanation은 비어 있으면 안 됩니다"),
+  factual_concern: z.string().trim().min(1).optional(),
 });
 
 const awsReferenceSchema = z.object({
@@ -40,7 +41,7 @@ export interface ChoiceExplanation {
 }
 
 export type ExplanationParseResult =
-  | { ok: true; explanation: string; choiceExplanations: ChoiceExplanation[] | null }
+  | { ok: true; explanation: string; choiceExplanations: ChoiceExplanation[] | null; factualConcern: string | null }
   | { ok: false; fatal: string };
 
 export function parseExplanationJson(
@@ -63,7 +64,7 @@ export function parseExplanationJson(
         fatal: "explanation 필드가 없거나 형식이 올바르지 않습니다",
       };
     }
-    return { ok: true, explanation: parsed.data.explanation, choiceExplanations: null };
+    return { ok: true, explanation: parsed.data.explanation, choiceExplanations: null, factualConcern: parsed.data.factual_concern ?? null };
   }
 
   const parsed = mcqExplanationSchema.safeParse(data);
@@ -92,6 +93,7 @@ export function parseExplanationJson(
   return {
     ok: true,
     explanation: parsed.data.explanation,
+    factualConcern: parsed.data.factual_concern ?? null,
     choiceExplanations: choiceExplanations.map((item) => ({
       choice: item.choice,
       explanation: item.explanation,

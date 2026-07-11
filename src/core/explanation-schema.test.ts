@@ -14,6 +14,7 @@ describe("parseExplanationJson", () => {
       ok: true,
       explanation: "정답은 A입니다.",
       choiceExplanations: null,
+      factualConcern: null,
     });
   });
 
@@ -93,5 +94,25 @@ describe("parseExplanationJson", () => {
     }), "MCQ", mcqPayload);
 
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("factual_concern", () => {
+  it("factual_concern이 있으면 파싱 결과에 포함한다", () => {
+    const result = parseExplanationJson(
+      JSON.stringify({
+        explanation: "해설",
+        factual_concern: "정답 전제가 공식 문서와 다릅니다. https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-management.html",
+      }),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      factualConcern: "정답 전제가 공식 문서와 다릅니다. https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-management.html",
+    });
+  });
+
+  it("factual_concern이 없으면 null이다", () => {
+    const result = parseExplanationJson(JSON.stringify({ explanation: "해설" }));
+    expect(result).toMatchObject({ ok: true, factualConcern: null });
   });
 });

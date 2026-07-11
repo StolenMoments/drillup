@@ -18,6 +18,7 @@ export async function getAnswerExplanation(
   engine: GenerationEngine;
   content: string;
   choiceExplanations: ChoiceExplanation[] | null;
+  factualConcern: string | null;
   cached: boolean;
 }> {
   const question = await prisma.question.findUnique({
@@ -35,6 +36,7 @@ export async function getAnswerExplanation(
       engine,
       content: existing.content,
       choiceExplanations: existing.choiceExplanations as ChoiceExplanation[] | null,
+      factualConcern: existing.factualConcern,
       cached: true,
     };
   }
@@ -74,6 +76,7 @@ export async function getAnswerExplanation(
       choiceExplanations: parsed.choiceExplanations === null
         ? undefined
         : parsed.choiceExplanations as unknown as Prisma.InputJsonValue,
+      factualConcern: parsed.factualConcern,
     },
   });
 
@@ -81,6 +84,7 @@ export async function getAnswerExplanation(
     engine,
     content: parsed.explanation,
     choiceExplanations: parsed.choiceExplanations,
+    factualConcern: parsed.factualConcern,
     cached: false,
   };
 }
