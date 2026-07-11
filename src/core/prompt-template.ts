@@ -394,7 +394,7 @@ export function buildCliQuestionBlueprintPrompt(
   variantSources: VariantSource[] = [],
 ): string {
   return `Create structural question blueprints for "${topicName}", not final question prose.
-Read every supplied reference first. Each referenceFacts.sourceFile must be one of those exact paths. Design 3-5 independent constraints, 4-6 choices, 1-2 correct choices, and at least two close distractors that each miss exactly one constraint. Use at least three distinct services across choices. Do not choose an answer first and fill distractors afterward.
+Read every supplied reference first. Each referenceFacts.sourceFile must be one of those exact paths. constraint.kind must be exactly one of FUNCTIONAL, SECURITY, PERFORMANCE, COST, OPERATIONS, INTEGRATION, or COMPLIANCE (never variants such as OPERATIONAL). Design 3-5 independent constraints, 4-6 choices, 1-2 correct choices, and at least two close distractors that each miss exactly one constraint. Use at least three distinct services across choices. Do not choose an answer first and fill distractors afterward.
 Do not expose blueprint metadata in a final question; this output is planning data only.
 ${referenceSection(referenceFiles, "Before planning")}${variantSection(variantSources)}${existingKeywordsSection(existingKeywords)}${dedupSection(existing)}
 Additional instructions:
