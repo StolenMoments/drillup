@@ -557,3 +557,50 @@ ${existingSection}${assignedSection}## 출력 형식
 - 파일 내용은 위 출력 형식의 JSON만 포함해야 하며, 코드 펜스나 설명 문장을 추가하지 마세요.
 `;
 }
+
+export function buildChoiceHardeningPrompt(
+  topicName: string,
+  payload: McqPayload,
+  resultPath: string,
+): string {
+  const target = {
+    question: payload.question,
+    choices: payload.choices,
+    answer_indices: mcqAnswerIndices(payload),
+  };
+  return `당신은 학습 문제 개선 전문가입니다. 주제 "${topicName}"의 아래 객관식 문제는 오답 선지가 너무 쉬워 정답이 쉽게 드러납니다. 오답 선지만 더 어려운 오답으로 교체하세요.
+
+${webVerificationSection("선지를 교체하기 전에")}## 대상 문제
+
+\`\`\`json
+${JSON.stringify(target, null, 2)}
+\`\`\`
+
+## 불변 조건 (반드시 준수)
+
+- question 텍스트를 한 글자도 바꾸지 마세요.
+- answer_indices 값과 그 위치의 정답 선지 텍스트를 한 글자도 바꾸지 마세요.
+- 선지 개수를 바꾸지 마세요.
+- 오답 선지만 교체할 수 있으며, 최소 1개는 반드시 교체하세요.
+${EXAM_MCQ_RULES}
+## 출력 형식
+
+다른 설명 없이 아래 구조의 JSON만 작성하세요.
+
+{
+  "comment": "어떤 오답을 왜 교체했는지 간결한 한국어 설명",
+  "revised": {
+    "question": "원본과 동일한 질문",
+    "choices": ["교체 반영된 전체 선지 배열"],
+    "answer_indices": [0],
+    "choice_explanations": ["선지별 판단 근거 (선지 수와 동일한 개수)"]
+  }
+}
+
+## 결과 저장 (반드시 준수)
+
+- 결과 JSON을 stdout에 출력하지 마세요.
+- 결과 JSON은 다음 경로에 UTF-8 텍스트 파일로만 저장하세요: ${resultPath}
+- 파일 내용은 위 출력 형식의 JSON만 포함해야 하며, 코드 펜스나 설명 문장을 추가하지 마세요.
+`;
+}

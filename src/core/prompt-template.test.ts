@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAnswerExplanationPrompt,
+  buildChoiceHardeningPrompt,
   buildCliGenerationPrompt,
   buildCliKeywordTagPrompt,
   buildCliVerifyPrompt,
@@ -325,5 +326,40 @@ describe("buildAnswerExplanationPrompt", () => {
     expect(prompt).not.toContain("번호나 순서");
     expect(prompt).not.toContain('"choice_explanations"');
     expect(prompt).toContain("D:\\explain\\2-codex\\result.json");
+  });
+});
+
+describe("buildChoiceHardeningPrompt", () => {
+  const payload = {
+    question: "S3 버킷 보호 방법은?",
+    choices: ["정답 선지", "쉬운 오답 1", "쉬운 오답 2", "쉬운 오답 3"],
+    answer_indices: [0],
+  };
+
+  it("불변 조건과 원본 문제를 포함한다", () => {
+    const prompt = buildChoiceHardeningPrompt(
+      "AWS SAA",
+      payload,
+      "C:\\out\\result.json",
+    );
+    expect(prompt).toContain("불변 조건");
+    expect(prompt).toContain("S3 버킷 보호 방법은?");
+    expect(prompt).toContain("정답 선지");
+    expect(prompt).toContain("오답 선지만");
+    expect(prompt).toContain("C:\\out\\result.json");
+  });
+
+  it("레거시 answer_index를 answer_indices로 정규화해 보여준다", () => {
+    const prompt = buildChoiceHardeningPrompt(
+      "AWS SAA",
+      { question: "q?", choices: ["a", "b", "c", "d"], answer_index: 2 },
+      "/tmp/result.json",
+    );
+    expect(prompt).toContain('"answer_indices": [\n    2\n  ]');
+  });
+
+  it("시험 스타일 오답 규칙을 재사용한다", () => {
+    const prompt = buildChoiceHardeningPrompt("AWS SAA", payload, "/tmp/r.json");
+    expect(prompt).toContain("Mandatory exam-style MCQ contract");
   });
 });
