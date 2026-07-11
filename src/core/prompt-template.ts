@@ -445,12 +445,13 @@ export function buildCliRevisionPrompt(
   referenceFiles: string[] = [],
   blueprint?: QuestionBlueprint,
 ): string {
+  const questionWithBlueprint = blueprint ? { question, blueprint, immutable: "Keep blueprint facts, answers, constraints, and service relationships unchanged." } : question;
   return `당신은 학습 문제 검증 및 개선 전문가입니다. 주제 "${topicName}"의 아래 문제를 검증하고 개선하세요.
 
 ${webVerificationSection("검증하기 전에")}${referenceSection(referenceFiles, "검증하기 전에")}## 대상 문제
 
 \`\`\`json
-${JSON.stringify(question, null, 2)}
+${JSON.stringify(questionWithBlueprint, null, 2)}
 \`\`\`
 
 ## 검증 기준

@@ -6,7 +6,6 @@ import { extractJsonObject } from "@/core/json-extract";
 import { shuffleMcqChoices } from "@/core/random";
 import { parseKeywordTagJson } from "@/core/keyword-tag-schema";
 import {
-  buildCliGenerationPrompt,
   buildCliGenerationFromBlueprintPrompt,
   buildCliKeywordTagPrompt,
   buildCliQuestionBlueprintPrompt,
