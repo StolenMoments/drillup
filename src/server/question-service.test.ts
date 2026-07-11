@@ -8,6 +8,12 @@ const prismaMock = vi.hoisted(() => ({
     update: vi.fn(),
     delete: vi.fn(),
   },
+  answerExplanation: {
+    deleteMany: vi.fn(),
+  },
+  $transaction: vi.fn(async (operations: Promise<unknown>[]) =>
+    Promise.all(operations),
+  ),
 }));
 
 vi.mock("./db", () => ({ prisma: prismaMock }));
@@ -200,6 +206,46 @@ describe("question-service", () => {
       }),
     ).rejects.toBeInstanceOf(ServiceError);
     expect(prismaMock.question.update).not.toHaveBeenCalled();
+  });
+
+  it("payload 갱신 시 캐시된 AI 해설을 삭제한다", async () => {
+    prismaMock.question.findUnique.mockResolvedValue({
+      id: 1,
+      topicId: 1,
+      type: "MCQ",
+      payload: {
+        question: "Question?",
+        choices: ["A", "B", "C", "D"],
+        answer_index: 0,
+      },
+      explanation: null,
+    });
+    prismaMock.question.update.mockResolvedValue({
+      id: 1,
+      topicId: 1,
+      type: "MCQ",
+      payload: {
+        question: "Question?",
+        choices: ["A", "B2", "C", "D"],
+        answer_index: 0,
+      },
+      explanation: null,
+      keywords: [],
+    });
+
+    const result = await updateQuestion(1, {
+      payload: {
+        question: "Question?",
+        choices: ["A", "B2", "C", "D"],
+        answer_index: 0,
+      },
+      explanation: null,
+    });
+
+    expect(prismaMock.answerExplanation.deleteMany).toHaveBeenCalledWith({
+      where: { questionId: 1 },
+    });
+    expect(result).toMatchObject({ id: 1 });
   });
 
   it("deletes existing questions", async () => {

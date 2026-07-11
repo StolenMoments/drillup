@@ -164,14 +164,17 @@ export async function updateQuestion(
     );
   }
 
-  const q = await prisma.question.update({
-    where: { id },
-    data: {
-      payload: parsed.data as Prisma.InputJsonValue,
-      explanation: input.explanation,
-    },
-    include: KEYWORDS_INCLUDE,
-  });
+  const [, q] = await prisma.$transaction([
+    prisma.answerExplanation.deleteMany({ where: { questionId: id } }),
+    prisma.question.update({
+      where: { id },
+      data: {
+        payload: parsed.data as Prisma.InputJsonValue,
+        explanation: input.explanation,
+      },
+      include: KEYWORDS_INCLUDE,
+    }),
+  ]);
   return toDetailDto(q);
 }
 
