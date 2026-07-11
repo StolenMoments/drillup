@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 type NavItem = {
@@ -44,14 +43,14 @@ export default function AppNav() {
         const brandClass = item.brand ? "mr-3 font-bold" : "";
 
         return (
-          <Link
+          <a
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
             className={`${baseClass} ${active ? activeClass : inactiveClass} ${brandClass}`}
           >
             {item.label}
-          </Link>
+          </a>
         );
       })}
     </>

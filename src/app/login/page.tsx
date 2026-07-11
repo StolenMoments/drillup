@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { replaceWithDashboard } from "@/lib/login-navigation";
 
 export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
-  const router = useRouter();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -20,8 +19,7 @@ export default function LoginPage() {
     });
     setPending(false);
     if (res.ok) {
-      router.push("/");
-      router.refresh();
+      replaceWithDashboard(window.location);
     } else {
       setError("비밀번호가 올바르지 않습니다");
     }
