@@ -190,7 +190,7 @@ export const api = {
       }),
   },
   study: {
-    queue: (mode: "srs" | "practice", topicId?: number, keywordId?: number) => {
+    queue: (mode: "srs" | "practice" | "unlearned", topicId?: number, keywordId?: number) => {
       const searchParams = new URLSearchParams({ mode });
       if (topicId) searchParams.set("topicId", String(topicId));
       if (keywordId) searchParams.set("keywordId", String(keywordId));

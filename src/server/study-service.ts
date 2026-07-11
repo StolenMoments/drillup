@@ -14,6 +14,7 @@ import { ServiceError } from "./errors";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SRS_QUEUE_LIMIT = 100;
 const PRACTICE_QUEUE_LIMIT = 20;
+const UNLEARNED_QUEUE_LIMIT = 20;
 
 function toStudyDto(question: {
   id: number;
@@ -50,7 +51,7 @@ function toStudyDto(question: {
 }
 
 export async function getStudyQueue(
-  mode: "srs" | "practice",
+  mode: "srs" | "practice" | "unlearned",
   topicId?: number,
   keywordId?: number,
 ): Promise<StudyQuestionDto[]> {
@@ -65,6 +66,34 @@ export async function getStudyQueue(
       take: SRS_QUEUE_LIMIT,
     });
     return rows.map((row) => toStudyDto(row.question));
+  }
+
+  if (mode === "unlearned") {
+    const rows = await prisma.question.findMany({
+      where: {
+        ...(topicId ? { topicId } : {}),
+        ...(keywordId ? { keywords: { some: { keywordId } } } : {}),
+        OR: [{ srsState: null }, { srsState: { lastReviewedAt: null } }],
+      },
+      select: { id: true },
+    });
+    const pickedIds = shuffle(rows.map((row) => row.id)).slice(
+      0,
+      UNLEARNED_QUEUE_LIMIT,
+    );
+    if (pickedIds.length === 0) return [];
+
+    const questions = await prisma.question.findMany({
+      where: { id: { in: pickedIds } },
+    });
+    const byId = new Map(questions.map((question) => [question.id, question]));
+    return pickedIds
+      .map((id) => byId.get(id))
+      .filter(
+        (question): question is NonNullable<typeof question> =>
+          question !== undefined,
+      )
+      .map(toStudyDto);
   }
 
   const rows = await prisma.question.findMany({

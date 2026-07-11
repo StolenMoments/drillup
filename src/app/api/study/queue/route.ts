@@ -5,7 +5,13 @@ import { getStudyQueue } from "@/server/study-service";
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
-    const mode = url.searchParams.get("mode") === "practice" ? "practice" : "srs";
+    const modeParam = url.searchParams.get("mode");
+    const mode =
+      modeParam === "practice"
+        ? "practice"
+        : modeParam === "unlearned"
+          ? "unlearned"
+          : "srs";
     const topicIdRaw = url.searchParams.get("topicId");
     const topicId = topicIdRaw ? Number(topicIdRaw) : undefined;
     if (

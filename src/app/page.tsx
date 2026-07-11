@@ -117,6 +117,12 @@ export default function DashboardPage() {
                 >
                   연습
                 </Link>
+                <Link
+                  href={`/study?mode=unlearned&topicId=${topic.id}`}
+                  className="btn btn-secondary min-h-9 px-3"
+                >
+                  미학습
+                </Link>
               </div>
             </div>
           ))}

@@ -13,13 +13,15 @@ import type {
   StudyQuestionDto,
 } from "@/lib/api-types";
 
-function completionMessage(mode: "srs" | "practice"): string {
+function completionMessage(mode: "srs" | "practice" | "unlearned"): string {
   if (mode === "srs") return "오늘 복습할 문제를 모두 끝냈습니다 🎉";
+  if (mode === "unlearned") return "미학습 문제를 모두 끝냈습니다 🎉";
   return "풀 문제가 없습니다.";
 }
 
-function modeLabel(mode: "srs" | "practice"): string {
+function modeLabel(mode: "srs" | "practice" | "unlearned"): string {
   if (mode === "srs") return "오늘의 복습";
+  if (mode === "unlearned") return "미학습";
   return "자유 연습";
 }
 
@@ -28,7 +30,7 @@ function StudySession({
   topicId,
   keywordId,
 }: {
-  mode: "srs" | "practice";
+  mode: "srs" | "practice" | "unlearned";
   topicId?: number;
   keywordId?: number;
 }) {
@@ -86,11 +88,11 @@ function StudySession({
     try {
       const reviewResult = await api.study.submitReview({
         questionId: current.id,
-        mode: mode === "srs" ? "SRS" : "PRACTICE",
+        mode: mode === "practice" ? "PRACTICE" : "SRS",
         answer,
       });
       setResult(reviewResult);
-      if (mode === "srs" && !reviewResult.isCorrect) {
+      if (mode !== "practice" && !reviewResult.isCorrect) {
         setQueue((q) => (q ? [...q, current] : q));
       }
     } catch (err) {
@@ -189,8 +191,13 @@ function StudySession({
 
 function StudyContent() {
   const params = useSearchParams();
-  const mode: "srs" | "practice" =
-    params.get("mode") === "practice" ? "practice" : "srs";
+  const modeParam = params.get("mode");
+  const mode: "srs" | "practice" | "unlearned" =
+    modeParam === "practice"
+      ? "practice"
+      : modeParam === "unlearned"
+        ? "unlearned"
+        : "srs";
   const topicIdRaw = params.get("topicId");
   const topicId = topicIdRaw ? Number(topicIdRaw) : undefined;
   const keywordIdRaw = params.get("keywordId");
