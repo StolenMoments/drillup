@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="shell_background">#EFF4F9</color>
+    <color name="shell_foreground">#17202A</color>
+</resources>
