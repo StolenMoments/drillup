@@ -255,6 +255,28 @@ export function buildAnswerExplanationPrompt(
     type === "MCQ"
       ? "\n- 보기를 가리킬 때 번호나 순서(1번, 2번, 첫 번째, 마지막 등)로 지칭하지 마세요. 학습자 화면에 표시되는 보기 순서는 매번 무작위로 바뀌므로, 반드시 보기 텍스트를 그대로 인용하거나 그 내용을 풀어서 설명하세요."
       : "";
+  const mcqSourceGuide = type === "MCQ"
+    ? `- 각 보기마다 AWS 공식 문서 하나를 근거로 제시하세요. WebSearch, WebFetch 또는 브라우저 도구로 문서가 실제로 해당 판단을 뒷받침하는지 확인한 뒤 사용하세요.
+- 문서 URL은 반드시 https://docs.aws.amazon.com/ 으로 시작하는 AWS 공식 문서여야 합니다. 블로그, FAQ, 검색 결과, AWS 외부 사이트는 사용하지 마세요.
+- choice_explanations에는 모든 보기를 한 번씩만 넣고, choice에는 위 보기 텍스트를 글자 하나도 바꾸지 않고 그대로 넣으세요.`
+    : "";
+  const outputShape = type === "MCQ"
+    ? `{
+  "explanation": "여기에 전체 해설 텍스트",
+  "choice_explanations": [
+    {
+      "choice": "위 보기 텍스트를 그대로 복사",
+      "explanation": "이 보기가 맞거나 틀린 이유",
+      "aws_reference": {
+        "title": "AWS 공식 문서 제목",
+        "url": "https://docs.aws.amazon.com/..."
+      }
+    }
+  ]
+}`
+    : `{
+  "explanation": "여기에 전체 해설 텍스트"
+}`;
 
   return `당신은 학습 문제 해설 전문가입니다. 아래 문제에 대해 정답 근거와 오답이 틀린 이유를 설명해 주세요.
 
@@ -264,15 +286,14 @@ ${questionSection}
 
 - 정답(빈칸 정답 포함)이 왜 맞는지 먼저 설명하세요.
 - ${wrongGuide}${numberingGuide}
+${mcqSourceGuide}
 - 한국어로, 학습자가 이해하기 쉽게 간결히 작성하세요. 마크다운 기호(#, *, - 등) 없이 일반 문장과 줄바꿈만 사용하세요.
 
 ## 출력 형식
 
 다른 설명 없이 아래 구조의 JSON만 출력하세요. 코드 펜스(\`\`\`)를 쓰지 마세요.
 
-{
-  "explanation": "여기에 전체 해설 텍스트"
-}
+${outputShape}
 
 ## 결과 저장 (반드시 준수)
 

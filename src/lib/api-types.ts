@@ -124,7 +124,17 @@ export interface ReferenceFileListDto {
 export interface AnswerExplanationDto {
   engine: GenerationEngineDto;
   content: string;
+  choiceExplanations: ChoiceExplanationDto[] | null;
   cached: boolean;
+}
+
+export interface ChoiceExplanationDto {
+  choice: string;
+  explanation: string;
+  awsReference: {
+    title: string;
+    url: string;
+  };
 }
 
 export type GenerationEngineDto = "CLAUDE" | "CODEX" | "ANTIGRAVITY";

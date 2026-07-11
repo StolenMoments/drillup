@@ -302,6 +302,10 @@ describe("buildAnswerExplanationPrompt", () => {
     expect(prompt).toContain("D:\\explain\\1-claude\\result.json");
     expect(prompt).toContain("stdout에 출력하지 마세요");
     expect(prompt).toContain('"explanation"');
+    expect(prompt).toContain('"choice_explanations"');
+    expect(prompt).toContain('"aws_reference"');
+    expect(prompt).toContain("https://docs.aws.amazon.com/");
+    expect(prompt).toContain("모든 보기를 한 번씩만");
   });
 
   it("CLOZE: 본문·정답·distractors·저장 경로를 포함한다", () => {
@@ -319,6 +323,7 @@ describe("buildAnswerExplanationPrompt", () => {
     expect(prompt).toContain("윈도우, 맥OS");
     expect(prompt).toContain("각 오답 후보(distractor)가 왜 그 빈칸에 맞지 않는지");
     expect(prompt).not.toContain("번호나 순서");
+    expect(prompt).not.toContain('"choice_explanations"');
     expect(prompt).toContain("D:\\explain\\2-codex\\result.json");
   });
 });

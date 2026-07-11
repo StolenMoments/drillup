@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api-client";
 import type {
+  ChoiceExplanationDto,
   GenerationEngineDto,
   ReviewResultDto,
   StudyQuestionDto,
@@ -24,7 +25,11 @@ const ENGINES: { value: GenerationEngineDto; label: string }[] = [
 type EngineState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "done"; content: string }
+  | {
+      status: "done";
+      content: string;
+      choiceExplanations: ChoiceExplanationDto[] | null;
+    }
   | { status: "error"; message: string };
 
 function engineLabel(engine: GenerationEngineDto): string {
@@ -68,7 +73,11 @@ export default function ResultPanel({
       const res = await api.questions.explain(question.id, engine);
       setEngineStates((prev) => ({
         ...prev,
-        [engine]: { status: "done", content: res.content },
+        [engine]: {
+          status: "done",
+          content: res.content,
+          choiceExplanations: res.choiceExplanations,
+        },
       }));
     } catch (err) {
       setEngineStates((prev) => ({
@@ -141,12 +150,37 @@ export default function ResultPanel({
         {ENGINES.map(({ value, label }) => {
           const state = engineStates[value];
           if (state.status === "done") {
+            const choiceExplanations = state.choiceExplanations;
             return (
               <div key={value} className="surface surface-pad space-y-1">
                 <p className="chip">{engineLabel(value)}</p>
                 <p className="whitespace-pre-wrap text-[color:var(--muted)]">
                   {state.content}
                 </p>
+                {question.type === "MCQ" && choiceExplanations && (
+                  <ul className="space-y-3 pt-2 text-sm">
+                    {question.choices.map((choice) => {
+                      const choiceExplanation = choiceExplanations.find(
+                        (item) => item.choice === choice.text,
+                      );
+                      if (!choiceExplanation) return null;
+                      return (
+                        <li key={choice.original_index} className="space-y-1">
+                          <p className="font-medium text-[color:var(--text)]">{choice.text}</p>
+                          <p className="text-[color:var(--muted)]">{choiceExplanation.explanation}</p>
+                          <a
+                            href={choiceExplanation.awsReference.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex text-[color:var(--brand-strong)] underline underline-offset-2 hover:text-[color:var(--brand)]"
+                          >
+                            AWS 공식 문서: {choiceExplanation.awsReference.title}
+                          </a>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </div>
             );
           }
