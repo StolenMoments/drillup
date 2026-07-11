@@ -3,6 +3,7 @@ import type {
   GenerationEngineDto,
   GenerationJobDto,
   GenerationJobSummaryDto,
+  HardenPreviewDto,
   KeywordDto,
   KeywordRefDto,
   KeywordSuggestionDto,
@@ -114,6 +115,11 @@ export const api = {
       request<{ ok: true }>(`/api/questions/${id}`, { method: "DELETE" }),
     explain: (id: number, engine: GenerationEngineDto) =>
       request<AnswerExplanationDto>(`/api/questions/${id}/explain`, {
+        method: "POST",
+        body: JSON.stringify({ engine }),
+      }),
+    hardenChoices: (id: number, engine: GenerationEngineDto) =>
+      request<HardenPreviewDto>(`/api/questions/${id}/harden-choices`, {
         method: "POST",
         body: JSON.stringify({ engine }),
       }),

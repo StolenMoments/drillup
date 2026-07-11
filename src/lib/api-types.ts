@@ -137,6 +137,19 @@ export interface ChoiceExplanationDto {
   };
 }
 
+export interface HardenedMcqPayloadDto {
+  question: string;
+  choices: string[];
+  answer_indices: number[];
+  choice_explanations: string[];
+}
+
+export interface HardenPreviewDto {
+  engine: GenerationEngineDto;
+  comment: string;
+  payload: HardenedMcqPayloadDto;
+}
+
 export type GenerationEngineDto = "CLAUDE" | "CODEX" | "ANTIGRAVITY";
 export type GenerationStatusDto =
   | "RUNNING"
