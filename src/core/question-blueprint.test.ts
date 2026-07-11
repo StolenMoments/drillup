@@ -12,7 +12,7 @@ describe("parseQuestionBlueprintJson", () => {
   it("rejects blank fields and invalid enum", () => {
     const blank = structuredClone(valid); blank.blueprints[0].referenceFacts[0].statement = " ";
     const kind = structuredClone(valid); kind.blueprints[0].constraints[0].kind = "OTHER";
-    expect(parseQuestionBlueprintJson(JSON.stringify(blank)).toMatchObject({ ok: false });
-    expect(parseQuestionBlueprintJson(JSON.stringify(kind)).toMatchObject({ ok: false });
+    expect(parseQuestionBlueprintJson(JSON.stringify(blank))).toMatchObject({ ok: false });
+    expect(parseQuestionBlueprintJson(JSON.stringify(kind))).toMatchObject({ ok: false });
   });
 });
