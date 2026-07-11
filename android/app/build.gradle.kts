@@ -34,9 +34,10 @@ android {
 
 dependencies {
     implementation("androidx.activity:activity:1.13.0")
-    implementation("androidx.core:core-ktx:1.19.0")
+    implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.core:core-splashscreen:1.2.0")
     implementation("androidx.webkit:webkit:1.16.0")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16.1")
 }
