@@ -397,7 +397,7 @@ git commit -m "feat: 배포 전 활성 job 대기 드레인 스크립트 추가"
 - Consumes (Task 2): `node scripts/wait-for-generation-drain.mjs` (exit 0 = 진행, exit ≠ 0 = 배포 중단).
 - Produces: 없음 (최종 사용자 단계).
 
-- [ ] **Step 1: 드레인 호출 2곳 추가**
+- [x] **Step 1: 드레인 호출 2곳 추가**
 
 `scripts/deploy-remote.sh`에서 `.env` 키 검증 블록(`if [ "$missing_env" -ne 0 ]; then ... fi`) **다음, `npm ci` 이전**에 추가:
 
@@ -442,17 +442,17 @@ systemctl --user restart drillup
 systemctl --user status drillup --no-pager
 ```
 
-- [ ] **Step 2: 셸 문법 검증**
+- [x] **Step 2: 셸 문법 검증**
 
 Run (Bash tool): `bash -n scripts/deploy-remote.sh`
 Expected: 출력 없음 (문법 오류 없음).
 
-- [ ] **Step 3: 전체 테스트 확인**
+- [x] **Step 3: 전체 테스트 확인**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 4: 커밋**
+- [x] **Step 4: 커밋**
 
 ```bash
 git add scripts/deploy-remote.sh
