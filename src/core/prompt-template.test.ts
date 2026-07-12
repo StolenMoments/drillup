@@ -5,6 +5,7 @@ import {
   buildCliGenerationFromBlueprintPrompt,
   buildCliGenerationPrompt,
   buildCliQuestionBlueprintPrompt,
+  buildCliQuestionBlueprintRepairPrompt,
   buildCliKeywordTagPrompt,
   buildCliRevisionPrompt,
   buildCliVerifyPrompt,
@@ -322,6 +323,43 @@ describe("buildCliQuestionBlueprintPrompt", () => {
     expect(prompt).toContain("exactly 2 correct choices");
     expect(prompt).toContain("exactly 4 choices");
     expect(prompt).toContain('"2개를 선택하세요"');
+  });
+
+  it("난이도 게이트의 제약 분류 규칙을 기계적으로 설명한다", () => {
+    const prompt = buildCliQuestionBlueprintPrompt("topic", "", "C:/result.json", NO_EXISTING);
+    expect(prompt).toContain("every constraint id must appear in exactly one of satisfiedConstraintIds or violatedConstraintIds");
+    expect(prompt).toContain("violates exactly one constraint and lists every other constraint id as satisfied");
+  });
+});
+
+describe("buildCliQuestionBlueprintRepairPrompt", () => {
+  const blueprint = {
+    id: "b1",
+    domainTask: "task",
+    testedDistinction: "distinction",
+    referenceFacts: [{ id: "f1", statement: "fact", sourceFile: "ref.md" }],
+    constraints: [{ id: "c1", statement: "constraint", kind: "FUNCTIONAL" as const, factIds: ["f1"] }],
+    choices: [
+      {
+        id: "a",
+        solution: "solution",
+        serviceNames: ["svc"],
+        satisfiedConstraintIds: ["c1"],
+        violatedConstraintIds: [],
+        misconception: null,
+        correct: true as const,
+      },
+    ],
+    reasoningSteps: ["step one", "step two"],
+  };
+
+  it("위반 상세와 난이도 게이트 규칙을 포함한다", () => {
+    const violations = "b1: CLOSE_DISTRACTOR_COUNT At least two close distractors are required.";
+    const prompt = buildCliQuestionBlueprintRepairPrompt([blueprint], violations, "C:/repair.json");
+    expect(prompt).toContain(violations);
+    expect(prompt).toContain("every constraint id must appear in exactly one of satisfiedConstraintIds or violatedConstraintIds");
+    expect(prompt).toContain("violates exactly one constraint and lists every other constraint id as satisfied");
+    expect(prompt).toContain("At least two close distractors");
   });
 });
 

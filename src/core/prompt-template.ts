@@ -400,6 +400,13 @@ ${existingKeywordsSection(existingKeywords)}## 출력 형식
 `;
 }
 
+// 난이도 게이트(assessQuestionBlueprint)가 기계적으로 검사하는 규칙. 게이트와 어긋나면 생성 토큰이 통째로 버려지므로 반드시 동기화한다.
+const blueprintGateRules = `Constraint mapping rules, enforced mechanically after generation:
+- In every choice, every constraint id must appear in exactly one of satisfiedConstraintIds or violatedConstraintIds; never omit a constraint and never list it in both.
+- A correct choice lists every constraint id in satisfiedConstraintIds and none in violatedConstraintIds.
+- A close distractor violates exactly one constraint and lists every other constraint id as satisfied.
+- At least two close distractors are required, and every distractor must violate at least one constraint.`;
+
 const blueprintContract = `{
   "blueprints": [{
     "id": "b1", "domainTask": "task", "testedDistinction": "distinction",
@@ -426,6 +433,7 @@ export function buildCliQuestionBlueprintPrompt(
   return `Create structural question blueprints for "${topicName}", not final question prose.
 Read every supplied reference first. Each referenceFacts.sourceFile must be one of those exact paths. constraint.kind must be exactly one of FUNCTIONAL, SECURITY, PERFORMANCE, COST, OPERATIONS, INTEGRATION, or COMPLIANCE (never variants such as OPERATIONAL). ${shapeRequirement} Use at least three distinct services across choices. Do not choose an answer first and fill distractors afterward.
 Use \`"misconception": null\` for correct choices. Every distractor must have a nonblank misconception explaining why it is wrong.
+${blueprintGateRules}
 Do not expose blueprint metadata in a final question; this output is planning data only.
 ${referenceSection(referenceFiles, "Before planning")}${variantSection(variantSources)}${existingKeywordsSection(existingKeywords)}${dedupSection(existing)}
 Additional instructions:
@@ -444,6 +452,7 @@ export function buildCliQuestionBlueprintRepairPrompt(
   shape?: GenerationQuestionShape,
 ): string {
   return `Repair only the requested question blueprints below. Return exactly one repaired blueprint for each listed id, with the same id. Do not add or remove ids. Correct the listed structural violations while retaining the intended domain task and referenced facts.${shape ? ` Each blueprint must contain exactly ${shape.choiceCount} choices and exactly ${shape.correctAnswerCount} correct choices.` : ""}
+${blueprintGateRules}
 Violations:
 ${violations}
 Blueprints:
