@@ -35,7 +35,8 @@ import { ServiceError } from "../errors";
 import { importQuestions } from "../import-service";
 import { attachKeywords } from "../keyword-service";
 import { requiredReferenceFiles, resolveReferenceFiles } from "./reference";
-import { generationTimeoutMs, jobOutputDir, runEngine } from "./run-engine";
+import { generationTimeoutMs, jobOutputDir } from "./run-engine";
+import { completeTrackedRun, failTrackedRun, runTrackedEngine } from "./tracked-run";
 
 const ORPHAN_GRACE_MS = 60_000;
 const EXISTING_QUESTION_LIMIT = 100;
@@ -302,7 +303,7 @@ async function runKeywordTagJob(
   const job = await prisma.generationJob.findUnique({ where: { id: jobId } });
   if (!job || job.status !== "RUNNING") return;
 
-  const run = await runEngine(job.engine, prompt, dir);
+  const run = await runTrackedEngine({ generationJobId: jobId, stage: "KEYWORD_TAG", engine: job.engine, prompt, dir });
   if (!run.ok) {
     await failJob(jobId, run.failureReason, null);
     return;
@@ -353,7 +354,8 @@ async function runJob(
   if (!job || job.status !== "RUNNING") return;
 
   const blueprintPath = path.join(dir, "blueprint-result.json");
-  const blueprintRun = await runEngine(job.engine, buildCliQuestionBlueprintPrompt(topicName, instructions, blueprintPath, existing, referenceAbsPaths, existingKeywords, variantSources), dir, "blueprint-");
+  const blueprintPrompt = buildCliQuestionBlueprintPrompt(topicName, instructions, blueprintPath, existing, referenceAbsPaths, existingKeywords, variantSources);
+  const blueprintRun = await runTrackedEngine({ generationJobId: jobId, stage: "BLUEPRINT", engine: job.engine, prompt: blueprintPrompt, dir, filePrefix: "blueprint-" });
   if (!blueprintRun.ok) {
     await failJob(jobId, blueprintRun.failureReason, null);
     return;
@@ -368,7 +370,8 @@ async function runJob(
   if (failed.length) {
     const repairPath = path.join(dir, "blueprint-repair-result.json");
     const violations = failed.map((item) => `${item.blueprint.id}: ${item.assessment.violations.map((violation) => violation.code).join(", ")}`).join("\n");
-    const repairRun = await runEngine(job.engine, buildCliQuestionBlueprintRepairPrompt(failed.map((item) => item.blueprint), violations, repairPath), dir, "blueprint-repair-");
+    const blueprintRepairPrompt = buildCliQuestionBlueprintRepairPrompt(failed.map((item) => item.blueprint), violations, repairPath);
+    const repairRun = await runTrackedEngine({ generationJobId: jobId, stage: "BLUEPRINT_REPAIR", engine: job.engine, prompt: blueprintRepairPrompt, dir, filePrefix: "blueprint-repair-" });
     if (repairRun.ok) {
       const repaired = parseQuestionBlueprintJson(extractJsonObject(repairRun.resultText));
       if (repaired.ok) {
@@ -387,7 +390,7 @@ async function runJob(
   const resultPath = path.join(dir, "result.json");
   const prompt = buildCliGenerationFromBlueprintPrompt(topicName, blueprints, resultPath, referenceAbsPaths);
 
-  const run = await runEngine(job.engine, prompt, dir);
+  const run = await runTrackedEngine({ generationJobId: jobId, stage: "GENERATION", engine: job.engine, prompt, dir });
   if (!run.ok) {
     await failJob(jobId, run.failureReason, null);
     return;
@@ -446,7 +449,7 @@ async function runJob(
   let finalItems = unverifiedItems;
   let verifyWarning: string | null = null;
 
-  const verifyRun = await runEngine(job.verifyEngine, verifyPrompt, dir, "verify-");
+  const verifyRun = await runTrackedEngine({ generationJobId: jobId, stage: "VERIFY", engine: job.verifyEngine, prompt: verifyPrompt, dir, filePrefix: "verify-" });
   if (!verifyRun.ok) {
     verifyWarning = verifyRun.failureReason;
   } else {
@@ -474,7 +477,7 @@ async function runJob(
         referenceAbsPaths,
         blueprints[item.index],
       );
-      const repairRun = await runEngine(job.engine, repairPrompt, dir, `repair-${item.index}-`);
+      const repairRun = await runTrackedEngine({ generationJobId: jobId, stage: "ITEM_REPAIR", itemIndex: item.index, engine: job.engine, prompt: repairPrompt, dir, filePrefix: `repair-${item.index}-` });
       if (!repairRun.ok) continue;
       const revision = parseRevisionJson(extractJsonObject(repairRun.resultText));
       if (!revision.ok) continue;
@@ -490,7 +493,7 @@ async function runJob(
     if (repaired.length > 0) {
       const repairVerifyPath = path.join(dir, "repair-verify-result.json");
       const repairVerifyPrompt = buildCliVerifyPrompt(topicName, repaired.map((item) => ({ ...item, blueprint: blueprints[item.index] })), repairVerifyPath, referenceAbsPaths);
-      const repairVerifyRun = await runEngine(job.verifyEngine, repairVerifyPrompt, dir, "repair-verify-");
+      const repairVerifyRun = await runTrackedEngine({ generationJobId: jobId, stage: "REPAIR_VERIFY", engine: job.verifyEngine, prompt: repairVerifyPrompt, dir, filePrefix: "repair-verify-" });
       if (repairVerifyRun.ok) {
         const repairVerdicts = parseVerifyJson(extractJsonObject(repairVerifyRun.resultText));
         if (repairVerdicts.ok) {
@@ -602,7 +605,7 @@ async function runItemRevision(
   const dir = path.join(jobOutputDir(jobId), "revisions", String(revision.itemIndex));
   const resultPath = path.join(dir, "result.json");
   const prompt = buildCliRevisionPrompt(topicName, question, revision.instructions, resultPath, referenceFiles);
-  const run = await runEngine(revision.engine, prompt, dir);
+  const run = await runTrackedEngine({ generationJobId: jobId, stage: "MANUAL_ITEM_REVISION", itemIndex: revision.itemIndex, engine: revision.engine, prompt, dir });
   if (!run.ok) {
     await prisma.generationItemRevision.update({ where: { id: revisionId }, data: { status: "FAILED", errorMessage: run.failureReason, finishedAt: new Date() } });
     return;
@@ -641,6 +644,10 @@ export async function getJob(id: number): Promise<GenerationJobDto> {
   const isStale = Date.now() - job.createdAt.getTime() > orphanAfterMs;
 
   if (job.status === "RUNNING" && isStale) {
+    await prisma.generationRunLog.updateMany({
+      where: { generationJobId: id, status: "RUNNING" },
+      data: { status: "FAILED", errorMessage: "시간 초과 또는 서버 재시작으로 실행 기록이 중단되었습니다.", finishedAt: new Date() },
+    });
     const updated = await prisma.generationJob.update({
       where: { id },
       data: {
@@ -653,6 +660,10 @@ export async function getJob(id: number): Promise<GenerationJobDto> {
   }
 
   if (job.status === "VERIFYING" && isStale) {
+    await prisma.generationRunLog.updateMany({
+      where: { generationJobId: id, status: "RUNNING" },
+      data: { status: "FAILED", errorMessage: "시간 초과 또는 서버 재시작으로 실행 기록이 중단되었습니다.", finishedAt: new Date() },
+    });
     // 생성 결과(전 항목 unverified)는 VERIFYING 전환 시점에 이미 저장돼 있다.
     const updated = await prisma.generationJob.update({
       where: { id },
