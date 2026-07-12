@@ -203,15 +203,11 @@ export async function createJob(input: {
       throw new ServiceError("NOT_FOUND", "원본 문제를 찾을 수 없습니다", 404);
     }
     variantSources = sourceQuestions.map((question) => ({
-      question: JSON.stringify(
-        {
-          type: question.type === "MCQ" ? "mcq" : "cloze",
-          ...(question.payload as Record<string, unknown>),
-          ...(question.explanation ? { explanation: question.explanation } : {}),
-        },
-        null,
-        2,
-      ),
+      question: JSON.stringify({
+        type: question.type === "MCQ" ? "mcq" : "cloze",
+        ...(question.payload as Record<string, unknown>),
+        ...(question.explanation ? { explanation: question.explanation } : {}),
+      }),
     }));
   }
   const existingKeywords = await loadExistingKeywords(input.topicId);

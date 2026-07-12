@@ -317,7 +317,7 @@ export function buildCliVerifyPrompt(
   const listing = items
     .map(
       (item) =>
-        `### 문제 ${item.index}\n\n\`\`\`json\n${JSON.stringify(item.question, null, 2)}\n\`\`\``,
+        `### 문제 ${item.index}\n\n\`\`\`json\n${JSON.stringify(item.question)}\n\`\`\``,
     )
     .join("\n\n");
   const blueprintListing = items.filter((item) => item.blueprint).map((item) => `Question ${item.index}: ${JSON.stringify(item.blueprint)}`).join("\n");
@@ -457,7 +457,7 @@ Violations:
 ${violations}
 Blueprints:
 \`\`\`json
-${JSON.stringify(failedBlueprints, null, 2)}
+${JSON.stringify(failedBlueprints)}
 \`\`\`
 Output only ${blueprintContract} and write it to ${resultPath}.`;
 }
@@ -473,7 +473,7 @@ export function buildCliGenerationFromBlueprintPrompt(
 ${referenceSection(referenceFiles, "Before writing")}
 Blueprints:
 \`\`\`json
-${JSON.stringify(blueprints, null, 2)}
+${JSON.stringify(blueprints)}
 \`\`\`
 ${cliMcqPromptBody(topicName)}
 Write JSON only to ${resultPath}; do not print it to stdout.`;
@@ -494,7 +494,7 @@ export function buildCliRevisionPrompt(
 ${webVerificationSection("검증하기 전에")}${referenceSection(referenceFiles, "검증하기 전에")}## 대상 문제
 
 \`\`\`json
-${JSON.stringify(questionWithBlueprint, null, 2)}
+${JSON.stringify(questionWithBlueprint)}
 \`\`\`
 
 ## 검증 기준
@@ -556,7 +556,7 @@ export function buildKeywordSuggestionPrompt(
 ## 대상 문제
 
 \`\`\`json
-${JSON.stringify(question, null, 2)}
+${JSON.stringify(question)}
 \`\`\`
 
 ${existingSection}${assignedSection}## 출력 형식
@@ -596,7 +596,7 @@ export function buildChoiceHardeningPrompt(
 ${webVerificationSection("선지를 교체하기 전에")}## 대상 문제
 
 \`\`\`json
-${JSON.stringify(target, null, 2)}
+${JSON.stringify(target)}
 \`\`\`
 
 ## 불변 조건 (반드시 준수)

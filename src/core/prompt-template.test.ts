@@ -137,6 +137,12 @@ describe("buildCliVerifyPrompt", () => {
     expect(prompt).toContain("리눅스 커널을 만든 사람은?");
     expect(prompt).toContain("리누스 토르발스");
   });
+
+  it("문제 JSON을 개행·들여쓰기 없는 compact 직렬화로 삽입한다 (토큰 절약)", () => {
+    const prompt = buildCliVerifyPrompt("리눅스 기초", VERIFY_ITEMS, "D:\\v.json");
+    expect(prompt).toContain(JSON.stringify(VERIFY_ITEMS[0].question));
+    expect(prompt).not.toContain(JSON.stringify(VERIFY_ITEMS[0].question, null, 2));
+  });
 });
 
 describe("buildCliGenerationPrompt 참고 자료 섹션", () => {
@@ -361,6 +367,41 @@ describe("buildCliQuestionBlueprintRepairPrompt", () => {
     expect(prompt).toContain("violates exactly one constraint and lists every other constraint id as satisfied");
     expect(prompt).toContain("At least two close distractors");
   });
+
+  it("blueprint 목록을 compact 직렬화로 삽입한다 (토큰 절약)", () => {
+    const violations = "b1: CLOSE_DISTRACTOR_COUNT At least two close distractors are required.";
+    const prompt = buildCliQuestionBlueprintRepairPrompt([blueprint], violations, "C:/repair.json");
+    expect(prompt).toContain(JSON.stringify([blueprint]));
+    expect(prompt).not.toContain(JSON.stringify([blueprint], null, 2));
+  });
+});
+
+describe("buildCliGenerationFromBlueprintPrompt", () => {
+  const blueprint = {
+    id: "b1",
+    domainTask: "task",
+    testedDistinction: "distinction",
+    referenceFacts: [{ id: "f1", statement: "fact", sourceFile: "ref.md" }],
+    constraints: [{ id: "c1", statement: "constraint", kind: "FUNCTIONAL" as const, factIds: ["f1"] }],
+    choices: [
+      {
+        id: "a",
+        solution: "solution",
+        serviceNames: ["svc"],
+        satisfiedConstraintIds: ["c1"],
+        violatedConstraintIds: [],
+        misconception: null,
+        correct: true as const,
+      },
+    ],
+    reasoningSteps: ["step one", "step two"],
+  };
+
+  it("blueprint 목록을 compact 직렬화로 삽입한다 (토큰 절약)", () => {
+    const prompt = buildCliGenerationFromBlueprintPrompt("topic", [blueprint], "C:/result.json");
+    expect(prompt).toContain(JSON.stringify([blueprint]));
+    expect(prompt).not.toContain(JSON.stringify([blueprint], null, 2));
+  });
 });
 
 describe("buildAnswerExplanationPrompt", () => {
@@ -481,7 +522,7 @@ describe("buildChoiceHardeningPrompt", () => {
       { question: "q?", choices: ["a", "b", "c", "d"], answer_index: 2 },
       "/tmp/result.json",
     );
-    expect(prompt).toContain('"answer_indices": [\n    2\n  ]');
+    expect(prompt).toContain('"answer_indices":[2]');
   });
 
   it("시험 스타일 오답 규칙을 재사용한다", () => {
