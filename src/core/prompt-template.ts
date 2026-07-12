@@ -41,7 +41,7 @@ function promptBody(topicName: string): string {
 - cloze: 빈칸은 문장의 핵심 개념 단어에만 넣을 것.
 - explanation은 한두 문장으로 간결하게 작성.
 - 두 유형(mcq, cloze)을 섞어서 출제할 것.
-- keywords: 문제가 다루는 핵심 개념 키워드 1~3개. 짧은 명사구로 작성.
+- keywords: 문제가 다루는 핵심 개념 키워드. 짧고 직접 관련되며 중복되지 않는 명사구로 작성.
 `;
 }
 
@@ -388,7 +388,7 @@ ${existingKeywordsSection(existingKeywords)}## 출력 형식
 }
 
 - 위 목록의 모든 문제에 대해 assignment를 하나씩 만드세요. id는 목록의 (id=N)을 그대로 사용하세요.
-- keywords는 문제가 다루는 핵심 개념 1~3개. 짧은 명사구로 작성하세요.
+- keywords는 문제가 다루는 핵심 개념만 짧고 직접 관련되며 중복되지 않는 명사구로 작성하세요.
 
 ## 결과 저장 (반드시 준수)
 
@@ -403,7 +403,7 @@ const blueprintContract = `{
     "id": "b1", "domainTask": "task", "testedDistinction": "distinction",
     "referenceFacts": [{ "id": "f1", "statement": "fact", "sourceFile": "reference file path" }],
     "constraints": [{ "id": "c1", "statement": "constraint", "kind": "FUNCTIONAL", "factIds": ["f1"] }],
-    "choices": [{ "id": "a", "solution": "solution", "serviceNames": ["service"], "satisfiedConstraintIds": ["c1"], "violatedConstraintIds": [], "misconception": "reason", "correct": true }],
+    "choices": [{ "id": "a", "solution": "solution", "serviceNames": ["service"], "satisfiedConstraintIds": ["c1"], "violatedConstraintIds": [], "misconception": null, "correct": true }],
     "reasoningSteps": ["step one", "step two"]
   }]
 }`;
@@ -419,6 +419,7 @@ export function buildCliQuestionBlueprintPrompt(
 ): string {
   return `Create structural question blueprints for "${topicName}", not final question prose.
 Read every supplied reference first. Each referenceFacts.sourceFile must be one of those exact paths. constraint.kind must be exactly one of FUNCTIONAL, SECURITY, PERFORMANCE, COST, OPERATIONS, INTEGRATION, or COMPLIANCE (never variants such as OPERATIONAL). Design 3-5 independent constraints, 4-6 choices, 1-2 correct choices, and at least two close distractors that each miss exactly one constraint. Use at least three distinct services across choices. Do not choose an answer first and fill distractors afterward.
+Use \`"misconception": null\` for correct choices. Every distractor must have a nonblank misconception explaining why it is wrong.
 Do not expose blueprint metadata in a final question; this output is planning data only.
 ${referenceSection(referenceFiles, "Before planning")}${variantSection(variantSources)}${existingKeywordsSection(existingKeywords)}${dedupSection(existing)}
 Additional instructions:
@@ -550,8 +551,8 @@ ${existingSection}${assignedSection}## 출력 형식
 ## 규칙
 
 - 문제가 직접 다루는 핵심 개념만 짧은 명사구로 추천하세요.
-- keywords는 1개 이상, 5개 이하만 반환하세요.
-- 중복, 표기 변형, 이미 부여된 키워드는 넣지 마세요.
+- keywords는 비어 있지 않아야 하며 짧고 직접 관련되고 중복되지 않아야 합니다.
+- 표기 변형과 이미 부여된 키워드는 넣지 마세요.
 
 ## 결과 저장 (반드시 준수)
 

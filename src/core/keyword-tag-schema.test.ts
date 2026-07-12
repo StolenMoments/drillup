@@ -56,6 +56,19 @@ describe("parseKeywordTagJson", () => {
 });
 
 describe("parseKeywordSuggestionJson", () => {
+  it("does not limit tag or suggestion keyword counts", () => {
+    const keywords = ["1", "2", "3", "4", "5", "6", "7"];
+    expect(parseKeywordSuggestionJson(JSON.stringify({ keywords }))).toEqual({ ok: true, keywords });
+    expect(parseKeywordTagJson(JSON.stringify({ assignments: [{ id: 9, keywords }] }))).toEqual({
+      ok: true,
+      assignments: [{ id: 9, keywords }],
+    });
+  });
+
+  it("rejects blank and overlong keywords", () => {
+    expect(parseKeywordSuggestionJson(JSON.stringify({ keywords: ["  "] })).ok).toBe(false);
+    expect(parseKeywordSuggestionJson(JSON.stringify({ keywords: ["a".repeat(51)] })).ok).toBe(false);
+  });
   it("최대 5개의 키워드를 정규화해 파싱한다", () => {
     expect(
       parseKeywordSuggestionJson(
@@ -64,15 +77,12 @@ describe("parseKeywordSuggestionJson", () => {
     ).toEqual({ ok: true, keywords: ["TCP", "UDP"] });
   });
 
-  it("6개 이상의 키워드를 거부한다", () => {
+  it("accepts six keywords", () => {
     expect(
       parseKeywordSuggestionJson(
         JSON.stringify({ keywords: ["1", "2", "3", "4", "5", "6"] }),
       ),
-    ).toEqual({
-      ok: false,
-      fatal: "keywords는 1~5개의 유효한 문자열이어야 합니다",
-    });
+    ).toEqual({ ok: true, keywords: ["1", "2", "3", "4", "5", "6"] });
   });
 
   it("형식이 잘못되면 오류를 반환한다", () => {

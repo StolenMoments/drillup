@@ -195,9 +195,10 @@ describe("keywords 필드", () => {
   it("keywords가 6개 이상이면 거부한다", () => {
     const result = importMcqSchema.safeParse({
       ...baseMcq,
-      keywords: ["1", "2", "3", "4", "5", "6"],
+      keywords: ["1", "2", "3", "4", "5", "6", "7"],
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.keywords).toEqual(["1", "2", "3", "4", "5", "6", "7"]);
   });
 
   it("빈 문자열 키워드는 거부한다", () => {

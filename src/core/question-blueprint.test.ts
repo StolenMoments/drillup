@@ -5,6 +5,16 @@ const valid = { blueprints: [{ id: "b1", domainTask: "task", testedDistinction: 
 
 describe("parseQuestionBlueprintJson", () => {
   it("parses a valid blueprint envelope", () => expect(parseQuestionBlueprintJson(JSON.stringify(valid))).toMatchObject({ ok: true }));
+  it.each([undefined, null, ""])("normalizes a correct-choice misconception of %p to null", (misconception) => {
+    const input = structuredClone(valid); (input.blueprints[0].choices[0] as unknown as { misconception: string | null | undefined }).misconception = misconception;
+    const result = parseQuestionBlueprintJson(JSON.stringify(input));
+    expect(result).toMatchObject({ ok: true });
+    if (result.ok) expect(result.blueprints[0].choices[0].misconception).toBeNull();
+  });
+  it.each([undefined, null, ""])("rejects a distractor misconception of %p", (misconception) => {
+    const input = structuredClone(valid); input.blueprints[0].choices[0].correct = false; (input.blueprints[0].choices[0] as unknown as { misconception: string | null | undefined }).misconception = misconception;
+    expect(parseQuestionBlueprintJson(JSON.stringify(input))).toMatchObject({ ok: false });
+  });
   it("rejects malformed JSON and missing envelope", () => {
     expect(parseQuestionBlueprintJson("no").ok).toBe(false);
     expect(parseQuestionBlueprintJson("{}").ok).toBe(false);

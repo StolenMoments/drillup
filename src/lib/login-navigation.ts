@@ -1,3 +1,3 @@
-export function replaceWithDashboard(location: Pick<Location, "replace">): void {
+export function replaceWithDashboard(location: { replace(url: string): void }): void {
   location.replace("/");
 }

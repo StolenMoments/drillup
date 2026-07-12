@@ -6,7 +6,6 @@ const PLACEHOLDER_RE = /\{\{(\d+)\}\}/g;
 
 const keywordListSchema = z
   .array(nonBlank.max(KEYWORD_MAX_LENGTH, `키워드는 ${KEYWORD_MAX_LENGTH}자 이하여야 합니다`))
-  .max(5, "키워드는 최대 5개입니다")
   .optional();
 
 const mcqBase = z.object({

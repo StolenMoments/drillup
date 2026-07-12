@@ -1,9 +1,13 @@
 import { z } from "zod";
 import { dedupeKeywordNames, KEYWORD_MAX_LENGTH } from "./keyword";
 
+const keywordArraySchema = z.array(
+  z.string().trim().min(1).max(KEYWORD_MAX_LENGTH),
+).min(1);
+
 const assignmentSchema = z.object({
   id: z.number().int().positive(),
-  keywords: z.array(z.string()).min(1).max(5),
+  keywords: keywordArraySchema,
 });
 
 export interface KeywordAssignment {
@@ -20,10 +24,7 @@ export type KeywordSuggestionParseResult =
   | { ok: false; fatal: string };
 
 const suggestionSchema = z.object({
-  keywords: z
-    .array(z.string().trim().min(1).max(KEYWORD_MAX_LENGTH))
-    .min(1)
-    .max(5),
+  keywords: keywordArraySchema,
 });
 
 export function parseKeywordTagJson(rawText: string): KeywordTagParseResult {
@@ -66,7 +67,7 @@ export function parseKeywordSuggestionJson(
 
   const result = suggestionSchema.safeParse(data);
   if (!result.success) {
-    return { ok: false, fatal: "keywords는 1~5개의 유효한 문자열이어야 합니다" };
+    return { ok: false, fatal: "keywords는 비어 있지 않은 유효한 문자열 배열이어야 합니다" };
   }
 
   const keywords = dedupeKeywordNames(result.data.keywords);

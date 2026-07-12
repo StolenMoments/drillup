@@ -3,6 +3,7 @@ import {
   buildAnswerExplanationPrompt,
   buildChoiceHardeningPrompt,
   buildCliGenerationPrompt,
+  buildCliQuestionBlueprintPrompt,
   buildCliKeywordTagPrompt,
   buildCliRevisionPrompt,
   buildCliVerifyPrompt,
@@ -253,7 +254,13 @@ describe("exam distractor requirements", () => {
 });
 
 describe("buildKeywordSuggestionPrompt", () => {
-  it("문제·기존 키워드·이미 부여된 키워드·최대 5개 규칙을 포함한다", () => {
+  it("does not instruct a keyword-count limit", () => {
+    const prompt = buildKeywordSuggestionPrompt("topic", { type: "MCQ", payload: { question: "q" }, explanation: null }, [], [], "C:/result.json");
+    expect(prompt).toContain("짧고 직접 관련되고 중복되지 않아야");
+    expect(prompt).not.toContain("5개 이하");
+    expect(prompt).not.toContain("1~3개");
+  });
+  it("문제·기존 키워드·이미 부여된 키워드·무제한 규칙을 포함한다", () => {
     const prompt = buildKeywordSuggestionPrompt(
       "네트워크",
       {
@@ -275,9 +282,18 @@ describe("buildKeywordSuggestionPrompt", () => {
     expect(prompt).toContain("## 기존 키워드 목록");
     expect(prompt).toContain("## 이미 부여된 키워드");
     expect(prompt).toContain("위 키워드는 결과에 다시 넣지 마세요");
-    expect(prompt).toContain("5개 이하");
+    expect(prompt).toContain("짧고 직접 관련되고 중복되지 않아야");
+    expect(prompt).not.toContain("5개 이하");
     expect(prompt).toContain('"keywords"');
     expect(prompt).toContain("D:\\suggestions\\result.json");
+  });
+});
+
+describe("buildCliQuestionBlueprintPrompt", () => {
+  it("uses null misconceptions for correct choices and requires them for distractors", () => {
+    const prompt = buildCliQuestionBlueprintPrompt("topic", "", "C:/result.json", NO_EXISTING);
+    expect(prompt).toContain('"misconception": null');
+    expect(prompt).toContain("Every distractor must have a nonblank misconception");
   });
 });
 

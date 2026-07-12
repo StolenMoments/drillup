@@ -13,6 +13,12 @@ const blueprint: QuestionBlueprint = {
   ], reasoningSteps: ["compare", "select"],
 };
 describe("assessQuestionBlueprint", () => {
+  it("allows an empty correct-choice misconception and checks distractors only", () => {
+    const accepted = structuredClone(blueprint); accepted.choices[0].misconception = null;
+    expect(assessQuestionBlueprint(accepted).violations).not.toContainEqual(expect.objectContaining({ code: "EMPTY_MISCONCEPTION", choiceId: "a" }));
+    const rejected = structuredClone(blueprint); rejected.choices[1].misconception = "";
+    expect(assessQuestionBlueprint(rejected).violations).toContainEqual(expect.objectContaining({ code: "EMPTY_MISCONCEPTION", choiceId: "b" }));
+  });
   it("passes level 4 structural blueprint", () => expect(assessQuestionBlueprint(blueprint)).toMatchObject({ pass: true, level: 4 }));
   it("reports required structure violations", () => {
     const invalid = structuredClone(blueprint); invalid.constraints = invalid.constraints.slice(0, 2); invalid.choices[1].violatedConstraintIds = [];

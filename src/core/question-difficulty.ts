@@ -35,7 +35,7 @@ export function assessQuestionBlueprint(blueprint: QuestionBlueprint): Difficult
     if (choice.serviceNames.length === 0) add("SERVICE_DIVERSITY", "Every choice requires a service.", choice.id);
     if (!choice.satisfiedConstraintIds.every((id) => constraintIds.has(id)) || !choice.violatedConstraintIds.every((id) => constraintIds.has(id))) add("UNKNOWN_CONSTRAINT_REFERENCE", "Choice references an unknown constraint.", choice.id);
     if (choice.satisfiedConstraintIds.some((id) => choice.violatedConstraintIds.includes(id))) add("CONSTRAINT_BOTH_SATISFIED_AND_VIOLATED", "A constraint cannot be both satisfied and violated.", choice.id);
-    if (!choice.misconception.trim()) add("EMPTY_MISCONCEPTION", "misconception is required.", choice.id);
+    if (!choice.correct && !choice.misconception.trim()) add("EMPTY_MISCONCEPTION", "misconception is required.", choice.id);
     if (choice.correct && choice.satisfiedConstraintIds.length !== blueprint.constraints.length) add("CORRECT_CHOICE_MISSES_CONSTRAINT", "A correct choice must satisfy every constraint.", choice.id);
     if (choice.correct && choice.violatedConstraintIds.length > 0) add("CORRECT_CHOICE_HAS_VIOLATION", "A correct choice cannot violate a constraint.", choice.id);
     if (!choice.correct && choice.violatedConstraintIds.length === 0) add("DISTRACTOR_HAS_NO_VIOLATION", "A distractor must violate a constraint.", choice.id);

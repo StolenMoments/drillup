@@ -16,15 +16,21 @@ const constraintSchema = z.object({
   factIds: stringList,
 });
 
-const choiceSchema = z.object({
+const choiceBaseSchema = z.object({
   id: nonBlank,
   solution: nonBlank,
   serviceNames: stringList,
   satisfiedConstraintIds: stringList,
   violatedConstraintIds: stringList,
-  misconception: nonBlank,
-  correct: z.boolean(),
 });
+
+const choiceSchema = z.discriminatedUnion("correct", [
+  choiceBaseSchema.extend({
+    correct: z.literal(true),
+    misconception: z.string().optional().nullable().transform((value) => value?.trim() || null),
+  }),
+  choiceBaseSchema.extend({ correct: z.literal(false), misconception: nonBlank }),
+]);
 
 export const questionBlueprintSchema = z.object({
   id: nonBlank,
