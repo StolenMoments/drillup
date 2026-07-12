@@ -3,6 +3,7 @@ import type {
   GenerationEngineDto,
   GenerationJobDto,
   GenerationJobSummaryDto,
+  GenerationRunLogDto,
   HardenPreviewDto,
   KeywordDto,
   KeywordRefDto,
@@ -166,6 +167,8 @@ export const api = {
       }),
     get: (id: number) =>
       request<{ job: GenerationJobDto }>(`/api/generate/${id}`),
+    diagnostics: (id: number) =>
+      request<{ runs: GenerationRunLogDto[] }>(`/api/generate/${id}/diagnostics`),
     list: () =>
       request<{ jobs: GenerationJobSummaryDto[] }>("/api/generate"),
     approve: (id: number, indices: number[]) =>
