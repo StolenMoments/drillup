@@ -75,7 +75,7 @@ export function buildEngineCommand(
       args: [
         "--dangerously-skip-permissions",
         "--model",
-        "sonnet",
+        "fable",
         "--allowedTools",
         "WebSearch",
         "WebFetch",
