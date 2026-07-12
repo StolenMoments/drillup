@@ -5,12 +5,13 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { buildEngineCommand, type EngineName } from "@/core/engine-command";
 
-const LOG_TAIL_CHARS = 1200;
+const LOG_TAIL_CHARS = 8_000;
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
+type EngineDiagnostics = { stdoutTail: string; stderrTail: string; exitCode: number | null; timedOut: boolean; durationMs: number };
 export type EngineRunResult =
-  | { ok: true; resultText: string }
-  | { ok: false; failureReason: string };
+  | ({ ok: true; resultText: string } & EngineDiagnostics)
+  | ({ ok: false; failureReason: string } & EngineDiagnostics);
 
 export interface EngineRunOptions {
   codexModel?: string;
@@ -42,6 +43,7 @@ export async function runEngine(
   filePrefix = "",
   options: EngineRunOptions = {},
 ): Promise<EngineRunResult> {
+  const startedAt = Date.now();
   await mkdir(dir, { recursive: true });
   const promptPath = path.join(dir, `${filePrefix}prompt.md`);
   const resultPath = path.join(dir, `${filePrefix}result.json`);
@@ -102,6 +104,7 @@ export async function runEngine(
   await writeFile(path.join(dir, `${filePrefix}stderr.log`), stderr, "utf-8").catch(
     () => undefined,
   );
+  const diagnostics: EngineDiagnostics = { stdoutTail: tail(stdout), stderrTail: tail(stderr), exitCode: exit.code, timedOut: exit.timedOut, durationMs: Date.now() - startedAt };
 
   const logTail = [
     stdout.trim() ? `stdout: ${tail(stdout)}` : "",
@@ -112,12 +115,14 @@ export async function runEngine(
 
   if (exit.error) {
     return {
+      ...diagnostics,
       ok: false,
       failureReason: `${engine} 엔진 실행 파일을 찾을 수 없습니다 (${cmd.command}): ${exit.error.message}`,
     };
   }
   if (exit.timedOut) {
     return {
+      ...diagnostics,
       ok: false,
       failureReason: `시간 초과(${Math.round(generationTimeoutMs() / 1000)}초)로 중단했습니다${logTail ? `; ${logTail}` : ""}`,
     };
@@ -126,9 +131,10 @@ export async function runEngine(
   const resultText = await readFile(resultPath, "utf-8").catch(() => null);
   if (resultText === null || resultText.trim() === "") {
     return {
+      ...diagnostics,
       ok: false,
       failureReason: `${filePrefix}result.json이 생성되지 않았습니다 (exit_code=${exit.code ?? "unknown"})${logTail ? `; ${logTail}` : ""}`,
     };
   }
-  return { ok: true, resultText };
+  return { ok: true, resultText, ...diagnostics };
 }
