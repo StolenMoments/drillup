@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import path from "node:path";
 import { Prisma, type GenerationItemRevision, type GenerationJob } from "@prisma/client";
 import { parseImportJson, type ImportQuestion, validateGeneratedQuestions } from "@/core/import-schema";
+import { prepareGeneratedItems } from "@/core/generation-result";
 import { extractJsonObject } from "@/core/json-extract";
 import { shuffleMcqChoices } from "@/core/random";
 import { parseKeywordTagJson } from "@/core/keyword-tag-schema";
@@ -407,16 +408,17 @@ async function runJob(
     await failJob(jobId, `Generated question count (${parsed.items.length}) does not match blueprint count (${blueprints.length}).`, run.resultText);
     return;
   }
-  const generatedItems = validateGeneratedQuestions(parsed.items.map((item) => item.ok ? item.question : { type: "invalid" }));
+  const { items: generatedItems, validCount, failureMessage } = prepareGeneratedItems(parsed.items);
   const unverifiedItems = mergeVerdicts(generatedItems, []);
   const validItems = generatedItems.filter((item) => item.ok);
 
-  if (validItems.length === 0) {
+  if (validCount === 0) {
     await prisma.generationJob.update({
       where: { id: jobId },
       data: {
-        status: "SUCCEEDED",
+        status: "FAILED",
         result: unverifiedItems as unknown as Prisma.InputJsonValue,
+        errorMessage: failureMessage,
         rawOutput: run.resultText,
         finishedAt: new Date(),
       },
