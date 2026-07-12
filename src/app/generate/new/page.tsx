@@ -4,6 +4,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api-client";
 import type {
+  ChoiceCountDto,
+  CorrectAnswerCountDto,
   GenerationEngineDto,
   ReferenceFileListDto,
   TopicDto,
@@ -18,6 +20,8 @@ const AIP_REQUIRED_FILES = new Set([
   "common/00-exam-guide.md",
   "common/01-style-examples.md",
 ]);
+const CORRECT_ANSWER_COUNTS: CorrectAnswerCountDto[] = [1, 2];
+const CHOICE_COUNTS: ChoiceCountDto[] = [4, 5, 6];
 
 function GenerationNewForm() {
   const router = useRouter();
@@ -38,6 +42,8 @@ function GenerationNewForm() {
   const [verifyEngine, setVerifyEngine] = useState<GenerationEngineDto>("CODEX");
   const [verifyTouched, setVerifyTouched] = useState(false);
   const [instructions, setInstructions] = useState("");
+  const [correctAnswerCount, setCorrectAnswerCount] = useState<CorrectAnswerCountDto>(1);
+  const [choiceCount, setChoiceCount] = useState<ChoiceCountDto>(5);
   const [refList, setRefList] = useState<ReferenceFileListDto | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [starting, setStarting] = useState(false);
@@ -151,6 +157,8 @@ function GenerationNewForm() {
         engine,
         verifyEngine,
         instructions,
+        correctAnswerCount,
+        choiceCount,
         referenceFiles: selectedTopic?.referenceDir ? [...selectedFiles] : [],
         sourceQuestionIds:
           sourceQuestionIds.length > 0 ? sourceQuestionIds : undefined,
@@ -253,6 +261,44 @@ function GenerationNewForm() {
           )}
         </section>
       )}
+
+      <section className="surface surface-pad space-y-3">
+        <h2 className="section-title">문항 구성</h2>
+        <fieldset className="space-y-2">
+          <legend className="muted text-sm">정답 수 — 모든 문항에 정확히 적용됩니다</legend>
+          <div className="flex flex-wrap gap-2">
+            {CORRECT_ANSWER_COUNTS.map((count) => (
+              <label key={count} className="chip gap-2">
+                <input
+                  type="radio"
+                  name="correctAnswerCount"
+                  value={count}
+                  checked={correctAnswerCount === count}
+                  onChange={() => setCorrectAnswerCount(count)}
+                />
+                정답 {count}개
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <fieldset className="space-y-2">
+          <legend className="muted text-sm">선지 수 — 모든 문항에 정확히 적용됩니다</legend>
+          <div className="flex flex-wrap gap-2">
+            {CHOICE_COUNTS.map((count) => (
+              <label key={count} className="chip gap-2">
+                <input
+                  type="radio"
+                  name="choiceCount"
+                  value={count}
+                  checked={choiceCount === count}
+                  onChange={() => setChoiceCount(count)}
+                />
+                선지 {count}개
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      </section>
 
       <section className="surface surface-pad space-y-3">
         <h2 className="section-title">엔진과 추가 지시</h2>

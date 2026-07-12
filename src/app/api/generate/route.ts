@@ -7,6 +7,8 @@ const createSchema = z.object({
   engine: z.enum(["CLAUDE", "CODEX", "ANTIGRAVITY"]),
   verifyEngine: z.enum(["CLAUDE", "CODEX", "ANTIGRAVITY"]),
   instructions: z.string().max(4000),
+  correctAnswerCount: z.union([z.literal(1), z.literal(2)]),
+  choiceCount: z.union([z.literal(4), z.literal(5), z.literal(6)]),
   referenceFiles: z.array(z.string().min(1).max(300)).max(100).default([]),
   sourceQuestionIds: z.array(z.number().int().positive()).max(10).optional(),
 });

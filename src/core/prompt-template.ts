@@ -1,5 +1,6 @@
 import { mcqAnswerIndices, type ClozePayload, type McqPayload, type QuestionType } from "./types";
 import type { QuestionBlueprint } from "./question-blueprint";
+import type { GenerationQuestionShape } from "./generation-shape";
 
 function promptBody(topicName: string): string {
   return `당신은 학습용 문제 출제 전문가입니다. 주제 "${topicName}"에 대한 학습 문제를 생성해 주세요.
@@ -311,6 +312,7 @@ export function buildCliVerifyPrompt(
   items: Array<{ index: number; question: unknown; blueprint?: QuestionBlueprint }>,
   resultPath: string,
   referenceFiles: string[] = [],
+  shape?: GenerationQuestionShape,
 ): string {
   const listing = items
     .map(
@@ -332,7 +334,7 @@ export function buildCliVerifyPrompt(
 ${webVerificationSection("판정하기 전에")}${referenceSection(referenceFiles, "판정하기 전에")}
 ## Exam quality gates
 
-Fail an MCQ unless: answer_indices has exactly 1 or 2 unique in-range values; the question says "2개를 선택하세요" exactly when there are two answers; every choice is plausible; at least two distractors are close-but-wrong through a realistic misconception, partial solution, or missed constraint; distractors avoid giveaway narrow or absolute wording such as "only", "always", "never", "만", "항상", and "절대"; the scenario's constraints and goal determine the best answer; no additional choice could reasonably be correct; and choice_explanations exists for every choice and is factually correct.
+Fail an MCQ unless: ${shape ? `answer_indices has exactly ${shape.correctAnswerCount} unique in-range values; it has exactly ${shape.choiceCount} choices; ${shape.correctAnswerCount === 2 ? 'the question includes the exact Korean phrase "2개를 선택하세요"' : 'the question does not ask the learner to choose two answers'};` : 'answer_indices has exactly 1 or 2 unique in-range values; the question says "2개를 선택하세요" exactly when there are two answers;'} every choice is plausible; at least two distractors are close-but-wrong through a realistic misconception, partial solution, or missed constraint; distractors avoid giveaway narrow or absolute wording such as "only", "always", "never", "만", "항상", and "절대"; the scenario's constraints and goal determine the best answer; no additional choice could reasonably be correct; and choice_explanations exists for every choice and is factually correct.
 ## 검증 대상 문제
 
 ${blueprintListing ? `## Blueprint conformance\nUse the blueprint as design intent, but factual accuracy overrides the blueprint: if a blueprint fact, the designated correct answer, or a service capability claim contradicts current official documentation, fail that question and explain why. Fail decorative constraints and presentation clues: only correct choices are longer or more specific; only correct choices repeat scenario wording/order; distractors disproportionately use direct implementation, manual work, custom development, or unconditional wording; choices use different architectural granularity; or service names alone reveal the answer.\n${blueprintListing}\n` : ""}
@@ -416,9 +418,13 @@ export function buildCliQuestionBlueprintPrompt(
   referenceFiles: string[] = [],
   existingKeywords: string[] = [],
   variantSources: VariantSource[] = [],
+  shape?: GenerationQuestionShape,
 ): string {
+  const shapeRequirement = shape
+    ? `Design 3-5 independent constraints, exactly ${shape.choiceCount} choices, exactly ${shape.correctAnswerCount} correct choices, and at least two close distractors that each miss exactly one constraint. ${shape.correctAnswerCount === 2 ? 'The final question must include the exact Korean phrase "2개를 선택하세요".' : "The final question must not ask the learner to choose two answers."}`
+    : "Design 3-5 independent constraints, 4-6 choices, 1-2 correct choices, and at least two close distractors that each miss exactly one constraint.";
   return `Create structural question blueprints for "${topicName}", not final question prose.
-Read every supplied reference first. Each referenceFacts.sourceFile must be one of those exact paths. constraint.kind must be exactly one of FUNCTIONAL, SECURITY, PERFORMANCE, COST, OPERATIONS, INTEGRATION, or COMPLIANCE (never variants such as OPERATIONAL). Design 3-5 independent constraints, 4-6 choices, 1-2 correct choices, and at least two close distractors that each miss exactly one constraint. Use at least three distinct services across choices. Do not choose an answer first and fill distractors afterward.
+Read every supplied reference first. Each referenceFacts.sourceFile must be one of those exact paths. constraint.kind must be exactly one of FUNCTIONAL, SECURITY, PERFORMANCE, COST, OPERATIONS, INTEGRATION, or COMPLIANCE (never variants such as OPERATIONAL). ${shapeRequirement} Use at least three distinct services across choices. Do not choose an answer first and fill distractors afterward.
 Use \`"misconception": null\` for correct choices. Every distractor must have a nonblank misconception explaining why it is wrong.
 Do not expose blueprint metadata in a final question; this output is planning data only.
 ${referenceSection(referenceFiles, "Before planning")}${variantSection(variantSources)}${existingKeywordsSection(existingKeywords)}${dedupSection(existing)}
@@ -435,8 +441,9 @@ export function buildCliQuestionBlueprintRepairPrompt(
   failedBlueprints: QuestionBlueprint[],
   violations: string,
   resultPath: string,
+  shape?: GenerationQuestionShape,
 ): string {
-  return `Repair only the requested question blueprints below. Return exactly one repaired blueprint for each listed id, with the same id. Do not add or remove ids. Correct the listed structural violations while retaining the intended domain task and referenced facts.
+  return `Repair only the requested question blueprints below. Return exactly one repaired blueprint for each listed id, with the same id. Do not add or remove ids. Correct the listed structural violations while retaining the intended domain task and referenced facts.${shape ? ` Each blueprint must contain exactly ${shape.choiceCount} choices and exactly ${shape.correctAnswerCount} correct choices.` : ""}
 Violations:
 ${violations}
 Blueprints:
@@ -451,8 +458,9 @@ export function buildCliGenerationFromBlueprintPrompt(
   blueprints: QuestionBlueprint[],
   resultPath: string,
   referenceFiles: string[] = [],
+  shape?: GenerationQuestionShape,
 ): string {
-  return `Write final MCQ questions for "${topicName}" from the blueprints below. Preserve their array order and produce exactly one question per blueprint in that order. Preserve facts, correctness, constraints, and service relationships. Do not expose blueprint ids, correctness flags, satisfied/violated constraints, misconceptions, or other planning metadata. Make each scenario naturally include every constraint and make choices comparable in specificity and structure.
+  return `Write final MCQ questions for "${topicName}" from the blueprints below. Preserve their array order and produce exactly one question per blueprint in that order. Preserve facts, correctness, constraints, and service relationships. Do not expose blueprint ids, correctness flags, satisfied/violated constraints, misconceptions, or other planning metadata. Make each scenario naturally include every constraint and make choices comparable in specificity and structure.${shape ? ` Each final MCQ must have exactly ${shape.choiceCount} choices and exactly ${shape.correctAnswerCount} correct choices.${shape.correctAnswerCount === 2 ? ' Include the exact Korean phrase "2개를 선택하세요" in every question.' : ' Do not ask the learner to choose two answers.'}` : ""}
 ${referenceSection(referenceFiles, "Before writing")}
 Blueprints:
 \`\`\`json
@@ -469,6 +477,7 @@ export function buildCliRevisionPrompt(
   resultPath: string,
   referenceFiles: string[] = [],
   blueprint?: QuestionBlueprint,
+  shape?: GenerationQuestionShape,
 ): string {
   const questionWithBlueprint = blueprint ? { question, blueprint, blueprintGuide: "Keep the blueprint's tested distinction and structure, but correct factual errors: if a blueprint fact or the designated answer contradicts current official documentation, fix the question accordingly and explain in the comment." } : question;
   return `당신은 학습 문제 검증 및 개선 전문가입니다. 주제 "${topicName}"의 아래 문제를 검증하고 개선하세요.
@@ -481,6 +490,7 @@ ${JSON.stringify(questionWithBlueprint, null, 2)}
 
 ## 검증 기준
 
+${shape ? `- 객관식은 선지가 정확히 ${shape.choiceCount}개이고 정답이 정확히 ${shape.correctAnswerCount}개여야 합니다.${shape.correctAnswerCount === 2 ? ' 질문에 "2개를 선택하세요"를 정확히 포함하세요.' : ' 질문에서 두 개를 선택하라고 안내하지 마세요.'}` : ""}
 - 정답과 answer_index 또는 빈칸 답이 사실에 맞는지 확인합니다.
 - 질문의 명확성, 복수 정답 가능성, 해설의 일관성을 확인합니다.
 - 문제 유형(mcq 또는 cloze)은 유지하고, 수정이 필요하면 더 정확하고 명확한 문제로 고칩니다.

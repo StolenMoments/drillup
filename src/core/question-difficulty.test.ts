@@ -20,6 +20,26 @@ describe("assessQuestionBlueprint", () => {
     expect(assessQuestionBlueprint(rejected).violations).toContainEqual(expect.objectContaining({ code: "EMPTY_MISCONCEPTION", choiceId: "b" }));
   });
   it("passes level 4 structural blueprint", () => expect(assessQuestionBlueprint(blueprint)).toMatchObject({ pass: true, level: 4 }));
+  it("requires the requested number of correct choices and total choices", () => {
+    const twoAnswerBlueprint = structuredClone(blueprint);
+    twoAnswerBlueprint.choices[3] = {
+      ...twoAnswerBlueprint.choices[3],
+      correct: true,
+      misconception: null,
+      satisfiedConstraintIds: ["c1", "c2", "c3"],
+      violatedConstraintIds: [],
+    };
+
+    expect(
+      assessQuestionBlueprint(twoAnswerBlueprint, { correctAnswerCount: 2, choiceCount: 4 }),
+    ).toMatchObject({ pass: true });
+    expect(
+      assessQuestionBlueprint(blueprint, { correctAnswerCount: 2, choiceCount: 4 }).violations,
+    ).toContainEqual(expect.objectContaining({ code: "ANSWER_COUNT" }));
+    expect(
+      assessQuestionBlueprint(twoAnswerBlueprint, { correctAnswerCount: 2, choiceCount: 5 }).violations,
+    ).toContainEqual(expect.objectContaining({ code: "CHOICE_COUNT" }));
+  });
   it("reports required structure violations", () => {
     const invalid = structuredClone(blueprint); invalid.constraints = invalid.constraints.slice(0, 2); invalid.choices[1].violatedConstraintIds = [];
     const codes = assessQuestionBlueprint(invalid).violations.map((item) => item.code);

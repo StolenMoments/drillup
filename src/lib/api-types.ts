@@ -153,6 +153,8 @@ export interface HardenPreviewDto {
 }
 
 export type GenerationEngineDto = "CLAUDE" | "CODEX" | "ANTIGRAVITY";
+export type CorrectAnswerCountDto = 1 | 2;
+export type ChoiceCountDto = 4 | 5 | 6;
 export type GenerationStatusDto =
   | "RUNNING"
   | "VERIFYING"
@@ -216,6 +218,8 @@ export interface GenerationJobDto {
   topicId: number;
   engine: GenerationEngineDto;
   verifyEngine: GenerationEngineDto;
+  correctAnswerCount: CorrectAnswerCountDto | null;
+  choiceCount: ChoiceCountDto | null;
   status: GenerationStatusDto;
   kind: GenerationJobKindDto;
   items: GenerationItemDto[] | null;
@@ -235,6 +239,8 @@ export interface GenerationJobSummaryDto {
   topicName: string;
   engine: GenerationEngineDto;
   verifyEngine: GenerationEngineDto;
+  correctAnswerCount: CorrectAnswerCountDto | null;
+  choiceCount: ChoiceCountDto | null;
   status: GenerationStatusDto;
   kind: GenerationJobKindDto;
   itemCount: number | null;

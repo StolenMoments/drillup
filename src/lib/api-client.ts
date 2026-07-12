@@ -1,5 +1,7 @@
 import type {
   AnswerExplanationDto,
+  ChoiceCountDto,
+  CorrectAnswerCountDto,
   GenerationEngineDto,
   GenerationJobDto,
   GenerationJobSummaryDto,
@@ -158,6 +160,8 @@ export const api = {
       engine: GenerationEngineDto;
       verifyEngine: GenerationEngineDto;
       instructions: string;
+      correctAnswerCount: CorrectAnswerCountDto;
+      choiceCount: ChoiceCountDto;
       referenceFiles: string[];
       sourceQuestionIds?: number[];
     }) =>

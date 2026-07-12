@@ -205,7 +205,12 @@ export default function GenerationDetailPage() {
             {job.kind === "KEYWORD_TAG" ? (
               <span className="chip">🏷️ 키워드 부여 · {job.engine}</span>
             ) : (
-              <span className="chip">{job.engine}→{job.verifyEngine}</span>
+              <>
+                <span className="chip">{job.engine}→{job.verifyEngine}</span>
+                {job.correctAnswerCount !== null && job.choiceCount !== null && (
+                  <span className="chip">정답 {job.correctAnswerCount}개 · 선지 {job.choiceCount}개</span>
+                )}
+              </>
             )}
             {job.kind === "QUESTION" && job.sourceQuestionIds && (
               <span className="chip">

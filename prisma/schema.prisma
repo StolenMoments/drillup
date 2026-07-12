@@ -122,6 +122,8 @@ model GenerationJob {
   engine            GenerationEngine
   verifyEngine      GenerationEngine         @default(CLAUDE) @map("verify_engine")
   instructions      String                   @db.Text
+  correctAnswerCount Int?                    @map("correct_answer_count")
+  choiceCount       Int?                     @map("choice_count")
   status            GenerationStatus         @default(RUNNING)
   result            Json?
   errorMessage      String?                  @map("error_message") @db.Text

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { importMcqSchema, parseImportJson } from "./import-schema";
+import { importMcqSchema, parseImportJson, validateGeneratedQuestions } from "./import-schema";
 
 const validMcq = {
   type: "mcq",
@@ -166,6 +166,41 @@ describe("parseImportJson mixed results", () => {
     expect(
       result.items[1].ok === false && result.items[1].errors.length,
     ).toBeGreaterThan(0);
+  });
+});
+
+describe("validateGeneratedQuestions", () => {
+  it("rejects MCQs that do not match the requested answer and choice counts", () => {
+    const result = validateGeneratedQuestions([
+      {
+        type: "mcq",
+        question: "Q",
+        choices: ["A", "B", "C", "D", "E"],
+        answer_indices: [0],
+        choice_explanations: ["a", "b", "c", "d", "e"],
+      },
+    ], { correctAnswerCount: 2, choiceCount: 4 });
+
+    expect(result[0]).toMatchObject({ ok: false });
+    if (!result[0]?.ok) {
+      expect(result[0].errors.join(" ")).toContain("정답은 2개여야 합니다");
+      expect(result[0].errors.join(" ")).toContain("보기는 4개여야 합니다");
+    }
+  });
+
+  it("requires the two-answer instruction for two-answer MCQs", () => {
+    const result = validateGeneratedQuestions([
+      {
+        type: "mcq",
+        question: "가장 적절한 해법은 무엇인가요?",
+        choices: ["A", "B", "C", "D"],
+        answer_indices: [0, 1],
+        choice_explanations: ["a", "b", "c", "d"],
+      },
+    ], { correctAnswerCount: 2, choiceCount: 4 });
+
+    expect(result[0]).toMatchObject({ ok: false });
+    if (!result[0]?.ok) expect(result[0].errors.join(" ")).toContain("2개를 선택하세요");
   });
 });
 

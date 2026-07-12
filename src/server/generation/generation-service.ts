@@ -21,6 +21,7 @@ import { mergeVerdicts, parseVerifyJson } from "@/core/verify-schema";
 import { parseRevisionJson } from "@/core/revision-schema";
 import { assessQuestionBlueprint } from "@/core/question-difficulty";
 import { parseQuestionBlueprintJson, type QuestionBlueprint } from "@/core/question-blueprint";
+import type { GenerationQuestionShape } from "@/core/generation-shape";
 import type {
   GenerationEngineDto,
   GenerationItemDto,
@@ -29,6 +30,8 @@ import type {
   GenerationJobSummaryDto,
   GenerationItemRevisionDto,
   KeywordTagItemDto,
+  ChoiceCountDto,
+  CorrectAnswerCountDto,
 } from "@/lib/api-types";
 import { prisma } from "../db";
 import { ServiceError } from "../errors";
@@ -43,6 +46,14 @@ const EXISTING_QUESTION_LIMIT = 100;
 const VARIANT_SOURCE_LIMIT = 10;
 const EXISTING_KEYWORD_LIMIT = 50;
 const KEYWORD_TAG_BATCH_LIMIT = 50;
+
+function jobQuestionShape(job: Pick<GenerationJob, "correctAnswerCount" | "choiceCount">): GenerationQuestionShape | undefined {
+  if (!job.correctAnswerCount || !job.choiceCount) return undefined;
+  return {
+    correctAnswerCount: job.correctAnswerCount as CorrectAnswerCountDto,
+    choiceCount: job.choiceCount as ChoiceCountDto,
+  };
+}
 
 function toRevisionDto(revision: GenerationItemRevision): GenerationItemRevisionDto {
   return {
@@ -66,6 +77,8 @@ function toDto(job: GenerationJob, revisions: GenerationItemRevision[] = []): Ge
     topicId: job.topicId,
     engine: job.engine,
     verifyEngine: job.verifyEngine,
+    correctAnswerCount: job.correctAnswerCount as CorrectAnswerCountDto | null,
+    choiceCount: job.choiceCount as ChoiceCountDto | null,
     status: job.status,
     kind: job.kind as GenerationJobKindDto,
     items: storedItems?.map((item) => ({
@@ -97,6 +110,8 @@ function toSummaryDto(
     topicName: job.topic.name,
     engine: job.engine,
     verifyEngine: job.verifyEngine,
+    correctAnswerCount: job.correctAnswerCount as CorrectAnswerCountDto | null,
+    choiceCount: job.choiceCount as ChoiceCountDto | null,
     status: job.status,
     kind: job.kind as GenerationJobKindDto,
     itemCount:
@@ -149,6 +164,8 @@ export async function createJob(input: {
   engine: GenerationEngineDto;
   verifyEngine: GenerationEngineDto;
   instructions: string;
+  correctAnswerCount: CorrectAnswerCountDto;
+  choiceCount: ChoiceCountDto;
   referenceFiles: string[];
   sourceQuestionIds?: number[];
 }): Promise<GenerationJobDto> {
@@ -203,6 +220,8 @@ export async function createJob(input: {
       engine: input.engine,
       verifyEngine: input.verifyEngine,
       instructions: input.instructions,
+      correctAnswerCount: input.correctAnswerCount,
+      choiceCount: input.choiceCount,
       referenceFiles: [...new Set([...requiredReferenceFiles(topic.referenceDir), ...input.referenceFiles])],
       sourceQuestionIds:
         sourceQuestionIds && sourceQuestionIds.length > 0 ? sourceQuestionIds : undefined,
@@ -213,6 +232,7 @@ export async function createJob(input: {
     job.id,
     topic.name,
     input.instructions,
+    { correctAnswerCount: input.correctAnswerCount, choiceCount: input.choiceCount },
     existing,
     referenceAbsPaths,
     existingKeywords,
@@ -344,6 +364,7 @@ async function runJob(
   jobId: number,
   topicName: string,
   instructions: string,
+  shape: GenerationQuestionShape,
   existing: ExistingQuestions,
   referenceAbsPaths: string[],
   existingKeywords: string[],
@@ -354,7 +375,7 @@ async function runJob(
   if (!job || job.status !== "RUNNING") return;
 
   const blueprintPath = path.join(dir, "blueprint-result.json");
-  const blueprintPrompt = buildCliQuestionBlueprintPrompt(topicName, instructions, blueprintPath, existing, referenceAbsPaths, existingKeywords, variantSources);
+  const blueprintPrompt = buildCliQuestionBlueprintPrompt(topicName, instructions, blueprintPath, existing, referenceAbsPaths, existingKeywords, variantSources, shape);
   const blueprintRun = await runTrackedEngine({ generationJobId: jobId, stage: "BLUEPRINT", engine: job.engine, prompt: blueprintPrompt, dir, filePrefix: "blueprint-" });
   if (!blueprintRun.ok) {
     await failJob(jobId, blueprintRun.failureReason, null);
@@ -365,18 +386,18 @@ async function runJob(
     await failJob(jobId, blueprintParsed.fatal, blueprintRun.resultText);
     return;
   }
-  let assessments = blueprintParsed.blueprints.map((blueprint) => ({ blueprint, assessment: assessQuestionBlueprint(blueprint) }));
+  let assessments = blueprintParsed.blueprints.map((blueprint) => ({ blueprint, assessment: assessQuestionBlueprint(blueprint, shape) }));
   const failed = assessments.filter((item) => !item.assessment.pass);
   if (failed.length) {
     const repairPath = path.join(dir, "blueprint-repair-result.json");
     const violations = failed.map((item) => `${item.blueprint.id}: ${item.assessment.violations.map((violation) => violation.code).join(", ")}`).join("\n");
-    const blueprintRepairPrompt = buildCliQuestionBlueprintRepairPrompt(failed.map((item) => item.blueprint), violations, repairPath);
+    const blueprintRepairPrompt = buildCliQuestionBlueprintRepairPrompt(failed.map((item) => item.blueprint), violations, repairPath, shape);
     const repairRun = await runTrackedEngine({ generationJobId: jobId, stage: "BLUEPRINT_REPAIR", engine: job.engine, prompt: blueprintRepairPrompt, dir, filePrefix: "blueprint-repair-" });
     if (repairRun.ok) {
       const repaired = parseQuestionBlueprintJson(extractJsonObject(repairRun.resultText));
       if (repaired.ok) {
         const replacements = new Map(repaired.blueprints.filter((blueprint) => failed.some((item) => item.blueprint.id === blueprint.id)).map((blueprint) => [blueprint.id, blueprint]));
-        assessments = assessments.map((item) => replacements.has(item.blueprint.id) ? { blueprint: replacements.get(item.blueprint.id) as QuestionBlueprint, assessment: assessQuestionBlueprint(replacements.get(item.blueprint.id) as QuestionBlueprint) } : item);
+        assessments = assessments.map((item) => replacements.has(item.blueprint.id) ? { blueprint: replacements.get(item.blueprint.id) as QuestionBlueprint, assessment: assessQuestionBlueprint(replacements.get(item.blueprint.id) as QuestionBlueprint, shape) } : item);
       }
     }
   }
@@ -388,7 +409,7 @@ async function runJob(
   const excluded = assessments.filter((item) => !item.assessment.pass);
   const blueprintWarning = excluded.length ? `${excluded.length} blueprint(s) were excluded after one repair attempt.` : null;
   const resultPath = path.join(dir, "result.json");
-  const prompt = buildCliGenerationFromBlueprintPrompt(topicName, blueprints, resultPath, referenceAbsPaths);
+  const prompt = buildCliGenerationFromBlueprintPrompt(topicName, blueprints, resultPath, referenceAbsPaths, shape);
 
   const run = await runTrackedEngine({ generationJobId: jobId, stage: "GENERATION", engine: job.engine, prompt, dir });
   if (!run.ok) {
@@ -411,7 +432,12 @@ async function runJob(
     await failJob(jobId, `Generated question count (${parsed.items.length}) does not match blueprint count (${blueprints.length}).`, run.resultText);
     return;
   }
-  const { items: generatedItems, validCount, failureMessage } = prepareGeneratedItems(parsed.items);
+  const shapeValidatedItems = parsed.items.map((item) => {
+    if (!item.ok) return item;
+    const validated = validateGeneratedQuestions([item.question], shape)[0];
+    return validated ? { ...validated, index: item.index } : item;
+  });
+  const { items: generatedItems, validCount, failureMessage } = prepareGeneratedItems(shapeValidatedItems);
   const unverifiedItems = mergeVerdicts(generatedItems, []);
   const validItems = generatedItems.filter((item) => item.ok);
 
@@ -444,6 +470,7 @@ async function runJob(
     validItems.map((item) => ({ index: item.index, question: item.question, blueprint: blueprints[item.index] })),
     verifyResultPath,
     referenceAbsPaths,
+    shape,
   );
 
   let finalItems = unverifiedItems;
@@ -476,12 +503,13 @@ async function runJob(
         repairPath,
         referenceAbsPaths,
         blueprints[item.index],
+        shape,
       );
       const repairRun = await runTrackedEngine({ generationJobId: jobId, stage: "ITEM_REPAIR", itemIndex: item.index, engine: job.engine, prompt: repairPrompt, dir, filePrefix: `repair-${item.index}-` });
       if (!repairRun.ok) continue;
       const revision = parseRevisionJson(extractJsonObject(repairRun.resultText));
       if (!revision.ok) continue;
-      const validated = validateGeneratedQuestions([revision.question])[0];
+      const validated = validateGeneratedQuestions([revision.question], shape)[0];
       if (validated?.ok) repaired.push({
         index: item.index,
         question: validated.question.type === "mcq"
@@ -492,7 +520,7 @@ async function runJob(
     }
     if (repaired.length > 0) {
       const repairVerifyPath = path.join(dir, "repair-verify-result.json");
-      const repairVerifyPrompt = buildCliVerifyPrompt(topicName, repaired.map((item) => ({ ...item, blueprint: blueprints[item.index] })), repairVerifyPath, referenceAbsPaths);
+      const repairVerifyPrompt = buildCliVerifyPrompt(topicName, repaired.map((item) => ({ ...item, blueprint: blueprints[item.index] })), repairVerifyPath, referenceAbsPaths, shape);
       const repairVerifyRun = await runTrackedEngine({ generationJobId: jobId, stage: "REPAIR_VERIFY", engine: job.verifyEngine, prompt: repairVerifyPrompt, dir, filePrefix: "repair-verify-" });
       if (repairVerifyRun.ok) {
         const repairVerdicts = parseVerifyJson(extractJsonObject(repairVerifyRun.resultText));
@@ -587,7 +615,7 @@ export async function createItemRevision(input: {
     job.topic.referenceDir,
     (job.referenceFiles as unknown as string[] | null) ?? [],
   );
-  void runItemRevision(revision.id, job.id, job.topic.name, sourceQuestion, references).catch((error) => {
+  void runItemRevision(revision.id, job.id, job.topic.name, sourceQuestion, references, jobQuestionShape(job)).catch((error) => {
     console.error(`generation item revision ${revision.id} failed unexpectedly`, error);
   });
   return getJob(job.id);
@@ -599,12 +627,21 @@ async function runItemRevision(
   topicName: string,
   question: ImportQuestion,
   referenceFiles: string[],
+  shape?: GenerationQuestionShape,
 ): Promise<void> {
   const revision = await prisma.generationItemRevision.findUnique({ where: { id: revisionId } });
   if (!revision || revision.status !== "RUNNING") return;
   const dir = path.join(jobOutputDir(jobId), "revisions", String(revision.itemIndex));
   const resultPath = path.join(dir, "result.json");
-  const prompt = buildCliRevisionPrompt(topicName, question, revision.instructions, resultPath, referenceFiles);
+  const prompt = buildCliRevisionPrompt(
+    topicName,
+    question,
+    revision.instructions,
+    resultPath,
+    referenceFiles,
+    undefined,
+    shape,
+  );
   const run = await runTrackedEngine({ generationJobId: jobId, stage: "MANUAL_ITEM_REVISION", itemIndex: revision.itemIndex, engine: revision.engine, prompt, dir });
   if (!run.ok) {
     await prisma.generationItemRevision.update({ where: { id: revisionId }, data: { status: "FAILED", errorMessage: run.failureReason, finishedAt: new Date() } });
@@ -613,6 +650,14 @@ async function runItemRevision(
   const parsed = parseRevisionJson(extractJsonObject(run.resultText));
   if (!parsed.ok) {
     await prisma.generationItemRevision.update({ where: { id: revisionId }, data: { status: "FAILED", errorMessage: parsed.fatal, rawOutput: run.resultText, finishedAt: new Date() } });
+    return;
+  }
+  const validated = shape ? validateGeneratedQuestions([parsed.question], shape)[0] : null;
+  if (validated && !validated.ok) {
+    await prisma.generationItemRevision.update({
+      where: { id: revisionId },
+      data: { status: "FAILED", errorMessage: validated.errors.join(" "), rawOutput: run.resultText, finishedAt: new Date() },
+    });
     return;
   }
   await prisma.generationItemRevision.update({

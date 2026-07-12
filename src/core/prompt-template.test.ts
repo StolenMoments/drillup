@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildAnswerExplanationPrompt,
   buildChoiceHardeningPrompt,
+  buildCliGenerationFromBlueprintPrompt,
   buildCliGenerationPrompt,
   buildCliQuestionBlueprintPrompt,
   buildCliKeywordTagPrompt,
@@ -260,6 +261,17 @@ describe("buildKeywordSuggestionPrompt", () => {
     expect(prompt).not.toContain("5개 이하");
     expect(prompt).not.toContain("1~3개");
   });
+
+  it("enforces the requested answer and choice counts", () => {
+    const shape = { correctAnswerCount: 2 as const, choiceCount: 4 as const };
+    const verification = buildCliVerifyPrompt("topic", VERIFY_ITEMS, "C:/verify.json", [], shape);
+    const generation = buildCliGenerationFromBlueprintPrompt("topic", [], "C:/result.json", [], shape);
+
+    expect(verification).toContain("exactly 2 unique in-range values");
+    expect(verification).toContain("exactly 4 choices");
+    expect(generation).toContain("exactly 2 correct choices");
+    expect(generation).toContain("exactly 4 choices");
+  });
   it("문제·기존 키워드·이미 부여된 키워드·무제한 규칙을 포함한다", () => {
     const prompt = buildKeywordSuggestionPrompt(
       "네트워크",
@@ -294,6 +306,22 @@ describe("buildCliQuestionBlueprintPrompt", () => {
     const prompt = buildCliQuestionBlueprintPrompt("topic", "", "C:/result.json", NO_EXISTING);
     expect(prompt).toContain('"misconception": null');
     expect(prompt).toContain("Every distractor must have a nonblank misconception");
+  });
+
+  it("requires the selected answer and choice counts", () => {
+    const prompt = buildCliQuestionBlueprintPrompt(
+      "topic",
+      "",
+      "C:/result.json",
+      NO_EXISTING,
+      [],
+      [],
+      [],
+      { correctAnswerCount: 2, choiceCount: 4 },
+    );
+    expect(prompt).toContain("exactly 2 correct choices");
+    expect(prompt).toContain("exactly 4 choices");
+    expect(prompt).toContain('"2개를 선택하세요"');
   });
 });
 

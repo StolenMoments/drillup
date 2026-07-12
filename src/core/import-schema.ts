@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { KEYWORD_MAX_LENGTH } from "./keyword";
+import type { GenerationQuestionShape } from "./generation-shape";
 
 const nonBlank = z.string().trim().min(1, "빈 문자열은 허용하지 않습니다");
 const PLACEHOLDER_RE = /\{\{(\d+)\}\}/g;
@@ -190,11 +191,23 @@ export function parseImportJson(rawText: string): ImportParseResult {
 }
 
 /** Generation is intentionally stricter than manual/legacy import. */
-export function validateGeneratedQuestions(questions: unknown[]): ImportItemResult[] {
+export function validateGeneratedQuestions(
+  questions: unknown[],
+  shape?: GenerationQuestionShape,
+): ImportItemResult[] {
   return validateImportQuestions(questions).map((item) => {
     if (!item.ok || item.question.type !== "mcq") return item;
     if (!item.question.answer_indices || !item.question.choice_explanations) {
       return { index: item.index, ok: false, errors: ["새 객관식 생성에는 answer_indices와 choice_explanations가 필요합니다"] };
+    }
+    if (shape) {
+      const errors = [
+        ...(item.question.answer_indices.length === shape.correctAnswerCount ? [] : [`정답은 ${shape.correctAnswerCount}개여야 합니다`]),
+        ...(item.question.choices.length === shape.choiceCount ? [] : [`보기는 ${shape.choiceCount}개여야 합니다`]),
+        ...(shape.correctAnswerCount === 2 && !item.question.question.includes("2개를 선택하세요") ? ['정답 2개 문항에는 "2개를 선택하세요" 문구가 필요합니다'] : []),
+        ...(shape.correctAnswerCount === 1 && item.question.question.includes("2개를 선택하세요") ? ['정답 1개 문항에는 "2개를 선택하세요" 문구를 사용할 수 없습니다'] : []),
+      ];
+      if (errors.length > 0) return { index: item.index, ok: false, errors };
     }
     return item;
   });

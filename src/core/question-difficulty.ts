@@ -1,4 +1,5 @@
 import type { QuestionBlueprint } from "./question-blueprint";
+import type { GenerationQuestionShape } from "./generation-shape";
 
 export interface DifficultyViolation { code: string; message: string; choiceId?: string }
 export interface DifficultyAssessment {
@@ -8,7 +9,10 @@ export interface DifficultyAssessment {
   metrics: { constraintCount: number; uniqueServiceCount: number; referenceFactCount: number; reasoningStepCount: number; closeDistractorCount: number };
 }
 
-export function assessQuestionBlueprint(blueprint: QuestionBlueprint): DifficultyAssessment {
+export function assessQuestionBlueprint(
+  blueprint: QuestionBlueprint,
+  shape?: GenerationQuestionShape,
+): DifficultyAssessment {
   const violations: DifficultyViolation[] = [];
   const add = (code: string, message: string, choiceId?: string) => violations.push({ code, message, ...(choiceId ? { choiceId } : {}) });
   const ids = (values: string[]) => new Set(values).size === values.length;
@@ -20,8 +24,13 @@ export function assessQuestionBlueprint(blueprint: QuestionBlueprint): Difficult
 
   if (blueprint.constraints.length < 3 || blueprint.constraints.length > 5) add("CONSTRAINT_COUNT", "Constraints must contain 3 to 5 items.");
   if (blueprint.referenceFacts.length < 2) add("REFERENCE_FACT_COUNT", "At least two reference facts are required.");
-  if (blueprint.choices.length < 4 || blueprint.choices.length > 6) add("CHOICE_COUNT", "Choices must contain 4 to 6 items.");
-  if (answers.length < 1 || answers.length > 2) add("ANSWER_COUNT", "There must be one or two correct choices.");
+  if (shape) {
+    if (blueprint.choices.length !== shape.choiceCount) add("CHOICE_COUNT", `Choices must contain exactly ${shape.choiceCount} items.`);
+    if (answers.length !== shape.correctAnswerCount) add("ANSWER_COUNT", `There must be exactly ${shape.correctAnswerCount} correct choices.`);
+  } else {
+    if (blueprint.choices.length < 4 || blueprint.choices.length > 6) add("CHOICE_COUNT", "Choices must contain 4 to 6 items.");
+    if (answers.length < 1 || answers.length > 2) add("ANSWER_COUNT", "There must be one or two correct choices.");
+  }
   if (services.size < 3) add("SERVICE_DIVERSITY", "At least three unique services are required.");
   if (!blueprint.testedDistinction.trim()) add("EMPTY_TESTED_DISTINCTION", "testedDistinction is required.");
   if (blueprint.reasoningSteps.length < 2) add("REASONING_STEP_COUNT", "At least two reasoning steps are required.");
