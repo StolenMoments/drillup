@@ -145,6 +145,15 @@ describe("repairGateFailures", () => {
     expect(trackedRunMock.runTrackedEngine).not.toHaveBeenCalled();
   });
 
+  it("설계표 호출 기록을 게이트 결과로 닫는다", async () => {
+    await repairGateFailures({ ...input(), blueprints: [passingBlueprint()], blueprintRunLogId: 5 });
+    expect(trackedRunMock.completeTrackedRun).toHaveBeenCalledWith(5);
+
+    trackedRunMock.runTrackedEngine.mockResolvedValueOnce(engineSuccess([passingBlueprint()], 7));
+    await repairGateFailures({ ...input(), blueprints: [failingBlueprint()], blueprintRunLogId: 6 });
+    expect(trackedRunMock.failTrackedRun).toHaveBeenCalledWith(6, expect.stringContaining("CLOSE_DISTRACTOR_COUNT"));
+  });
+
   it("수선 프롬프트에 위반 코드·메시지·게이트 규칙을 담아 보낸다", async () => {
     trackedRunMock.runTrackedEngine.mockResolvedValueOnce(engineSuccess([passingBlueprint()], 7));
 

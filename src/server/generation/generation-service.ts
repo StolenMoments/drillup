@@ -333,6 +333,7 @@ async function runKeywordTagJob(
 
   const parsed = parseKeywordTagJson(extractJsonObject(run.resultText));
   if (!parsed.ok) {
+    await failTrackedRun(run.runLogId, parsed.fatal);
     await failJob(
       jobId,
       `${parsed.fatal}; 원문 앞 300자: ${run.resultText.slice(0, 300)}`,
@@ -340,6 +341,7 @@ async function runKeywordTagJob(
     );
     return;
   }
+  await completeTrackedRun(run.runLogId);
 
   const summaryById = new Map(targets.map((target) => [target.id, target.summary]));
   // 요청에 없던 문제 id는 무시한다.
@@ -376,8 +378,14 @@ export async function repairGateFailures(input: {
   dir: string;
   shape?: GenerationQuestionShape;
   blueprints: QuestionBlueprint[];
+  blueprintRunLogId?: number | null;
 }): Promise<{ passed: QuestionBlueprint[]; excludedCount: number; violationSummary: string | null }> {
   let assessments: BlueprintAssessment[] = input.blueprints.map((blueprint) => ({ blueprint, assessment: assessQuestionBlueprint(blueprint, input.shape) }));
+  const initialFailing = assessments.filter((item) => !item.assessment.pass);
+  if (input.blueprintRunLogId !== undefined) {
+    if (initialFailing.length) await failTrackedRun(input.blueprintRunLogId, summarizeGateViolations(initialFailing));
+    else await completeTrackedRun(input.blueprintRunLogId);
+  }
 
   for (let attempt = 1; attempt <= BLUEPRINT_REPAIR_ATTEMPTS; attempt += 1) {
     const failed = assessments.filter((item) => !item.assessment.pass);
@@ -437,10 +445,11 @@ async function runJob(
   }
   const blueprintParsed = parseQuestionBlueprintJson(extractJsonObject(blueprintRun.resultText));
   if (!blueprintParsed.ok) {
+    await failTrackedRun(blueprintRun.runLogId, blueprintParsed.fatal);
     await failJob(jobId, blueprintParsed.fatal, blueprintRun.resultText);
     return;
   }
-  const gate = await repairGateFailures({ generationJobId: jobId, engine: job.engine, dir, shape, blueprints: blueprintParsed.blueprints });
+  const gate = await repairGateFailures({ generationJobId: jobId, engine: job.engine, dir, shape, blueprints: blueprintParsed.blueprints, blueprintRunLogId: blueprintRun.runLogId });
   const blueprints = gate.passed;
   if (!blueprints.length) {
     await failJob(jobId, `난이도 게이트를 통과한 설계표가 없습니다 (수선 ${BLUEPRINT_REPAIR_ATTEMPTS}회 시도).\n${gate.violationSummary}`, blueprintRun.resultText);
@@ -458,6 +467,7 @@ async function runJob(
 
   const parsed = parseImportJson(extractJsonObject(run.resultText));
   if (!parsed.ok) {
+    await failTrackedRun(run.runLogId, parsed.fatal);
     await failJob(
       jobId,
       `${parsed.fatal}; 원문 앞 300자: ${run.resultText.slice(0, 300)}`,
@@ -468,7 +478,9 @@ async function runJob(
 
   // 이 시점의 verdict는 전부 unverified — 검증이 끝나면 덮어쓴다.
   if (parsed.items.length !== blueprints.length) {
-    await failJob(jobId, `Generated question count (${parsed.items.length}) does not match blueprint count (${blueprints.length}).`, run.resultText);
+    const countMismatch = `Generated question count (${parsed.items.length}) does not match blueprint count (${blueprints.length}).`;
+    await failTrackedRun(run.runLogId, countMismatch);
+    await failJob(jobId, countMismatch, run.resultText);
     return;
   }
   const shapeValidatedItems = parsed.items.map((item) => {
@@ -479,6 +491,10 @@ async function runJob(
   const { items: generatedItems, validCount, failureMessage } = prepareGeneratedItems(shapeValidatedItems);
   const unverifiedItems = mergeVerdicts(generatedItems, []);
   const validItems = generatedItems.filter((item) => item.ok);
+
+  const invalidItems = generatedItems.filter((item): item is Extract<typeof item, { ok: false }> => !item.ok);
+  if (invalidItems.length === 0) await completeTrackedRun(run.runLogId);
+  else await failTrackedRun(run.runLogId, `${invalidItems.length}개 문항이 유효성 검사를 통과하지 못했습니다: ${invalidItems.map((item) => `#${item.index + 1} ${item.errors[0] ?? "알 수 없는 검증 오류"}`).join("; ")}`);
 
   if (validCount === 0) {
     await prisma.generationJob.update({
@@ -521,8 +537,10 @@ async function runJob(
   } else {
     const verdicts = parseVerifyJson(extractJsonObject(verifyRun.resultText));
     if (!verdicts.ok) {
+      await failTrackedRun(verifyRun.runLogId, verdicts.fatal);
       verifyWarning = `검증 결과를 해석하지 못했습니다: ${verdicts.fatal}`;
     } else {
+      await completeTrackedRun(verifyRun.runLogId);
       finalItems = mergeVerdicts(generatedItems, verdicts.verdicts);
     }
   }
@@ -547,9 +565,17 @@ async function runJob(
       const repairRun = await runTrackedEngine({ generationJobId: jobId, stage: "ITEM_REPAIR", itemIndex: item.index, engine: job.engine, prompt: repairPrompt, dir, filePrefix: `repair-${item.index}-` });
       if (!repairRun.ok) continue;
       const revision = parseRevisionJson(extractJsonObject(repairRun.resultText));
-      if (!revision.ok) continue;
+      if (!revision.ok) {
+        await failTrackedRun(repairRun.runLogId, revision.fatal);
+        continue;
+      }
       const validated = validateGeneratedQuestions([revision.question], shape)[0];
-      if (validated?.ok) repaired.push({
+      if (!validated?.ok) {
+        await failTrackedRun(repairRun.runLogId, validated?.errors.join(" ") ?? "수정본 검증 결과가 없습니다.");
+        continue;
+      }
+      await completeTrackedRun(repairRun.runLogId);
+      repaired.push({
         index: item.index,
         question: validated.question.type === "mcq"
           ? shuffleMcqChoices(validated.question) as ImportQuestion
@@ -563,6 +589,8 @@ async function runJob(
       const repairVerifyRun = await runTrackedEngine({ generationJobId: jobId, stage: "REPAIR_VERIFY", engine: job.verifyEngine, prompt: repairVerifyPrompt, dir, filePrefix: "repair-verify-" });
       if (repairVerifyRun.ok) {
         const repairVerdicts = parseVerifyJson(extractJsonObject(repairVerifyRun.resultText));
+        if (!repairVerdicts.ok) await failTrackedRun(repairVerifyRun.runLogId, repairVerdicts.fatal);
+        else await completeTrackedRun(repairVerifyRun.runLogId);
         if (repairVerdicts.ok) {
           const repairedResults = mergeVerdicts(
             repaired.map((item) => ({ index: item.index, ok: true as const, question: item.question })),
@@ -688,17 +716,20 @@ async function runItemRevision(
   }
   const parsed = parseRevisionJson(extractJsonObject(run.resultText));
   if (!parsed.ok) {
+    await failTrackedRun(run.runLogId, parsed.fatal);
     await prisma.generationItemRevision.update({ where: { id: revisionId }, data: { status: "FAILED", errorMessage: parsed.fatal, rawOutput: run.resultText, finishedAt: new Date() } });
     return;
   }
   const validated = shape ? validateGeneratedQuestions([parsed.question], shape)[0] : null;
   if (validated && !validated.ok) {
+    await failTrackedRun(run.runLogId, validated.errors.join(" "));
     await prisma.generationItemRevision.update({
       where: { id: revisionId },
       data: { status: "FAILED", errorMessage: validated.errors.join(" "), rawOutput: run.resultText, finishedAt: new Date() },
     });
     return;
   }
+  await completeTrackedRun(run.runLogId);
   await prisma.generationItemRevision.update({
     where: { id: revisionId },
     data: { status: "SUCCEEDED", verdict: parsed.verdict === "pass" ? "PASS" : "FAIL", comment: parsed.comment, proposedQuestion: parsed.question as unknown as Prisma.InputJsonValue, rawOutput: run.resultText, finishedAt: new Date() },
