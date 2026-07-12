@@ -1,0 +1,23 @@
+CREATE TABLE `generation_run_log` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `generation_job_id` INTEGER NOT NULL,
+    `stage` ENUM('BLUEPRINT', 'BLUEPRINT_REPAIR', 'GENERATION', 'VERIFY', 'ITEM_REPAIR', 'REPAIR_VERIFY', 'MANUAL_ITEM_REVISION', 'KEYWORD_TAG') NOT NULL,
+    `item_index` INTEGER NULL,
+    `attempt` INTEGER NOT NULL DEFAULT 1,
+    `engine` ENUM('CLAUDE', 'CODEX', 'ANTIGRAVITY') NOT NULL,
+    `model` VARCHAR(100) NULL,
+    `status` ENUM('RUNNING', 'SUCCEEDED', 'FAILED') NOT NULL DEFAULT 'RUNNING',
+    `prompt` MEDIUMTEXT NOT NULL,
+    `response` MEDIUMTEXT NULL,
+    `stdout_tail` TEXT NULL,
+    `stderr_tail` TEXT NULL,
+    `error_message` TEXT NULL,
+    `exit_code` INTEGER NULL,
+    `timed_out` BOOLEAN NOT NULL DEFAULT false,
+    `started_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `finished_at` DATETIME(3) NULL,
+    `duration_ms` INTEGER NULL,
+    PRIMARY KEY (`id`),
+    INDEX `generation_run_log_generation_job_id_started_at_idx` (`generation_job_id`, `started_at`),
+    CONSTRAINT `generation_run_log_generation_job_id_fkey` FOREIGN KEY (`generation_job_id`) REFERENCES `generation_job` (`id`) ON DELETE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

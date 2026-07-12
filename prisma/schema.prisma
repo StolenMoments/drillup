@@ -45,6 +45,23 @@ enum GenerationItemRevisionVerdict {
   FAIL
 }
 
+enum GenerationRunStage {
+  BLUEPRINT
+  BLUEPRINT_REPAIR
+  GENERATION
+  VERIFY
+  ITEM_REPAIR
+  REPAIR_VERIFY
+  MANUAL_ITEM_REVISION
+  KEYWORD_TAG
+}
+
+enum GenerationRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
 model Topic {
   id             Int             @id @default(autoincrement())
   name           String          @unique @db.VarChar(100)
@@ -100,45 +117,71 @@ model ReviewLog {
 }
 
 model GenerationJob {
-  id             Int              @id @default(autoincrement())
-  topicId        Int              @map("topic_id")
-  engine         GenerationEngine
-  verifyEngine   GenerationEngine @default(CLAUDE) @map("verify_engine")
-  instructions   String           @db.Text
-  status         GenerationStatus @default(RUNNING)
-  result         Json?
-  errorMessage   String?          @map("error_message") @db.Text
-  verifyWarning  String?          @map("verify_warning") @db.Text
-  rawOutput      String?          @map("raw_output") @db.MediumText
-  referenceFiles Json?            @map("reference_files")
-  kind              GenerationJobKind @default(QUESTION)
-  sourceQuestionIds Json?             @map("source_question_ids")
-  createdAt      DateTime         @default(now()) @map("created_at")
-  finishedAt     DateTime?        @map("finished_at")
-  approvedAt     DateTime?        @map("approved_at")
-  savedCount     Int              @default(0) @map("saved_count")
-  topic          Topic            @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  itemRevisions  GenerationItemRevision[]
+  id                Int                      @id @default(autoincrement())
+  topicId           Int                      @map("topic_id")
+  engine            GenerationEngine
+  verifyEngine      GenerationEngine         @default(CLAUDE) @map("verify_engine")
+  instructions      String                   @db.Text
+  status            GenerationStatus         @default(RUNNING)
+  result            Json?
+  errorMessage      String?                  @map("error_message") @db.Text
+  verifyWarning     String?                  @map("verify_warning") @db.Text
+  rawOutput         String?                  @map("raw_output") @db.MediumText
+  referenceFiles    Json?                    @map("reference_files")
+  kind              GenerationJobKind        @default(QUESTION)
+  sourceQuestionIds Json?                    @map("source_question_ids")
+  createdAt         DateTime                 @default(now()) @map("created_at")
+  finishedAt        DateTime?                @map("finished_at")
+  approvedAt        DateTime?                @map("approved_at")
+  savedCount        Int                      @default(0) @map("saved_count")
+  topic             Topic                    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  itemRevisions     GenerationItemRevision[]
+  runLogs           GenerationRunLog[]
 
   @@map("generation_job")
 }
 
-model GenerationItemRevision {
-  id              Int                          @id @default(autoincrement())
-  generationJobId Int                          @map("generation_job_id")
-  itemIndex       Int                          @map("item_index")
+model GenerationRunLog {
+  id              Int                 @id @default(autoincrement())
+  generationJobId Int                 @map("generation_job_id")
+  stage           GenerationRunStage
+  itemIndex       Int?                @map("item_index")
+  attempt         Int                 @default(1)
   engine          GenerationEngine
-  instructions    String                       @db.Text
-  status          GenerationItemRevisionStatus @default(RUNNING)
-  verdict         GenerationItemRevisionVerdict?
-  comment         String?                      @db.Text
-  proposedQuestion Json?                       @map("proposed_question")
-  appliedQuestion  Json?                       @map("applied_question")
-  errorMessage    String?                      @map("error_message") @db.Text
-  rawOutput       String?                      @map("raw_output") @db.MediumText
-  createdAt       DateTime                     @default(now()) @map("created_at")
-  finishedAt      DateTime?                    @map("finished_at")
-  generationJob   GenerationJob                @relation(fields: [generationJobId], references: [id], onDelete: Cascade)
+  model           String?             @db.VarChar(100)
+  status          GenerationRunStatus @default(RUNNING)
+  prompt          String              @db.MediumText
+  response        String?             @db.MediumText
+  stdoutTail      String?             @map("stdout_tail") @db.Text
+  stderrTail      String?             @map("stderr_tail") @db.Text
+  errorMessage    String?             @map("error_message") @db.Text
+  exitCode        Int?                @map("exit_code")
+  timedOut        Boolean             @default(false) @map("timed_out")
+  startedAt       DateTime            @default(now()) @map("started_at")
+  finishedAt      DateTime?           @map("finished_at")
+  durationMs      Int?                @map("duration_ms")
+  generationJob   GenerationJob       @relation(fields: [generationJobId], references: [id], onDelete: Cascade)
+
+  @@index([generationJobId, startedAt])
+  @@map("generation_run_log")
+}
+
+model GenerationItemRevision {
+  id               Int                            @id @default(autoincrement())
+  generationJobId  Int                            @map("generation_job_id")
+  itemIndex        Int                            @map("item_index")
+  engine           GenerationEngine
+  instructions     String                         @db.Text
+  status           GenerationItemRevisionStatus   @default(RUNNING)
+  verdict          GenerationItemRevisionVerdict?
+  comment          String?                        @db.Text
+  proposedQuestion Json?                          @map("proposed_question")
+  appliedQuestion  Json?                          @map("applied_question")
+  errorMessage     String?                        @map("error_message") @db.Text
+  rawOutput        String?                        @map("raw_output") @db.MediumText
+  createdAt        DateTime                       @default(now()) @map("created_at")
+  finishedAt       DateTime?                      @map("finished_at")
+  generationJob    GenerationJob                  @relation(fields: [generationJobId], references: [id], onDelete: Cascade)
 
   @@unique([generationJobId, itemIndex])
   @@map("generation_item_revision")

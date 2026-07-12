@@ -161,6 +161,28 @@ export type GenerationStatusDto =
 export type GenerationVerdictDto = "pass" | "fail" | "unverified";
 export type GenerationJobKindDto = "QUESTION" | "KEYWORD_TAG";
 export type GenerationItemRevisionStatusDto = "RUNNING" | "SUCCEEDED" | "FAILED";
+export type GenerationRunStageDto = "BLUEPRINT" | "BLUEPRINT_REPAIR" | "GENERATION" | "VERIFY" | "ITEM_REPAIR" | "REPAIR_VERIFY" | "MANUAL_ITEM_REVISION" | "KEYWORD_TAG";
+export type GenerationRunStatusDto = "RUNNING" | "SUCCEEDED" | "FAILED";
+
+export interface GenerationRunLogDto {
+  id: number;
+  stage: GenerationRunStageDto;
+  itemIndex: number | null;
+  attempt: number;
+  engine: GenerationEngineDto;
+  model: string | null;
+  status: GenerationRunStatusDto;
+  prompt: string;
+  response: string | null;
+  stdoutTail: string | null;
+  stderrTail: string | null;
+  errorMessage: string | null;
+  exitCode: number | null;
+  timedOut: boolean;
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+}
 
 export interface GenerationItemRevisionDto {
   status: GenerationItemRevisionStatusDto;
