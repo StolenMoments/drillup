@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import QuestionPreview from "@/components/QuestionPreview";
 import GenerationDiagnostics from "@/components/GenerationDiagnostics";
 import type { ImportQuestion } from "@/core/import-schema";
@@ -53,9 +53,11 @@ export default function GenerationDetailPage() {
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [revisionInputs, setRevisionInputs] = useState<Record<number, { engine: GenerationEngineDto; instructions: string }>>({});
+  const hasAutoSelectedRef = useRef(false);
 
   useEffect(() => {
     let ignore = false;
+    hasAutoSelectedRef.current = false;
     async function load() {
       if (!Number.isInteger(jobId) || jobId <= 0) {
         setMessage("잘못된 생성 작업 id입니다");
@@ -71,7 +73,10 @@ export default function GenerationDetailPage() {
             Math.floor((Date.now() - new Date(loaded.createdAt).getTime()) / 1000),
           ),
         );
-        if (loaded.status === "SUCCEEDED") setSelected(selectValidItems(loaded));
+        if (loaded.status === "SUCCEEDED") {
+          setSelected(selectValidItems(loaded));
+          hasAutoSelectedRef.current = true;
+        }
       } catch (error) {
         if (!ignore) {
           setMessage(
@@ -97,7 +102,10 @@ export default function GenerationDetailPage() {
       try {
         const { job: next } = await api.generate.get(currentJob.id);
         setJob(next);
-        if (next.status === "SUCCEEDED") setSelected(selectValidItems(next));
+        if (next.status === "SUCCEEDED" && !hasAutoSelectedRef.current) {
+          setSelected(selectValidItems(next));
+          hasAutoSelectedRef.current = true;
+        }
       } catch {
         // 폴링 일시 오류는 다음 주기에 재시도한다.
       }
