@@ -27,7 +27,7 @@ describe("buildEngineCommand - CLAUDE", () => {
     expect(cmd.args).toEqual([
       "--dangerously-skip-permissions",
       "--model",
-      "fable",
+      "sonnet",
       "--allowedTools",
       "WebSearch",
       "WebFetch",
