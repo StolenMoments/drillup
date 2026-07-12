@@ -36,7 +36,7 @@ import { importQuestions } from "../import-service";
 import { attachKeywords } from "../keyword-service";
 import { requiredReferenceFiles, resolveReferenceFiles } from "./reference";
 import { generationTimeoutMs, jobOutputDir } from "./run-engine";
-import { completeTrackedRun, failTrackedRun, runTrackedEngine } from "./tracked-run";
+import { runTrackedEngine } from "./tracked-run";
 
 const ORPHAN_GRACE_MS = 60_000;
 const EXISTING_QUESTION_LIMIT = 100;

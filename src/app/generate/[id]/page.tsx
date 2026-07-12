@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import QuestionPreview from "@/components/QuestionPreview";
+import GenerationDiagnostics from "@/components/GenerationDiagnostics";
 import type { ImportQuestion } from "@/core/import-schema";
 import { api } from "@/lib/api-client";
 import type { GenerationEngineDto, GenerationJobDto } from "@/lib/api-types";
@@ -223,6 +224,8 @@ export default function GenerationDetailPage() {
           </p>
         </section>
       )}
+
+      {job && <GenerationDiagnostics jobId={job.id} />}
 
       {job?.status === "FAILED" && (
         <section className="space-y-3">
