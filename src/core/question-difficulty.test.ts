@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assessQuestionBlueprint } from "./question-difficulty";
+import { assessQuestionBlueprint, formatDifficultyViolations } from "./question-difficulty";
 import type { QuestionBlueprint } from "./question-blueprint";
 
 const blueprint: QuestionBlueprint = {
@@ -48,5 +48,17 @@ describe("assessQuestionBlueprint", () => {
   it("calculates level 5 for a three-step service composition", () => {
     const advanced = structuredClone(blueprint); advanced.reasoningSteps.push("tradeoff");
     expect(assessQuestionBlueprint(advanced).level).toBe(5);
+  });
+});
+
+describe("formatDifficultyViolations", () => {
+  it("위반 코드에 메시지와 선택지 id를 함께 표기한다", () => {
+    const formatted = formatDifficultyViolations("b1", [
+      { code: "CLOSE_DISTRACTOR_COUNT", message: "At least two close distractors are required." },
+      { code: "CORRECT_CHOICE_MISSES_CONSTRAINT", message: "A correct choice must satisfy every constraint.", choiceId: "a" },
+    ]);
+    expect(formatted).toBe(
+      "b1: CLOSE_DISTRACTOR_COUNT At least two close distractors are required.; CORRECT_CHOICE_MISSES_CONSTRAINT[choice a] A correct choice must satisfy every constraint.",
+    );
   });
 });

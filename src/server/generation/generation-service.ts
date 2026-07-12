@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises";
 import path from "node:path";
-import { Prisma, type GenerationItemRevision, type GenerationJob } from "@prisma/client";
+import { Prisma, type GenerationEngine, type GenerationItemRevision, type GenerationJob } from "@prisma/client";
 import { parseImportJson, type ImportQuestion, validateGeneratedQuestions } from "@/core/import-schema";
 import { prepareGeneratedItems } from "@/core/generation-result";
 import { extractJsonObject } from "@/core/json-extract";
@@ -19,7 +19,7 @@ import {
 import { capSummaries, summarizeQuestionPayload } from "@/core/question-summary";
 import { mergeVerdicts, parseVerifyJson } from "@/core/verify-schema";
 import { parseRevisionJson } from "@/core/revision-schema";
-import { assessQuestionBlueprint } from "@/core/question-difficulty";
+import { assessQuestionBlueprint, formatDifficultyViolations, type DifficultyAssessment } from "@/core/question-difficulty";
 import { parseQuestionBlueprintJson, type QuestionBlueprint } from "@/core/question-blueprint";
 import type { GenerationQuestionShape } from "@/core/generation-shape";
 import type {
@@ -39,9 +39,11 @@ import { importQuestions } from "../import-service";
 import { attachKeywords } from "../keyword-service";
 import { requiredReferenceFiles, resolveReferenceFiles } from "./reference";
 import { generationTimeoutMs, jobOutputDir } from "./run-engine";
-import { runTrackedEngine } from "./tracked-run";
+import { completeTrackedRun, failTrackedRun, runTrackedEngine } from "./tracked-run";
 
 const ORPHAN_GRACE_MS = 60_000;
+// 게이트 실패로 잡 전체(설계표+수선 토큰)를 버리는 것보다 소규모 수선 재시도가 싸다.
+const BLUEPRINT_REPAIR_ATTEMPTS = 2;
 const EXISTING_QUESTION_LIMIT = 100;
 const VARIANT_SOURCE_LIMIT = 10;
 const EXISTING_KEYWORD_LIMIT = 50;
@@ -360,6 +362,58 @@ async function runKeywordTagJob(
   });
 }
 
+type BlueprintAssessment = { blueprint: QuestionBlueprint; assessment: DifficultyAssessment };
+
+function summarizeGateViolations(items: BlueprintAssessment[]): string {
+  return items.map((item) => formatDifficultyViolations(item.blueprint.id, item.assessment.violations)).join("\n");
+}
+
+// 난이도 게이트에 걸린 설계표만 골라 최대 BLUEPRINT_REPAIR_ATTEMPTS회 수선한다.
+// 위반 코드·메시지·선택지 id를 그대로 전달해야 수선 모델이 무엇을 고칠지 알 수 있다 (job #50 재발 방지).
+export async function repairGateFailures(input: {
+  generationJobId: number;
+  engine: GenerationEngine;
+  dir: string;
+  shape?: GenerationQuestionShape;
+  blueprints: QuestionBlueprint[];
+}): Promise<{ passed: QuestionBlueprint[]; excludedCount: number; violationSummary: string | null }> {
+  let assessments: BlueprintAssessment[] = input.blueprints.map((blueprint) => ({ blueprint, assessment: assessQuestionBlueprint(blueprint, input.shape) }));
+
+  for (let attempt = 1; attempt <= BLUEPRINT_REPAIR_ATTEMPTS; attempt += 1) {
+    const failed = assessments.filter((item) => !item.assessment.pass);
+    if (!failed.length) break;
+    const repairPath = path.join(input.dir, `blueprint-repair-${attempt}-result.json`);
+    const prompt = buildCliQuestionBlueprintRepairPrompt(failed.map((item) => item.blueprint), summarizeGateViolations(failed), repairPath, input.shape);
+    const repairRun = await runTrackedEngine({ generationJobId: input.generationJobId, stage: "BLUEPRINT_REPAIR", attempt, engine: input.engine, prompt, dir: input.dir, filePrefix: `blueprint-repair-${attempt}-` });
+    // 엔진 실행 자체가 실패하면(타임아웃 등) 같은 조건 재시도의 기대 효용이 낮아 중단한다.
+    if (!repairRun.ok) break;
+    const repaired = parseQuestionBlueprintJson(extractJsonObject(repairRun.resultText));
+    if (!repaired.ok) {
+      await failTrackedRun(repairRun.runLogId, repaired.fatal);
+      continue;
+    }
+    const failedIds = new Set(failed.map((item) => item.blueprint.id));
+    const replacements = new Map(repaired.blueprints.filter((blueprint) => failedIds.has(blueprint.id)).map((blueprint) => [blueprint.id, blueprint]));
+    assessments = assessments.map((item) => {
+      const replacement = replacements.get(item.blueprint.id);
+      return replacement ? { blueprint: replacement, assessment: assessQuestionBlueprint(replacement, input.shape) } : item;
+    });
+    const stillFailing = assessments.filter((item) => !item.assessment.pass);
+    if (!stillFailing.length) {
+      await completeTrackedRun(repairRun.runLogId);
+      break;
+    }
+    await failTrackedRun(repairRun.runLogId, summarizeGateViolations(stillFailing));
+  }
+
+  const excluded = assessments.filter((item) => !item.assessment.pass);
+  return {
+    passed: assessments.filter((item) => item.assessment.pass).map((item) => item.blueprint),
+    excludedCount: excluded.length,
+    violationSummary: excluded.length ? summarizeGateViolations(excluded) : null,
+  };
+}
+
 async function runJob(
   jobId: number,
   topicName: string,
@@ -386,28 +440,13 @@ async function runJob(
     await failJob(jobId, blueprintParsed.fatal, blueprintRun.resultText);
     return;
   }
-  let assessments = blueprintParsed.blueprints.map((blueprint) => ({ blueprint, assessment: assessQuestionBlueprint(blueprint, shape) }));
-  const failed = assessments.filter((item) => !item.assessment.pass);
-  if (failed.length) {
-    const repairPath = path.join(dir, "blueprint-repair-result.json");
-    const violations = failed.map((item) => `${item.blueprint.id}: ${item.assessment.violations.map((violation) => violation.code).join(", ")}`).join("\n");
-    const blueprintRepairPrompt = buildCliQuestionBlueprintRepairPrompt(failed.map((item) => item.blueprint), violations, repairPath, shape);
-    const repairRun = await runTrackedEngine({ generationJobId: jobId, stage: "BLUEPRINT_REPAIR", engine: job.engine, prompt: blueprintRepairPrompt, dir, filePrefix: "blueprint-repair-" });
-    if (repairRun.ok) {
-      const repaired = parseQuestionBlueprintJson(extractJsonObject(repairRun.resultText));
-      if (repaired.ok) {
-        const replacements = new Map(repaired.blueprints.filter((blueprint) => failed.some((item) => item.blueprint.id === blueprint.id)).map((blueprint) => [blueprint.id, blueprint]));
-        assessments = assessments.map((item) => replacements.has(item.blueprint.id) ? { blueprint: replacements.get(item.blueprint.id) as QuestionBlueprint, assessment: assessQuestionBlueprint(replacements.get(item.blueprint.id) as QuestionBlueprint, shape) } : item);
-      }
-    }
-  }
-  const blueprints = assessments.filter((item) => item.assessment.pass).map((item) => item.blueprint);
+  const gate = await repairGateFailures({ generationJobId: jobId, engine: job.engine, dir, shape, blueprints: blueprintParsed.blueprints });
+  const blueprints = gate.passed;
   if (!blueprints.length) {
-    await failJob(jobId, "No question blueprints passed the structural difficulty gate.", blueprintRun.resultText);
+    await failJob(jobId, `난이도 게이트를 통과한 설계표가 없습니다 (수선 ${BLUEPRINT_REPAIR_ATTEMPTS}회 시도).\n${gate.violationSummary}`, blueprintRun.resultText);
     return;
   }
-  const excluded = assessments.filter((item) => !item.assessment.pass);
-  const blueprintWarning = excluded.length ? `${excluded.length} blueprint(s) were excluded after one repair attempt.` : null;
+  const blueprintWarning = gate.excludedCount ? `${gate.excludedCount} blueprint(s) were excluded after ${BLUEPRINT_REPAIR_ATTEMPTS} repair attempts.` : null;
   const resultPath = path.join(dir, "result.json");
   const prompt = buildCliGenerationFromBlueprintPrompt(topicName, blueprints, resultPath, referenceAbsPaths, shape);
 

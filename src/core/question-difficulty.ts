@@ -9,6 +9,13 @@ export interface DifficultyAssessment {
   metrics: { constraintCount: number; uniqueServiceCount: number; referenceFactCount: number; reasoningStepCount: number; closeDistractorCount: number };
 }
 
+// 수선 프롬프트와 실패 사유에 쓰이는 위반 요약. 코드만 주면 AI가 무엇을 고칠지 알 수 없으므로 메시지와 선택지 id를 함께 준다.
+export function formatDifficultyViolations(blueprintId: string, violations: DifficultyViolation[]): string {
+  return `${blueprintId}: ${violations
+    .map((violation) => `${violation.code}${violation.choiceId ? `[choice ${violation.choiceId}]` : ""} ${violation.message}`)
+    .join("; ")}`;
+}
+
 export function assessQuestionBlueprint(
   blueprint: QuestionBlueprint,
   shape?: GenerationQuestionShape,
