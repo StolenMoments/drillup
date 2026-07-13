@@ -605,6 +605,16 @@ describe("사실 우선순위 지시", () => {
     expect(prompt).toContain(JSON.stringify(question));
     expect(prompt).toContain(question.question);
   });
+
+  it("revision 프롬프트가 원본 검증 의견을 포함한다", () => {
+    const withComment = buildCliRevisionPrompt("주제", { type: "mcq" }, "지시", "C:/out/result.json", [], undefined, undefined, "원본 검증 의견 텍스트");
+    expect(withComment).toContain("## 원본 검증 의견");
+    expect(withComment).toContain("원본 검증 의견 텍스트");
+
+    const withoutComment = buildCliRevisionPrompt("주제", { type: "mcq" }, "지시", "C:/out/result.json");
+    expect(withoutComment).toContain("## 원본 검증 의견");
+    expect(withoutComment).toContain("(없음)");
+  });
 });
 
 describe("buildChoiceHardeningPrompt", () => {

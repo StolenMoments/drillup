@@ -690,7 +690,7 @@ export async function createItemRevision(input: {
     job.topic.referenceDir,
     (job.referenceFiles as unknown as string[] | null) ?? [],
   );
-  void runItemRevision(revision.id, job.id, job.topic.name, sourceQuestion, references, jobQuestionShape(job)).catch((error) => {
+  void runItemRevision(revision.id, job.id, job.topic.name, sourceQuestion, references, jobQuestionShape(job), item.verdictComment).catch((error) => {
     console.error(`generation item revision ${revision.id} failed unexpectedly`, error);
   });
   return getJob(job.id);
@@ -703,6 +703,7 @@ async function runItemRevision(
   question: ImportQuestion,
   referenceFiles: string[],
   shape?: GenerationQuestionShape,
+  verdictComment?: string | null,
 ): Promise<void> {
   const revision = await prisma.generationItemRevision.findUnique({ where: { id: revisionId } });
   if (!revision || revision.status !== "RUNNING") return;
@@ -716,6 +717,7 @@ async function runItemRevision(
     referenceFiles,
     undefined,
     shape,
+    verdictComment,
   );
   const run = await runTrackedEngine({ generationJobId: jobId, stage: "MANUAL_ITEM_REVISION", itemIndex: revision.itemIndex, engine: revision.engine, prompt, dir });
   if (!run.ok) {

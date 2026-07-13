@@ -487,6 +487,7 @@ export function buildCliRevisionPrompt(
   referenceFiles: string[] = [],
   blueprint?: QuestionBlueprint,
   shape?: GenerationQuestionShape,
+  verdictComment?: string | null,
 ): string {
   const questionWithBlueprint = blueprint ? { question, blueprint, blueprintGuide: "Keep the blueprint's tested distinction and structure, but correct factual errors: if a blueprint fact or the designated answer contradicts current official documentation, fix the question accordingly and explain in the comment." } : question;
   return `당신은 학습 문제 검증 및 개선 전문가입니다. 주제 "${topicName}"의 아래 문제를 검증하고 개선하세요.
@@ -496,6 +497,10 @@ ${webVerificationSection("검증하기 전에")}${referenceSection(referenceFile
 \`\`\`json
 ${JSON.stringify(questionWithBlueprint)}
 \`\`\`
+
+## 원본 검증 의견
+
+${verdictComment?.trim() || "(없음)"}
 
 ## 검증 기준
 
