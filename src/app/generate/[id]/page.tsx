@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import QuestionPreview from "@/components/QuestionPreview";
+import QuestionComparison from "@/components/QuestionComparison";
 import GenerationDiagnostics from "@/components/GenerationDiagnostics";
 import type { ImportQuestion } from "@/core/import-schema";
 import { api } from "@/lib/api-client";
@@ -24,7 +25,11 @@ function selectValidItems(job: GenerationJobDto): Set<number> {
   if (!job.items) return new Set<number>();
   return new Set(
     job.items
-      .filter((item) => item.ok && item.verdict !== "fail")
+      .filter(
+        (item) =>
+          item.ok &&
+          (item.verdict !== "fail" || Boolean(item.revision?.appliedQuestion)),
+      )
       .map((item) => item.index),
   );
 }
@@ -139,6 +144,9 @@ export default function GenerationDetailPage() {
     try {
       const result = await api.generate.setRevisionUsage(job.id, index, useRevision);
       setJob(result.job);
+      if (useRevision) {
+        setSelected((prev) => new Set(prev).add(index));
+      }
       setMessage(useRevision ? "✅ 수정본을 적용했습니다." : "✅ 원문으로 되돌렸습니다.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "❌ 수정본을 적용하지 못했습니다.");
@@ -326,6 +334,7 @@ export default function GenerationDetailPage() {
               </div>
               {item.ok ? (
                 <>
+                  <p className="mb-1 text-sm font-semibold">현재 저장될 버전</p>
                   <QuestionPreview
                     question={currentQuestion as ImportQuestion}
                     revealed={revealed.has(item.index)}
@@ -377,10 +386,11 @@ export default function GenerationDetailPage() {
                       {revision?.status === "SUCCEEDED" && Boolean(revision.proposedQuestion) && (
                         <div className="space-y-3 border-t border-[color:var(--border)] pt-3">
                           <p className="text-sm"><span className="chip">AI 판정: {revision.verdict === "pass" ? "통과" : "개선 권장"}</span> {revision.comment}</p>
-                          <div className="grid gap-3 lg:grid-cols-2">
-                            <div className="space-y-2"><p className="text-sm font-semibold">현재 저장될 버전</p><QuestionPreview question={currentQuestion as ImportQuestion} revealed={revealed.has(item.index)} /></div>
-                            <div className="space-y-2"><p className="text-sm font-semibold">AI 수정 제안</p><QuestionPreview question={revision.proposedQuestion as ImportQuestion} revealed={revealed.has(item.index)} /></div>
-                          </div>
+                          <QuestionComparison
+                            original={item.question as ImportQuestion}
+                            revised={revision.proposedQuestion as ImportQuestion}
+                            revealed={revealed.has(item.index)}
+                          />
                           <div className="flex flex-wrap gap-2">
                             <button type="button" onClick={() => void setRevisionUsage(item.index, true)} className="btn btn-primary text-sm">수정본 적용</button>
                             {Boolean(revision.appliedQuestion) && <button type="button" onClick={() => void setRevisionUsage(item.index, false)} className="btn btn-secondary text-sm">원문으로 되돌리기</button>}
