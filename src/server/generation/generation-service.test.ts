@@ -1,9 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
+  topic: {
+    findUnique: vi.fn(),
+  },
   generationJob: {
     findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    create: vi.fn(),
     update: vi.fn(),
+  },
+  question: {
+    count: vi.fn(),
+    findMany: vi.fn(),
+  },
+  keyword: {
+    findMany: vi.fn(),
   },
   generationItemRevision: {
     findMany: vi.fn(),
@@ -21,7 +33,7 @@ vi.mock("../import-service", () => ({ importQuestions: importQuestionsMock }));
 vi.mock("./tracked-run", () => trackedRunMock);
 
 import type { QuestionBlueprint } from "@/core/question-blueprint";
-import { approveJob, getJob, repairGateFailures } from "./generation-service";
+import { approveJob, createJob, getJob, repairGateFailures } from "./generation-service";
 
 const originalQuestion = {
   type: "mcq",
@@ -229,5 +241,86 @@ describe("repairGateFailures", () => {
     expect(result.violationSummary).toContain("b1: CLOSE_DISTRACTOR_COUNT At least two close distractors are required.");
     expect(trackedRunMock.runTrackedEngine).toHaveBeenCalledTimes(2);
     expect(trackedRunMock.failTrackedRun).toHaveBeenCalledWith(8, expect.stringContaining("CLOSE_DISTRACTOR_COUNT"));
+  });
+});
+
+describe("자동 ITEM_REPAIR", () => {
+  const generatedQuestion = {
+    type: "mcq",
+    question: "원래 문제의 고유 문자열",
+    choices: ["정답", "가까운 오답 1", "가까운 오답 2", "가까운 오답 3"],
+    answer_indices: [0],
+    choice_explanations: ["근거", "근거", "근거", "근거"],
+    explanation: "해설",
+  };
+
+  const runningJob = {
+    id: 1,
+    topicId: 2,
+    engine: "CLAUDE",
+    verifyEngine: "CODEX",
+    instructions: "",
+    referenceFiles: [],
+    correctAnswerCount: 1,
+    choiceCount: 4,
+    status: "RUNNING",
+    kind: "QUESTION",
+    result: null,
+    errorMessage: null,
+    verifyWarning: null,
+    createdAt: new Date("2026-07-11T00:00:00.000Z"),
+    finishedAt: null,
+    approvedAt: null,
+    savedCount: 0,
+    sourceQuestionIds: null,
+  };
+
+  it("수선 프롬프트에는 원본 문제 대신 블루프린트와 실패 사유를 전달한다", async () => {
+    const blueprint = passingBlueprint();
+    const promptByStage: Record<string, string> = {};
+    prismaMock.topic.findUnique.mockResolvedValue({ id: 2, name: "AWS", referenceDir: null });
+    prismaMock.generationJob.findFirst.mockResolvedValue(null);
+    prismaMock.generationJob.create.mockResolvedValue(runningJob);
+    prismaMock.generationJob.findUnique.mockResolvedValue(runningJob);
+    prismaMock.question.count.mockResolvedValue(0);
+    prismaMock.question.findMany.mockResolvedValue([]);
+    prismaMock.keyword.findMany.mockResolvedValue([]);
+    prismaMock.generationJob.update.mockResolvedValue(runningJob);
+
+    trackedRunMock.runTrackedEngine.mockImplementation(async (input: { stage: string; prompt: string }) => {
+      const results: Record<string, unknown> = {
+        BLUEPRINT: { blueprints: [blueprint] },
+        GENERATION: { questions: [generatedQuestion] },
+        VERIFY: { verdicts: [{ index: 0, verdict: "fail", comment: "검증 실패 사유" }] },
+        ITEM_REPAIR: { verdict: "fail", comment: "자동 수선 완료", revised_question: generatedQuestion },
+        REPAIR_VERIFY: { verdicts: [{ index: 0, verdict: "pass", comment: "" }] },
+      };
+      promptByStage[input.stage] = input.prompt;
+      return {
+        ok: true as const,
+        resultText: JSON.stringify(results[input.stage]),
+        runLogId: Object.keys(promptByStage).length,
+        stdoutTail: "",
+        stderrTail: "",
+        exitCode: 0,
+        timedOut: false,
+        durationMs: 0,
+      };
+    });
+
+    await createJob({
+      topicId: 2,
+      engine: "CLAUDE",
+      verifyEngine: "CODEX",
+      instructions: "",
+      correctAnswerCount: 1,
+      choiceCount: 4,
+      referenceFiles: [],
+    });
+    await vi.waitFor(() => expect(promptByStage.ITEM_REPAIR).toBeDefined());
+
+    expect(promptByStage.ITEM_REPAIR).toContain("검증 실패 사유");
+    expect(promptByStage.ITEM_REPAIR).toContain('"testedDistinction":"managed versus self-managed"');
+    expect(promptByStage.ITEM_REPAIR).not.toContain(generatedQuestion.question);
   });
 });

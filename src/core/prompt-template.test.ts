@@ -6,6 +6,7 @@ import {
   buildCliGenerationPrompt,
   buildCliQuestionBlueprintPrompt,
   buildCliQuestionBlueprintRepairPrompt,
+  buildCliItemRepairPrompt,
   buildCliKeywordTagPrompt,
   buildCliRevisionPrompt,
   buildCliVerifyPrompt,
@@ -408,6 +409,100 @@ describe("buildCliGenerationFromBlueprintPrompt", () => {
   });
 });
 
+describe("buildCliItemRepairPrompt", () => {
+  const blueprint = {
+    id: "b1",
+    domainTask: "deploy securely",
+    testedDistinction: "managed versus self-managed",
+    referenceFacts: [{ id: "f1", statement: "fact statement", sourceFile: "ref.md" }],
+    constraints: [{ id: "c1", statement: "security constraint", kind: "SECURITY" as const, factIds: ["f1"] }],
+    choices: [
+      {
+        id: "a",
+        solution: "managed service",
+        serviceNames: ["Managed Service"],
+        satisfiedConstraintIds: ["c1"],
+        violatedConstraintIds: [],
+        misconception: null,
+        correct: true as const,
+      },
+    ],
+    reasoningSteps: ["compare solutions"],
+  };
+  const failureReason = "verdict=fail: 고유한 자동 수선 실패 사유";
+  const referenceFiles = ["C:/reference/a.md"];
+  const shape = { correctAnswerCount: 1 as const, choiceCount: 4 as const };
+
+  it("실패 사유·블루프린트·참고 자료·shape와 완전한 수정 지시를 포함한다", () => {
+    const prompt = buildCliItemRepairPrompt(
+      "AWS 보안",
+      blueprint,
+      failureReason,
+      "C:/repair/result.json",
+      referenceFiles,
+      shape,
+    );
+
+    expect(prompt).toContain(failureReason);
+    expect(prompt).toContain(JSON.stringify(blueprint));
+    expect(prompt).not.toContain(JSON.stringify(blueprint, null, 2));
+    expect(prompt).toContain("C:/reference/a.md");
+    expect(prompt).toContain("정확히 4개");
+    expect(prompt).toContain("정확히 1개");
+    expect(prompt).toContain("완전한 가져오기 문제 형식");
+    expect(prompt).toContain('"revised_question"');
+    expect(prompt).toContain("C:/repair/result.json");
+  });
+
+  it("대상 문제의 원문 JSON이나 고유 문자열을 포함하지 않는다", () => {
+    const originalQuestion = {
+      type: "mcq",
+      question: "이 문자열은 자동 수선 프롬프트에 들어가면 안 됩니다",
+      choices: ["A", "B", "C", "D"],
+      answer_indices: [0],
+    };
+    const prompt = buildCliItemRepairPrompt(
+      "AWS 보안",
+      blueprint,
+      failureReason,
+      "C:/repair/result.json",
+    );
+
+    expect(prompt).not.toContain(JSON.stringify(originalQuestion));
+    expect(prompt).not.toContain(originalQuestion.question);
+  });
+
+  it("대표 fixture에서 기존 full-question revision 프롬프트보다 짧다", () => {
+    const originalQuestion = {
+      type: "mcq",
+      question: "대상 문제의 긴 질문 텍스트입니다. " + "세부 조건과 문맥을 반복합니다. ".repeat(8),
+      choices: ["정답", "가까운 오답 1", "가까운 오답 2", "가까운 오답 3"],
+      answer_indices: [0],
+      choice_explanations: ["근거", "근거", "근거", "근거"],
+      explanation: "기존 문제 해설",
+    };
+    const oldPrompt = buildCliRevisionPrompt(
+      "AWS 보안",
+      originalQuestion,
+      failureReason,
+      "C:/repair/result.json",
+      referenceFiles,
+      blueprint,
+      shape,
+    );
+    const newPrompt = buildCliItemRepairPrompt(
+      "AWS 보안",
+      blueprint,
+      failureReason,
+      "C:/repair/result.json",
+      referenceFiles,
+      shape,
+    );
+
+    expect(newPrompt.length).toBeLessThan(oldPrompt.length);
+  });
+});
+
 describe("buildAnswerExplanationPrompt", () => {
   it("MCQ: 질문·보기·정답 표시·저장 경로를 포함한다", () => {
     const prompt = buildAnswerExplanationPrompt(
@@ -497,6 +592,18 @@ describe("사실 우선순위 지시", () => {
     const prompt = buildCliRevisionPrompt("주제", { type: "mcq" }, "지시", "C:/out/result.json", [], sampleBlueprint);
     expect(prompt).not.toContain("unchanged");
     expect(prompt).toContain("correct factual errors");
+  });
+
+  it("기존 full-question revision 프롬프트는 대상 문제를 계속 포함한다", () => {
+    const question = {
+      type: "mcq",
+      question: "수동 수정 대상 문제의 고유 문자열",
+      choices: ["A", "B", "C", "D"],
+      answer_indices: [0],
+    };
+    const prompt = buildCliRevisionPrompt("주제", question, "수동 수정", "C:/out/result.json");
+    expect(prompt).toContain(JSON.stringify(question));
+    expect(prompt).toContain(question.question);
   });
 });
 

@@ -8,6 +8,7 @@ import { shuffleMcqChoices } from "@/core/random";
 import { parseKeywordTagJson } from "@/core/keyword-tag-schema";
 import {
   buildCliGenerationFromBlueprintPrompt,
+  buildCliItemRepairPrompt,
   buildCliKeywordTagPrompt,
   buildCliQuestionBlueprintPrompt,
   buildCliQuestionBlueprintRepairPrompt,
@@ -555,14 +556,15 @@ async function runJob(
   if (repairTargets.length > 0) {
     const repaired: Array<{ index: number; question: ImportQuestion; previousComment: string | null }> = [];
     for (const item of repairTargets) {
+      const blueprint = blueprints[item.index];
+      if (!blueprint) continue;
       const repairPath = path.join(dir, `repair-${item.index}.json`);
-      const repairPrompt = buildCliRevisionPrompt(
+      const repairPrompt = buildCliItemRepairPrompt(
         topicName,
-        item.question,
-        `자동 품질 수정입니다. 검증 실패 사유: ${item.verdictComment ?? "품질 기준 미충족"}. 시험형 객관식 규칙, answer_indices와 choice_explanations를 모두 충족하세요.`,
+        blueprint,
+        item.verdictComment ?? "품질 기준 미충족",
         repairPath,
         referenceAbsPaths,
-        blueprints[item.index],
         shape,
       );
       const repairRun = await runTrackedEngine({ generationJobId: jobId, stage: "ITEM_REPAIR", itemIndex: item.index, engine: job.engine, prompt: repairPrompt, dir, filePrefix: `repair-${item.index}-` });

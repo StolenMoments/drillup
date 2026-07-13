@@ -523,6 +523,58 @@ ${instructions.trim() || "(없음)"}
 `;
 }
 
+export function buildCliItemRepairPrompt(
+  topicName: string,
+  blueprint: QuestionBlueprint,
+  failureReason: string,
+  resultPath: string,
+  referenceFiles: string[] = [],
+  shape?: GenerationQuestionShape,
+): string {
+  const shapeRequirements = shape
+    ? `- 객관식은 선지가 정확히 ${shape.choiceCount}개이고 정답이 정확히 ${shape.correctAnswerCount}개여야 합니다.${shape.correctAnswerCount === 2 ? ' 질문에 "2개를 선택하세요"를 정확히 포함하세요.' : ' 질문에서 두 개를 선택하라고 안내하지 마세요.'}`
+    : "";
+  return `당신은 학습 문제 자동 수선 전문가입니다. 주제 "${topicName}"의 검증 실패 문항을 아래 설계 블루프린트에 맞춰 완전히 다시 작성하세요.
+
+${webVerificationSection("수선하기 전에")}${referenceSection(referenceFiles, "수선하기 전에")}## 검증 실패 사유
+
+${failureReason.trim() || "(없음)"}
+
+## 설계 블루프린트
+
+\`\`\`json
+${JSON.stringify(blueprint)}
+\`\`\`
+
+## 작업 지시
+
+- 위 블루프린트의 domainTask, testedDistinction, referenceFacts, constraints, 정답과 선택지 관계를 학습 의도로 사용하세요.
+- 블루프린트를 기반으로 완전한 revised_question을 새로 작성하세요. 원본 문항을 부분적으로 설명하거나 생략하지 마세요.
+- 최종 문제에는 블루프린트 id, correctness 플래그, satisfied/violatedConstraintIds, misconception 같은 설계 메타데이터를 노출하지 마세요.
+- 사실 오류가 있으면 최신 공식 문서와 참고 자료를 확인해 바로잡고, 무엇을 바로잡았는지 comment에 간결히 적으세요.
+
+## 검증 기준
+
+${shapeRequirements}
+- 정답과 answer_indices가 사실에 맞고, 질문의 조건이 정답 선택을 결정해야 합니다.
+- 선택지는 서로 구별되고 그럴듯해야 하며, 해설과 choice_explanations는 정답과 일관되어야 합니다.
+- 문제 유형은 mcq로 작성하세요.
+
+## 출력 형식
+
+다른 설명 없이 아래 JSON만 ${resultPath}에 UTF-8로 저장하세요. stdout에는 결과 JSON을 출력하지 마세요.
+
+{
+  "verdict": "pass",
+  "comment": "검증 결과와 수정 이유",
+  "revised_question": { "type": "mcq" }
+}
+
+- revised_question은 반드시 완전한 가져오기 문제 형식이어야 합니다.
+- 이미 적절한 블루프린트라도 revised_question에는 위 블루프린트에 맞는 완전한 문제를 넣으세요.
+`;
+}
+
 export function buildKeywordSuggestionPrompt(
   topicName: string,
   question: { type: QuestionType; payload: unknown; explanation: string | null },
