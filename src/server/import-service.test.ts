@@ -35,7 +35,7 @@ describe("importQuestions", () => {
   });
 
   it("creates questions and default SRS state in one transaction", async () => {
-    const count = await importQuestions(1, [validMcq]);
+    const count = await importQuestions(1, [{ question: validMcq }]);
 
     expect(count).toBe(1);
     expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
@@ -49,6 +49,7 @@ describe("importQuestions", () => {
           answer_index: 1,
         },
         explanation: "기본 덧셈입니다.",
+        testedDistinction: null,
       },
       select: { id: true },
     });
@@ -60,7 +61,7 @@ describe("importQuestions", () => {
   it("returns NOT_FOUND when the topic does not exist", async () => {
     prismaMock.topic.findUnique.mockResolvedValue(null);
 
-    await expect(importQuestions(999, [validMcq])).rejects.toMatchObject({
+    await expect(importQuestions(999, [{ question: validMcq }])).rejects.toMatchObject({
       code: "NOT_FOUND",
       status: 404,
     });
@@ -68,7 +69,7 @@ describe("importQuestions", () => {
   });
 
   it("공백뿐인 explanation은 null로 저장한다", async () => {
-    await importQuestions(1, [{ ...validMcq, explanation: "   " }]);
+    await importQuestions(1, [{ question: { ...validMcq, explanation: "   " } }]);
 
     expect(prismaMock.question.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -78,7 +79,7 @@ describe("importQuestions", () => {
   });
 
   it("explanation의 양끝 공백을 제거해 저장한다", async () => {
-    await importQuestions(1, [{ ...validMcq, explanation: "  해설  " }]);
+    await importQuestions(1, [{ question: { ...validMcq, explanation: "  해설  " } }]);
 
     expect(prismaMock.question.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -97,7 +98,7 @@ describe("importQuestions", () => {
       explanation: "정답 해설입니다.",
     };
 
-    await importQuestions(1, [multiAnswerMcq]);
+    await importQuestions(1, [{ question: multiAnswerMcq }]);
 
     expect(prismaMock.question.create).toHaveBeenCalledWith({
       data: {
@@ -110,8 +111,29 @@ describe("importQuestions", () => {
           choice_explanations: ["첫 번째 설명", "두 번째 설명", "세 번째 설명", "네 번째 설명"],
         },
         explanation: "정답 해설입니다.",
+        testedDistinction: null,
       },
       select: { id: true },
     });
+  });
+
+  it("testedDistinction을 함께 저장한다", async () => {
+    await importQuestions(1, [
+      { question: validMcq, testedDistinction: "  관리형 대 자체 운영 구분  " },
+    ]);
+    expect(prismaMock.question.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ testedDistinction: "관리형 대 자체 운영 구분" }),
+      }),
+    );
+  });
+
+  it("testedDistinction이 없으면 null로 저장한다", async () => {
+    await importQuestions(1, [{ question: validMcq }]);
+    expect(prismaMock.question.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ testedDistinction: null }),
+      }),
+    );
   });
 });

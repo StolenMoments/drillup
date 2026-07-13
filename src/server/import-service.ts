@@ -18,9 +18,14 @@ function toPayload(q: ImportQuestion) {
   return { text: q.text, blanks: q.blanks, distractors: q.distractors };
 }
 
+export interface ImportQuestionInput {
+  question: ImportQuestion;
+  testedDistinction?: string | null;
+}
+
 export async function importQuestions(
   topicId: number,
-  questions: ImportQuestion[],
+  items: ImportQuestionInput[],
 ): Promise<number> {
   const topic = await prisma.topic.findUnique({ where: { id: topicId } });
   if (!topic) {
@@ -28,7 +33,7 @@ export async function importQuestions(
   }
 
   await prisma.$transaction(async (tx) => {
-    for (const question of questions) {
+    for (const { question, testedDistinction } of items) {
       const created = await tx.question.create({
         data: {
           topicId,
@@ -37,6 +42,7 @@ export async function importQuestions(
           explanation: question.explanation?.trim()
             ? question.explanation.trim()
             : null,
+          testedDistinction: testedDistinction?.trim() || null,
         },
         select: { id: true },
       });
@@ -47,5 +53,5 @@ export async function importQuestions(
     }
   });
 
-  return questions.length;
+  return items.length;
 }

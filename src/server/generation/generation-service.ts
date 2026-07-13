@@ -873,7 +873,10 @@ export async function approveJob(
     throw new ServiceError("INVALID_ITEMS", "저장할 항목이 없습니다", 400);
   }
 
-  const savedCount = await importQuestions(job.topicId, questions);
+  const savedCount = await importQuestions(
+    job.topicId,
+    questions.map((question) => ({ question })),
+  );
   const updated = await prisma.generationJob.update({
     where: { id },
     data: { approvedAt: new Date(), savedCount: { increment: savedCount } },

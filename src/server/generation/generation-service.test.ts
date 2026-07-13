@@ -67,7 +67,7 @@ describe("approveJob", () => {
     ]);
 
     await expect(approveJob(1, [0])).resolves.toMatchObject({ savedCount: 1 });
-    expect(importQuestionsMock).toHaveBeenCalledWith(2, [revisedQuestion]);
+    expect(importQuestionsMock).toHaveBeenCalledWith(2, [{ question: revisedQuestion }]);
   });
 
   it("still rejects an original question whose verification verdict failed", async () => {

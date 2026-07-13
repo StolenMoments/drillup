@@ -29,7 +29,10 @@ export async function POST(req: Request) {
       if (!item.ok) throw new Error("unreachable");
       return item.question;
     });
-    const savedCount = await importQuestions(input.topicId, questions);
+    const savedCount = await importQuestions(
+      input.topicId,
+      questions.map((question) => ({ question })),
+    );
     return jsonOk({ savedCount }, 201);
   } catch (e) {
     return handleApiError(e);
