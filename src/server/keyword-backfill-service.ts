@@ -21,7 +21,6 @@ export interface KeywordBackfillBatchResult {
 export async function backfillKeywordBatch(input: {
   questionIds: number[];
   engine: GenerationEngine;
-  codexModel?: string;
   dryRun?: boolean;
 }): Promise<KeywordBackfillBatchResult> {
   const requestedIds = [...new Set(input.questionIds)];
@@ -105,9 +104,7 @@ export async function backfillKeywordBatch(input: {
     existingKeywords.map((keyword) => keyword.name),
     path.join(dir, "result.json"),
   );
-  const run = await runEngine(input.engine, prompt, dir, "", {
-    codexModel: input.codexModel,
-  });
+  const run = await runEngine(input.engine, prompt, dir);
   if (!run.ok) {
     throw new ServiceError("KEYWORD_BACKFILL_FAILED", run.failureReason, 502);
   }

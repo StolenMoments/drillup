@@ -102,7 +102,7 @@ HTTPS 리버스 프록시(nginx 등) 구성은 이 워크플로우 범위 밖이
 
 웹 화면을 거치지 않고, 키워드가 없는 기존 문제를 AI로 자동 태깅한다. 문제는 같은
 주제 안에서 최대 5개씩 묶어 처리하며, 엔진 호출 비율은
-Claude:Codex:Antigravity = 1:1:3이다. Codex 배치는 `gpt-5.6-terra`를 사용한다.
+Claude:Codex:Antigravity = 1:1:3이다. Codex 호출은 `gpt-5.6-luna` 모델과 `xhigh` 추론 강도를 사용한다.
 
 ```powershell
 # 먼저 결과만 확인

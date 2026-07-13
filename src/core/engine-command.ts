@@ -13,11 +13,9 @@ export interface EngineCommand {
   promptViaStdin: boolean;
 }
 
-export interface EngineCommandOptions {
-  codexModel?: string;
-}
-
 const AGY_MODEL = "Gemini 3.5 Flash (High)";
+const CODEX_MODEL = "gpt-5.6-luna";
+const CODEX_REASONING_CONFIG = 'model_reasoning_effort="xhigh"';
 
 function winJoin(...parts: string[]): string {
   return parts.join("\\");
@@ -37,7 +35,6 @@ export function buildEngineCommand(
   engine: EngineName,
   promptPath: string,
   env: EngineEnv,
-  options: EngineCommandOptions = {},
 ): EngineCommand {
   if (engine === "CLAUDE") {
     const command = isWindows(env)
@@ -104,7 +101,10 @@ export function buildEngineCommand(
       args: [
         "exec",
         "--yolo",
-        ...(options.codexModel ? ["--model", options.codexModel] : []),
+        "--model",
+        CODEX_MODEL,
+        "-c",
+        CODEX_REASONING_CONFIG,
         "-",
       ],
       promptViaStdin: true,

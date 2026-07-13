@@ -13,10 +13,6 @@ export type EngineRunResult =
   | ({ ok: true; resultText: string } & EngineDiagnostics)
   | ({ ok: false; failureReason: string } & EngineDiagnostics);
 
-export interface EngineRunOptions {
-  codexModel?: string;
-}
-
 export function generationTimeoutMs(): number {
   const raw = Number(process.env.GENERATION_TIMEOUT_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_TIMEOUT_MS;
@@ -41,7 +37,6 @@ export async function runEngine(
   prompt: string,
   dir: string,
   filePrefix = "",
-  options: EngineRunOptions = {},
 ): Promise<EngineRunResult> {
   const startedAt = Date.now();
   await mkdir(dir, { recursive: true });
@@ -54,7 +49,7 @@ export async function runEngine(
     localAppData: process.env.LOCALAPPDATA ?? null,
     platform: process.platform,
     fileExists: existsSync,
-  }, options);
+  });
 
   let stdout = "";
   let stderr = "";

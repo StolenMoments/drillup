@@ -54,25 +54,32 @@ describe("buildEngineCommand - CLAUDE", () => {
 });
 
 describe("buildEngineCommand - CODEX", () => {
-  it("npm 레이아웃의 codex.exe를 찾아 exec --yolo - 로 실행한다", () => {
+  it("npm 레이아웃의 codex.exe를 찾아 고정 정책으로 실행한다", () => {
     const exe =
       "C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe";
     const cmd = buildEngineCommand("CODEX", "D:\\p\\prompt.md", env([exe]));
     expect(cmd.command).toBe(exe);
-    expect(cmd.args).toEqual(["exec", "--yolo", "-"]);
-    expect(cmd.promptViaStdin).toBe(true);
-  });
-
-  it("요청한 Codex 모델을 인자로 전달한다", () => {
-    const cmd = buildEngineCommand("CODEX", "D:\\p\\prompt.md", env(), {
-      codexModel: "gpt-5.6-terra",
-    });
-
     expect(cmd.args).toEqual([
       "exec",
       "--yolo",
       "--model",
-      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+      "-c",
+      'model_reasoning_effort="xhigh"',
+      "-",
+    ]);
+    expect(cmd.promptViaStdin).toBe(true);
+  });
+
+  it("Codex 모델과 xhigh 추론 설정을 항상 전달한다", () => {
+    const cmd = buildEngineCommand("CODEX", "D:\\p\\prompt.md", env());
+    expect(cmd.args).toEqual([
+      "exec",
+      "--yolo",
+      "--model",
+      "gpt-5.6-luna",
+      "-c",
+      'model_reasoning_effort="xhigh"',
       "-",
     ]);
   });

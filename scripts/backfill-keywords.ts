@@ -9,7 +9,6 @@ import {
 import { prisma } from "@/server/db";
 import { backfillKeywordBatch } from "@/server/keyword-backfill-service";
 
-const CODEX_MODEL = "gpt-5.6-terra";
 const DEFAULT_RETRIES = 2;
 
 interface Options {
@@ -43,7 +42,7 @@ function usage(): string {
 
 문제는 주제별로 최대 ${KEYWORD_BACKFILL_BATCH_SIZE}개씩 처리하며,
 Claude:Codex:Antigravity 호출 비율은 1:1:3입니다.
-Codex 호출은 ${CODEX_MODEL} 모델을 사용합니다.`;
+Codex 호출은 gpt-5.6-luna 모델과 xhigh 추론 강도를 사용합니다.`;
 }
 
 function positiveInteger(raw: string, optionName: string): number {
@@ -133,7 +132,6 @@ async function processBatch(
       const result = await backfillKeywordBatch({
         questionIds: pendingIds,
         engine,
-        codexModel: engine === "CODEX" ? CODEX_MODEL : undefined,
         dryRun: options.dryRun,
       });
       stats.tagged += result.taggedQuestionIds.length;
