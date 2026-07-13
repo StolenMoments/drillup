@@ -25,7 +25,7 @@ describe("buildGenerationPrompt (기존 수동용)", () => {
   });
 });
 
-const NO_EXISTING = { summaries: [], truncated: false };
+const NO_EXISTING = { distinctions: [], truncated: false };
 const VERIFY_ITEMS = [
   {
     index: 0,
@@ -85,35 +85,30 @@ describe("buildCliGenerationPrompt", () => {
     );
   });
 
-  it("기존 문제가 없으면 배치 내 중복 금지 지시만 포함한다", () => {
-    const prompt = buildCliGenerationPrompt(
-      "리눅스 기초",
-      "",
-      "D:\\r.json",
-      NO_EXISTING,
-    );
+  it("기존 distinction이 없으면 배치 내 중복 금지 지시만 포함한다", () => {
+    const prompt = buildCliGenerationPrompt("리눅스 기초", "", "D:\\r.json", NO_EXISTING);
     expect(prompt).toContain("이번에 생성하는 문제들끼리");
-    expect(prompt).not.toContain("기존 문제 목록");
+    expect(prompt).not.toContain("기존 출제 개념 목록");
   });
 
-  it("기존 문제가 있으면 목록과 중복 금지 지시를 포함한다", () => {
+  it("기존 distinction이 있으면 목록과 중복 금지 지시를 포함한다", () => {
     const prompt = buildCliGenerationPrompt("리눅스 기초", "", "D:\\r.json", {
-      summaries: ["리눅스 커널을 만든 사람은?", "리눅스는 1991년에 발표되었다."],
+      distinctions: ["커널 모듈 로딩 방식 구분", "패키지 매니저 잠금 파일 역할 구분"],
       truncated: false,
     });
-    expect(prompt).toContain("기존 문제 목록");
-    expect(prompt).toContain("- 리눅스 커널을 만든 사람은?");
-    expect(prompt).toContain("- 리눅스는 1991년에 발표되었다.");
-    expect(prompt).toContain("표현만 바꾼 문제");
-    expect(prompt).not.toContain("이 외에도 기존 문제가 더 있습니다");
+    expect(prompt).toContain("기존 출제 개념 목록");
+    expect(prompt).toContain("- 커널 모듈 로딩 방식 구분");
+    expect(prompt).toContain("- 패키지 매니저 잠금 파일 역할 구분");
+    expect(prompt).toContain("표현을 바꿔도");
+    expect(prompt).not.toContain("이 외에도 기존 출제 개념이 더 있습니다");
   });
 
   it("목록이 잘렸으면 더 있음을 명시한다", () => {
     const prompt = buildCliGenerationPrompt("리눅스 기초", "", "D:\\r.json", {
-      summaries: ["요약1"],
+      distinctions: ["개념1"],
       truncated: true,
     });
-    expect(prompt).toContain("이 외에도 기존 문제가 더 있습니다");
+    expect(prompt).toContain("이 외에도 기존 출제 개념이 더 있습니다");
   });
 });
 
@@ -202,7 +197,7 @@ describe("buildCliVerifyPrompt 참고 자료 섹션", () => {
 });
 
 describe("키워드/변형 확장", () => {
-  const existing = { summaries: [], truncated: false };
+  const existing = { distinctions: [], truncated: false };
 
   it("출력 형식 예시에 keywords 필드가 포함된다", () => {
     const prompt = buildCliGenerationPrompt("주제", "", "/tmp/r.json", existing);
@@ -335,6 +330,15 @@ describe("buildCliQuestionBlueprintPrompt", () => {
     const prompt = buildCliQuestionBlueprintPrompt("topic", "", "C:/result.json", NO_EXISTING);
     expect(prompt).toContain("every constraint id must appear in exactly one of satisfiedConstraintIds or violatedConstraintIds");
     expect(prompt).toContain("violates exactly one constraint and lists every other constraint id as satisfied");
+  });
+
+  it("블루프린트 프롬프트에 기존 출제 개념 목록을 포함한다", () => {
+    const prompt = buildCliQuestionBlueprintPrompt("t", "", "D:\\b.json", {
+      distinctions: ["관리형 대 자체 운영 구분"],
+      truncated: false,
+    });
+    expect(prompt).toContain("기존 출제 개념 목록");
+    expect(prompt).toContain("- 관리형 대 자체 운영 구분");
   });
 });
 

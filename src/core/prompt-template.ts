@@ -64,7 +64,7 @@ ${webVerificationSection("문제를 만들기 전에")}
 }
 
 export interface ExistingQuestions {
-  summaries: string[];
+  distinctions: string[];
   truncated: boolean;
 }
 
@@ -152,18 +152,18 @@ function dedupSection(existing: ExistingQuestions): string {
   const lines = [
     "## 중복 금지",
     "",
-    "- 이번에 생성하는 문제들끼리 질문 내용이 중복되면 안 됩니다.",
+    "- 이번에 생성하는 문제들끼리 같은 개념 구분(tested distinction)을 검사하면 안 됩니다.",
   ];
-  if (existing.summaries.length > 0) {
+  if (existing.distinctions.length > 0) {
     lines.push(
-      "- 아래 기존 문제 목록과 질문 내용이 같거나 표현만 바꾼 문제는 출제하지 마세요.",
+      "- 아래는 이미 출제된 문제들이 검사한 tested distinction 목록입니다. 목록과 같은 구분을 검사하는 문제는 표현을 바꿔도 출제하지 마세요.",
       "",
-      "### 기존 문제 목록",
+      "### 기존 출제 개념 목록",
       "",
-      ...existing.summaries.map((summary) => `- ${summary}`),
+      ...existing.distinctions.map((distinction) => `- ${distinction}`),
     );
     if (existing.truncated) {
-      lines.push("", "(이 외에도 기존 문제가 더 있습니다. 위 목록은 일부입니다.)");
+      lines.push("", "(이 외에도 기존 출제 개념이 더 있습니다. 위 목록은 일부입니다.)");
     }
   }
   return lines.join("\n");

@@ -131,22 +131,22 @@ function toSummaryDto(
 async function loadExistingQuestions(
   topicId: number,
 ): Promise<ExistingQuestions> {
+  // 구세대 문제(testedDistinction null)는 중복 방지 목록에서 제외한다.
+  const where = { topicId, testedDistinction: { not: null } };
   const [total, questions] = await Promise.all([
-    prisma.question.count({ where: { topicId } }),
+    prisma.question.count({ where }),
     prisma.question.findMany({
-      where: { topicId },
+      where,
       orderBy: { createdAt: "desc" },
       take: EXISTING_QUESTION_LIMIT,
-      select: { type: true, payload: true },
+      select: { testedDistinction: true },
     }),
   ]);
-  const capped = capSummaries(
-    questions.map((question) =>
-      summarizeQuestionPayload(question.type, question.payload),
-    ),
-  );
+  const capped = capSummaries([
+    ...new Set(questions.map((question) => question.testedDistinction ?? "")),
+  ]);
   return {
-    summaries: capped.kept,
+    distinctions: capped.kept,
     truncated: capped.truncated || total > EXISTING_QUESTION_LIMIT,
   };
 }
