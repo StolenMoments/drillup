@@ -209,6 +209,7 @@ export type GenerationItemDto =
       question: unknown;
       verdict: GenerationVerdictDto;
       verdictComment: string | null;
+      testedDistinction?: string | null;
       revision: GenerationItemRevisionDto | null;
     }
   | { index: number; ok: false; errors: string[] };

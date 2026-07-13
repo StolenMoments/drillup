@@ -2,7 +2,7 @@ import { rm } from "node:fs/promises";
 import path from "node:path";
 import { Prisma, type GenerationEngine, type GenerationItemRevision, type GenerationJob } from "@prisma/client";
 import { parseImportJson, type ImportQuestion, validateGeneratedQuestions } from "@/core/import-schema";
-import { prepareGeneratedItems } from "@/core/generation-result";
+import { attachTestedDistinctions, prepareGeneratedItems } from "@/core/generation-result";
 import { extractJsonObject } from "@/core/json-extract";
 import { shuffleMcqChoices } from "@/core/random";
 import { parseKeywordTagJson } from "@/core/keyword-tag-schema";
@@ -35,7 +35,7 @@ import type {
 } from "@/lib/api-types";
 import { prisma } from "../db";
 import { ServiceError } from "../errors";
-import { importQuestions } from "../import-service";
+import { importQuestions, type ImportQuestionInput } from "../import-service";
 import { attachKeywords } from "../keyword-service";
 import { requiredReferenceFiles, resolveReferenceFiles } from "./reference";
 import { generationTimeoutMs, jobOutputDir } from "./run-engine";
@@ -497,7 +497,7 @@ async function runJob(
       where: { id: jobId },
       data: {
         status: "FAILED",
-        result: unverifiedItems as unknown as Prisma.InputJsonValue,
+        result: attachTestedDistinctions(unverifiedItems, blueprints) as unknown as Prisma.InputJsonValue,
         errorMessage: failureMessage,
         rawOutput: run.resultText,
         finishedAt: new Date(),
@@ -510,7 +510,7 @@ async function runJob(
     where: { id: jobId },
     data: {
       status: "VERIFYING",
-      result: unverifiedItems as unknown as Prisma.InputJsonValue,
+      result: attachTestedDistinctions(unverifiedItems, blueprints) as unknown as Prisma.InputJsonValue,
       rawOutput: run.resultText,
     },
   });
@@ -612,9 +612,12 @@ async function runJob(
     where: { id: jobId },
     data: {
       status: "SUCCEEDED",
-      result: finalItems.map((item) => item.ok && item.question.type === "mcq"
-        ? { ...item, question: shuffleMcqChoices(item.question) as ImportQuestion }
-        : item) as unknown as Prisma.InputJsonValue,
+      result: attachTestedDistinctions(
+        finalItems.map((item) => item.ok && item.question.type === "mcq"
+          ? { ...item, question: shuffleMcqChoices(item.question) as ImportQuestion }
+          : item),
+        blueprints,
+      ) as unknown as Prisma.InputJsonValue,
       verifyWarning: [blueprintWarning, verifyWarning].filter(Boolean).join(" ") || null,
       finishedAt: new Date(),
     },
@@ -856,7 +859,7 @@ export async function approveJob(
     where: { generationJobId: id, appliedQuestion: { not: Prisma.JsonNull } },
   });
   const appliedByIndex = new Map(revisions.map((revision) => [revision.itemIndex, revision.appliedQuestion]));
-  const questions: ImportQuestion[] = [];
+  const questions: ImportQuestionInput[] = [];
   for (const index of indices) {
     const item = byIndex.get(index);
     const appliedQuestion = appliedByIndex.get(index);
@@ -867,16 +870,16 @@ export async function approveJob(
         400,
       );
     }
-    questions.push((appliedQuestion ?? item.question) as unknown as ImportQuestion);
+    questions.push({
+      question: (appliedQuestion ?? item.question) as unknown as ImportQuestion,
+      testedDistinction: item.testedDistinction ?? null,
+    });
   }
   if (questions.length === 0) {
     throw new ServiceError("INVALID_ITEMS", "저장할 항목이 없습니다", 400);
   }
 
-  const savedCount = await importQuestions(
-    job.topicId,
-    questions.map((question) => ({ question })),
-  );
+  const savedCount = await importQuestions(job.topicId, questions);
   const updated = await prisma.generationJob.update({
     where: { id },
     data: { approvedAt: new Date(), savedCount: { increment: savedCount } },

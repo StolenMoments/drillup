@@ -42,7 +42,7 @@ function succeededJob() {
     verifyEngine: "CODEX",
     status: "SUCCEEDED",
     kind: "QUESTION",
-    result: [{ index: 0, ok: true, question: originalQuestion, verdict: "fail", verdictComment: "수정 필요" }],
+    result: [{ index: 0, ok: true, question: originalQuestion, verdict: "fail", verdictComment: "수정 필요", testedDistinction: "관리형 대 자체 운영 구분" }],
     errorMessage: null,
     verifyWarning: null,
     createdAt: new Date("2026-07-11T00:00:00.000Z"),
@@ -67,7 +67,9 @@ describe("approveJob", () => {
     ]);
 
     await expect(approveJob(1, [0])).resolves.toMatchObject({ savedCount: 1 });
-    expect(importQuestionsMock).toHaveBeenCalledWith(2, [{ question: revisedQuestion }]);
+    expect(importQuestionsMock).toHaveBeenCalledWith(2, [
+      { question: revisedQuestion, testedDistinction: "관리형 대 자체 운영 구분" },
+    ]);
   });
 
   it("still rejects an original question whose verification verdict failed", async () => {
@@ -78,6 +80,18 @@ describe("approveJob", () => {
       status: 400,
     });
     expect(importQuestionsMock).not.toHaveBeenCalled();
+  });
+
+  it("testedDistinction이 없는 구버전 잡 아이템은 null로 저장한다", async () => {
+    const legacy = succeededJob();
+    legacy.result = [{ index: 0, ok: true, question: originalQuestion, verdict: "pass", verdictComment: null }] as unknown as typeof legacy.result;
+    prismaMock.generationJob.findUnique.mockResolvedValue(legacy);
+    prismaMock.generationItemRevision.findMany.mockResolvedValue([]);
+
+    await approveJob(1, [0]);
+    expect(importQuestionsMock).toHaveBeenCalledWith(2, [
+      { question: originalQuestion, testedDistinction: null },
+    ]);
   });
 });
 
