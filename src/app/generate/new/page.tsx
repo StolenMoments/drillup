@@ -1,12 +1,14 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api-client";
+import { buildGenerationRetryInput } from "@/lib/generation-retry";
 import type {
   ChoiceCountDto,
   CorrectAnswerCountDto,
   GenerationEngineDto,
+  GenerationJobDto,
   ReferenceFileListDto,
   TopicDto,
 } from "@/lib/api-types";
@@ -26,7 +28,7 @@ const CHOICE_COUNTS: ChoiceCountDto[] = [4, 5, 6];
 function GenerationNewForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const sourceQuestionIds = useMemo(() => {
+  const initialSourceQuestionIds = useMemo(() => {
     const raw = searchParams.get("sourceQuestionIds");
     if (!raw) return [];
     return raw
@@ -34,6 +36,12 @@ function GenerationNewForm() {
       .map((value) => Number(value))
       .filter((value) => Number.isInteger(value) && value > 0)
       .slice(0, 10);
+  }, [searchParams]);
+  const retryJobId = useMemo(() => {
+    const raw = searchParams.get("retryJobId");
+    if (!raw) return null;
+    const value = Number(raw);
+    return Number.isInteger(value) && value > 0 ? value : null;
   }, [searchParams]);
   const [topics, setTopics] = useState<TopicDto[]>([]);
   const [topicId, setTopicId] = useState<number | "">("");
@@ -48,34 +56,81 @@ function GenerationNewForm() {
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [starting, setStarting] = useState(false);
   const [message, setMessage] = useState("");
+  const [retryJob, setRetryJob] = useState<GenerationJobDto | null>(null);
+  const [retryMissingFiles, setRetryMissingFiles] = useState<string[]>([]);
+  const [sourceIds, setSourceIds] = useState<number[]>(initialSourceQuestionIds);
+  const retryConsumedRef = useRef(false);
 
   const selectedTopic = topics.find((topic) => topic.id === topicId);
 
   useEffect(() => {
     let ignore = false;
+    retryConsumedRef.current = false;
+
     async function load() {
-      try {
-        const list = await api.topics.list();
-        if (!ignore) {
-          setTopics(list);
-          const preset = Number(searchParams.get("topicId"));
-          if (Number.isInteger(preset) && list.some((topic) => topic.id === preset)) {
-            setTopicId(preset);
-          }
+      const [topicsResult, retryResult] = await Promise.allSettled([
+        api.topics.list(),
+        retryJobId === null ? Promise.resolve(null) : api.generate.get(retryJobId),
+      ]);
+      if (ignore) return;
+      setRetryJob(null);
+      setRetryMissingFiles([]);
+
+      if (topicsResult.status === "fulfilled") {
+        const list = topicsResult.value;
+        setTopics(list);
+        const preset = Number(searchParams.get("topicId"));
+        if (
+          retryJobId === null &&
+          Number.isInteger(preset) &&
+          list.some((topic) => topic.id === preset)
+        ) {
+          setTopicId(preset);
         }
-      } catch (error) {
-        if (!ignore) {
-          setMessage(
-            error instanceof Error ? error.message : "주제 목록을 불러오지 못했습니다",
-          );
-        }
+      } else {
+        setMessage(
+          topicsResult.reason instanceof Error
+            ? topicsResult.reason.message
+            : "주제 목록을 불러오지 못했습니다",
+        );
       }
+
+      if (retryJobId === null) return;
+      if (retryResult.status === "rejected") {
+        setMessage(
+          `❌ 이전 생성 작업을 불러오지 못했습니다. ${
+            retryResult.reason instanceof Error
+              ? retryResult.reason.message
+              : "잠시 후 다시 시도해 주세요"
+          } 일반 새 생성은 계속할 수 있습니다.`,
+        );
+        return;
+      }
+      if (retryResult.value === null) return;
+
+      const loaded = retryResult.value.job;
+      if (loaded.kind !== "QUESTION") {
+        setMessage("❌ 키워드 부여 작업은 문제 생성 재시도로 복원할 수 없습니다.");
+        return;
+      }
+
+      const retryInput = buildGenerationRetryInput(loaded, []);
+      if (!retryInput.input) return;
+      setRetryJob(loaded);
+      setTopicId(retryInput.input.topicId);
+      setEngine(retryInput.input.engine);
+      setVerifyEngine(retryInput.input.verifyEngine);
+      setVerifyTouched(true);
+      setInstructions(retryInput.input.instructions);
+      setCorrectAnswerCount(retryInput.input.correctAnswerCount);
+      setChoiceCount(retryInput.input.choiceCount);
+      setSourceIds(retryInput.input.sourceQuestionIds);
     }
     void load();
     return () => {
       ignore = true;
     };
-  }, [searchParams]);
+  }, [retryJobId, searchParams]);
 
   useEffect(() => {
     const topic = topics.find((item) => item.id === topicId);
@@ -84,13 +139,42 @@ function GenerationNewForm() {
     async function loadReferenceFiles() {
       setRefList(null);
       setSelectedFiles(new Set());
-      if (topicId === "" || !topic?.referenceDir) return;
+      setRetryMissingFiles([]);
+      const shouldRestoreRetry =
+        retryJob !== null &&
+        retryJob.topicId === topicId &&
+        !retryConsumedRef.current;
+
+      if (topicId === "") return;
+      if (!topic?.referenceDir) {
+        if (shouldRestoreRetry) {
+          const retry = buildGenerationRetryInput(retryJob as GenerationJobDto, []);
+          if (retry.input) {
+            setSelectedFiles(new Set(retry.input.referenceFiles));
+            setRetryMissingFiles(retry.missingReferenceFiles);
+          }
+          retryConsumedRef.current = true;
+        }
+        return;
+      }
 
       try {
         const list = await api.topics.referenceFiles(topicId);
         if (ignore) return;
         setRefList(list);
-        setSelectedFiles(new Set(list.files.map((file) => file.path)));
+        if (shouldRestoreRetry) {
+          const retry = buildGenerationRetryInput(
+            retryJob as GenerationJobDto,
+            list.files.map((file) => file.path),
+          );
+          if (retry.input) {
+            setSelectedFiles(new Set(retry.input.referenceFiles));
+            setRetryMissingFiles(retry.missingReferenceFiles);
+          }
+          retryConsumedRef.current = true;
+        } else {
+          setSelectedFiles(new Set(list.files.map((file) => file.path)));
+        }
       } catch {
         if (!ignore) setRefList({ files: [], dirExists: false });
       }
@@ -100,7 +184,7 @@ function GenerationNewForm() {
     return () => {
       ignore = true;
     };
-  }, [topicId, topics]);
+  }, [retryJob, topicId, topics]);
 
   function selectEngine(value: GenerationEngineDto) {
     setEngine(value);
@@ -161,7 +245,7 @@ function GenerationNewForm() {
         choiceCount,
         referenceFiles: selectedTopic?.referenceDir ? [...selectedFiles] : [],
         sourceQuestionIds:
-          sourceQuestionIds.length > 0 ? sourceQuestionIds : undefined,
+          sourceIds.length > 0 ? sourceIds : undefined,
       });
       router.push("/generate");
     } catch (error) {
@@ -181,11 +265,11 @@ function GenerationNewForm() {
         </div>
       </div>
 
-      {sourceQuestionIds.length > 0 && (
+      {sourceIds.length > 0 && (
         <section className="surface surface-pad space-y-1">
           <h2 className="section-title">🔀 변형 출제</h2>
           <p className="muted text-sm">
-            원본 문제 {sourceQuestionIds.length}개(#{sourceQuestionIds.join(", #")})와 같은
+            원본 문제 {sourceIds.length}개(#{sourceIds.join(", #")})와 같은
             개념을 다른 각도로 묻는 문제를 생성합니다.
           </p>
         </section>
@@ -260,6 +344,12 @@ function GenerationNewForm() {
             </div>
           )}
         </section>
+      )}
+
+      {retryMissingFiles.length > 0 && (
+        <p className="whitespace-pre-wrap break-all rounded-[12px] border border-[color:var(--warning)] bg-[color:var(--warning-soft)] p-3 text-sm">
+          ⚠️ 이전 작업에서 선택한 참고 자료 중 현재 존재하지 않는 파일은 제외했습니다: {retryMissingFiles.join(", ")}
+        </p>
       )}
 
       <section className="surface surface-pad space-y-3">

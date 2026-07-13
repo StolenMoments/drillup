@@ -21,7 +21,7 @@ vi.mock("../import-service", () => ({ importQuestions: importQuestionsMock }));
 vi.mock("./tracked-run", () => trackedRunMock);
 
 import type { QuestionBlueprint } from "@/core/question-blueprint";
-import { approveJob, repairGateFailures } from "./generation-service";
+import { approveJob, getJob, repairGateFailures } from "./generation-service";
 
 const originalQuestion = {
   type: "mcq",
@@ -40,6 +40,8 @@ function succeededJob() {
     topicId: 2,
     engine: "CLAUDE",
     verifyEngine: "CODEX",
+    instructions: "",
+    referenceFiles: null,
     status: "SUCCEEDED",
     kind: "QUESTION",
     result: [{ index: 0, ok: true, question: originalQuestion, verdict: "fail", verdictComment: "수정 필요", testedDistinction: "관리형 대 자체 운영 구분" }],
@@ -92,6 +94,26 @@ describe("approveJob", () => {
     expect(importQuestionsMock).toHaveBeenCalledWith(2, [
       { question: originalQuestion, testedDistinction: null },
     ]);
+  });
+});
+
+describe("getJob", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("includes normalized instructions and reference files in the DTO", async () => {
+    prismaMock.generationJob.findUnique.mockResolvedValue({
+      ...succeededJob(),
+      instructions: "실패한 생성의 추가 지시",
+      referenceFiles: ["common/a.md", 123, null, "common/b.md"],
+      itemRevisions: [],
+    });
+
+    await expect(getJob(1)).resolves.toMatchObject({
+      instructions: "실패한 생성의 추가 지시",
+      referenceFiles: ["common/a.md", "common/b.md"],
+    });
   });
 });
 

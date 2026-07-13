@@ -219,6 +219,8 @@ export interface GenerationJobDto {
   topicId: number;
   engine: GenerationEngineDto;
   verifyEngine: GenerationEngineDto;
+  instructions: string;
+  referenceFiles: string[];
   correctAnswerCount: CorrectAnswerCountDto | null;
   choiceCount: ChoiceCountDto | null;
   status: GenerationStatusDto;

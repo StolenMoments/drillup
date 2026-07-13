@@ -49,6 +49,11 @@ const VARIANT_SOURCE_LIMIT = 10;
 const EXISTING_KEYWORD_LIMIT = 50;
 const KEYWORD_TAG_BATCH_LIMIT = 50;
 
+function normalizeStringArray(value: Prisma.JsonValue | null): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
 function jobQuestionShape(job: Pick<GenerationJob, "correctAnswerCount" | "choiceCount">): GenerationQuestionShape | undefined {
   if (!job.correctAnswerCount || !job.choiceCount) return undefined;
   return {
@@ -79,6 +84,8 @@ function toDto(job: GenerationJob, revisions: GenerationItemRevision[] = []): Ge
     topicId: job.topicId,
     engine: job.engine,
     verifyEngine: job.verifyEngine,
+    instructions: typeof job.instructions === "string" ? job.instructions : "",
+    referenceFiles: normalizeStringArray(job.referenceFiles),
     correctAnswerCount: job.correctAnswerCount as CorrectAnswerCountDto | null,
     choiceCount: job.choiceCount as ChoiceCountDto | null,
     status: job.status,

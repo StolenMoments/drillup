@@ -253,9 +253,14 @@ export default function GenerationDetailPage() {
           <p className="whitespace-pre-wrap break-all rounded-[12px] border border-[color:var(--danger)] bg-[color:var(--danger-soft)] p-3 text-sm">
             ❌ 생성에 실패했습니다: {job.errorMessage}
           </p>
-          <Link href="/generate/new" className="btn btn-secondary">
-            다시 시도
-          </Link>
+          {job.kind === "QUESTION" && (
+            <Link
+              href={`/generate/new?retryJobId=${job.id}`}
+              className="btn btn-secondary"
+            >
+              다시 시도
+            </Link>
+          )}
         </section>
       )}
 
