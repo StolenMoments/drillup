@@ -80,6 +80,7 @@ model Question {
   type               QuestionType
   payload            Json
   explanation        String?             @db.Text
+  testedDistinction  String?             @map("tested_distinction") @db.Text
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
   topic              Topic               @relation(fields: [topicId], references: [id], onDelete: Cascade)
