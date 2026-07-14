@@ -76,7 +76,6 @@ type FactualReviewState =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "result"; result: FactualReviewDto; applying: boolean }
-  | { status: "applied" }
   | { status: "error"; message: string };
 
 interface FactualConcernBannerProps {
@@ -114,7 +113,8 @@ function FactualConcernBanner({
     setState({ ...state, applying: true });
     try {
       await api.questions.update(questionId, { payload, explanation: null });
-      setState({ status: "applied" });
+      // 부모가 해설/하드닝 상태를 리셋하면서 이 배너는 언마운트되고,
+      // 성공 메시지는 부모(ResultPanel)의 안정적인 위치에서 렌더된다.
       onApplied();
     } catch (err) {
       setState({
@@ -131,29 +131,27 @@ function FactualConcernBanner({
       <p className="rounded-[12px] border border-[color:var(--warning)] bg-[color:var(--warning-soft)] px-3 py-2 text-sm">
         ⚠️ 사실 확인 필요: {concern}
       </p>
-      {state.status !== "applied" && (
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={engine}
-            onChange={(event) => setEngine(event.target.value as GenerationEngineDto)}
-            disabled={busy}
-            className="field"
-          >
-            {ENGINES.map(({ value }) => (
-              <option key={value} value={value}>
-                {engineLabel(value)}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={requestReview}
-            disabled={busy}
-            className="btn btn-secondary text-sm"
-          >
-            {state.status === "loading" ? "확인 중..." : "🔍 사실 확인 요청"}
-          </button>
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={engine}
+          onChange={(event) => setEngine(event.target.value as GenerationEngineDto)}
+          disabled={busy}
+          className="field"
+        >
+          {ENGINES.map(({ value }) => (
+            <option key={value} value={value}>
+              {engineLabel(value)}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={requestReview}
+          disabled={busy}
+          className="btn btn-secondary text-sm"
+        >
+          {state.status === "loading" ? "확인 중..." : "🔍 사실 확인 요청"}
+        </button>
+      </div>
       {state.status === "error" && (
         <p className="text-[color:var(--danger)]">❌ {state.message}</p>
       )}
@@ -255,11 +253,6 @@ function FactualConcernBanner({
             </div>
           );
         })()}
-      {state.status === "applied" && (
-        <p className="text-[color:var(--success)]">
-          적용됨 — 다음 학습부터 교정된 문제가 나옵니다 🎉
-        </p>
-      )}
     </div>
   );
 }
@@ -278,12 +271,15 @@ export default function ResultPanel({
   const [harden, setHarden] = useState<HardenState>({ status: "idle" });
   const [hardenEngine, setHardenEngine] = useState<GenerationEngineDto>("CLAUDE");
   const [verifyEngine, setVerifyEngine] = useState<GenerationEngineDto>("CODEX");
+  const [factualApplied, setFactualApplied] = useState(false);
 
   // 사실 확인 이의가 적용되어 문제 payload가 바뀌었으므로, 이전 문제를 기준으로 한
-  // 해설/난이도 강화 상태는 모두 무효화한다.
+  // 해설/난이도 강화 상태는 모두 무효화한다. 배너가 함께 언마운트되므로
+  // 성공 메시지는 언마운트되지 않는 위치에서 factualApplied로 렌더한다.
   function resetAfterFactualApply() {
     setEngineStates(idleEngineStates());
     setHarden({ status: "idle" });
+    setFactualApplied(true);
   }
 
   async function requestHarden() {
@@ -354,6 +350,11 @@ export default function ResultPanel({
       }`}
     >
       <p className="text-lg font-bold">{resultTitle(result.isCorrect)}</p>
+      {factualApplied && (
+        <p className="text-[color:var(--success)]">
+          ✅ 사실 교정이 적용되었습니다 — 다음 학습부터 교정된 문제가 나옵니다 🎉
+        </p>
+      )}
       {!result.isCorrect &&
         result.correct.type === "MCQ" &&
         question.type === "MCQ" && (
