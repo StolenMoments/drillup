@@ -2,6 +2,7 @@ import type {
   AnswerExplanationDto,
   ChoiceCountDto,
   CorrectAnswerCountDto,
+  FactualReviewDto,
   GenerationEngineDto,
   GenerationJobDto,
   GenerationJobSummaryDto,
@@ -129,6 +130,11 @@ export const api = {
       request<HardenPreviewDto>(`/api/questions/${id}/harden-choices`, {
         method: "POST",
         body: JSON.stringify({ engine, verifyEngine }),
+      }),
+    reviewFact: (id: number, engine: GenerationEngineDto, concern: string) =>
+      request<FactualReviewDto>(`/api/questions/${id}/review-fact`, {
+        method: "POST",
+        body: JSON.stringify({ engine, concern }),
       }),
     addKeyword: (id: number, name: string) =>
       request<KeywordRefDto>(`/api/questions/${id}/keywords`, {

@@ -701,6 +701,65 @@ ${EXAM_MCQ_RULES}
 `;
 }
 
+export function buildFactualConcernReviewPrompt(
+  topicName: string,
+  payload: McqPayload,
+  concern: string,
+  resultPath: string,
+): string {
+  const target = {
+    question: payload.question,
+    choices: payload.choices,
+    answer_indices: mcqAnswerIndices(payload),
+    choice_explanations: payload.choice_explanations,
+  };
+  return `당신은 학습 문제의 사실 정확성을 검증하는 전문가입니다. 주제 "${topicName}"의 아래 객관식 문제에 대해 제기된 이의를 판정하세요.
+
+${webVerificationSection("판정하기 전에")}## 대상 문제
+
+\`\`\`json
+${JSON.stringify(target)}
+\`\`\`
+
+## 제기된 이의
+
+${concern.trim()}
+
+## 판정 기준
+
+- confirmed: 이의가 타당하고 현재 정답이 최신 공식 문서와 다릅니다. 이 경우 반드시 revised 필드에 교정된 전체 문제 payload를 포함하세요. 이 판정에서는 정답 선지 텍스트와 answer_indices를 변경하는 것이 허용됩니다(그것이 이 판정의 목적입니다). 다만 최소 수정 원칙을 지키세요: 사실 오류를 바로잡는 데 필요한 부분만 수정하고, 문제의 주제·형식·선지 개수는 원본과 동일하게 유지하세요. choice_explanations도 교정 내용에 맞게 갱신하세요.
+- rejected: 현재 문제가 옳고 이의가 틀렸습니다.
+- unverifiable: 공식 문서로 판단할 수 없습니다.
+
+## 출력 형식
+
+다른 설명 없이 아래 구조의 JSON만 작성하세요. 코드 펜스(\`\`\`)를 쓰지 마세요.
+
+{
+  "verdict": "confirmed",
+  "comment": "판정 의견을 한국어로 간결하게 작성",
+  "evidence_url": "근거가 되는 공식 문서 URL (가능하면)",
+  "revised": {
+    "question": "교정된 질문 (confirmed일 때만 포함)",
+    "choices": ["교정된 전체 선지 배열"],
+    "answer_indices": [0],
+    "choice_explanations": ["선지별 교정된 판단 근거 (선지 수와 동일한 개수)"]
+  }
+}
+
+- verdict는 "confirmed", "rejected", "unverifiable" 중 하나만 허용됩니다.
+- comment는 반드시 한국어로 작성하세요.
+- evidence_url은 근거가 되는 공식 문서 URL이 있으면 적고, 없으면 생략하세요.
+- revised는 verdict가 confirmed일 때만 포함하세요. rejected나 unverifiable이면 revised를 생략하세요.
+
+## 결과 저장 (반드시 준수)
+
+- 결과 JSON을 stdout에 출력하지 마세요.
+- 결과 JSON은 다음 경로에 UTF-8 텍스트 파일로만 저장하세요: ${resultPath}
+- 파일 내용은 위 출력 형식의 JSON만 포함해야 하며, 코드 펜스나 설명 문장을 추가하지 마세요.
+`;
+}
+
 export function buildChoiceHardeningVerificationPrompt(
   topicName: string,
   original: McqPayload,

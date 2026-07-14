@@ -154,6 +154,16 @@ export interface HardenPreviewDto {
   payload: HardenedMcqPayloadDto;
 }
 
+export type FactualReviewVerdictDto = "confirmed" | "rejected" | "unverifiable";
+
+export interface FactualReviewDto {
+  engine: GenerationEngineDto;
+  verdict: FactualReviewVerdictDto;
+  comment: string;
+  evidenceUrl: string | null;
+  payload: HardenedMcqPayloadDto | null;
+}
+
 export type GenerationEngineDto = "CLAUDE" | "CODEX" | "ANTIGRAVITY";
 export type CorrectAnswerCountDto = 1 | 2;
 export type ChoiceCountDto = 4 | 5 | 6;

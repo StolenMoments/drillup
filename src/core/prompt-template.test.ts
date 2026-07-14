@@ -11,6 +11,7 @@ import {
   buildCliKeywordTagPrompt,
   buildCliRevisionPrompt,
   buildCliVerifyPrompt,
+  buildFactualConcernReviewPrompt,
   buildGenerationPrompt,
   buildKeywordSuggestionPrompt,
 } from "./prompt-template";
@@ -701,5 +702,57 @@ describe("선지 강화 프롬프트 factual_concern", () => {
       "C:/out/result.json",
     );
     expect(prompt).toContain("factual_concern");
+  });
+});
+
+describe("buildFactualConcernReviewPrompt", () => {
+  const payload = {
+    question: "S3 버킷을 퍼블릭 접근으로부터 보호하는 가장 좋은 방법은?",
+    choices: ["퍼블릭 액세스 차단 활성화", "오답 A", "오답 B", "오답 C"],
+    answer_indices: [0],
+    choice_explanations: ["근거 1", "근거 2", "근거 3", "근거 4"],
+  };
+
+  it("주제명·대상 문제·제기된 이의·웹 검증 지시를 포함한다", () => {
+    const prompt = buildFactualConcernReviewPrompt(
+      "AWS SAA",
+      payload,
+      "이 서비스는 더 이상 이 방식을 지원하지 않습니다",
+      "C:\\out\\result.json",
+    );
+    expect(prompt).toContain('"AWS SAA"');
+    expect(prompt).toContain("S3 버킷을 퍼블릭 접근으로부터 보호하는 가장 좋은 방법은?");
+    expect(prompt).toContain("퍼블릭 액세스 차단 활성화");
+    expect(prompt).toContain("이 서비스는 더 이상 이 방식을 지원하지 않습니다");
+    expect(prompt).toContain("## 웹 검색 기반 사실 확인");
+    expect(prompt).toContain("판정하기 전에 사용 가능한 WebSearch/WebFetch/브라우징 도구");
+  });
+
+  it("판정 기준 confirmed/rejected/unverifiable을 포함한다", () => {
+    const prompt = buildFactualConcernReviewPrompt("주제", payload, "이의", "C:/out/result.json");
+    expect(prompt).toContain("confirmed");
+    expect(prompt).toContain("rejected");
+    expect(prompt).toContain("unverifiable");
+    expect(prompt).toContain("최소 수정 원칙");
+  });
+
+  it("출력 형식에 verdict/comment/evidence_url/revised 필드와 저장 경로를 포함한다", () => {
+    const prompt = buildFactualConcernReviewPrompt("주제", payload, "이의", "C:\\out\\result.json");
+    expect(prompt).toContain('"verdict"');
+    expect(prompt).toContain('"comment"');
+    expect(prompt).toContain('"evidence_url"');
+    expect(prompt).toContain('"revised"');
+    expect(prompt).toContain("C:\\out\\result.json");
+    expect(prompt).toContain("stdout에 출력하지 마세요");
+  });
+
+  it("레거시 answer_index를 answer_indices로 정규화해 보여준다", () => {
+    const prompt = buildFactualConcernReviewPrompt(
+      "주제",
+      { question: "q?", choices: ["a", "b", "c", "d"], answer_index: 2 },
+      "이의",
+      "/tmp/result.json",
+    );
+    expect(prompt).toContain('"answer_indices":[2]');
   });
 });
