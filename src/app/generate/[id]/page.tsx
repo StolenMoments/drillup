@@ -6,9 +6,16 @@ import { useEffect, useRef, useState } from "react";
 import QuestionPreview from "@/components/QuestionPreview";
 import QuestionComparison from "@/components/QuestionComparison";
 import GenerationDiagnostics from "@/components/GenerationDiagnostics";
+import GenerationActionDock from "@/components/GenerationActionDock";
 import type { ImportQuestion } from "@/core/import-schema";
 import { api } from "@/lib/api-client";
 import type { GenerationEngineDto, GenerationJobDto } from "@/lib/api-types";
+import {
+  getRevisionCounts,
+  hasAppliedRevision,
+  isQuestionItemSaveable,
+  selectValidItemIndices,
+} from "@/lib/generation-ux";
 
 const POLL_INTERVAL_MS = 5000;
 const ENGINES: Array<{ value: GenerationEngineDto; label: string }> = [
@@ -16,23 +23,6 @@ const ENGINES: Array<{ value: GenerationEngineDto; label: string }> = [
   { value: "CODEX", label: "Codex" },
   { value: "ANTIGRAVITY", label: "agy" },
 ];
-
-function selectValidItems(job: GenerationJobDto): Set<number> {
-  if (job.status !== "SUCCEEDED") return new Set<number>();
-  if (job.kind === "KEYWORD_TAG") {
-    return new Set((job.keywordItems ?? []).map((item) => item.id));
-  }
-  if (!job.items) return new Set<number>();
-  return new Set(
-    job.items
-      .filter(
-        (item) =>
-          item.ok &&
-          (item.verdict !== "fail" || Boolean(item.revision?.appliedQuestion)),
-      )
-      .map((item) => item.index),
-  );
-}
 
 function statusLabel(job: GenerationJobDto, elapsed: number): string {
   switch (job.status) {
@@ -79,7 +69,7 @@ export default function GenerationDetailPage() {
           ),
         );
         if (loaded.status === "SUCCEEDED") {
-          setSelected(selectValidItems(loaded));
+          setSelected(selectValidItemIndices(loaded));
           hasAutoSelectedRef.current = true;
         }
       } catch (error) {
@@ -108,7 +98,7 @@ export default function GenerationDetailPage() {
         const { job: next } = await api.generate.get(currentJob.id);
         setJob(next);
         if (next.status === "SUCCEEDED" && !hasAutoSelectedRef.current) {
-          setSelected(selectValidItems(next));
+          setSelected(selectValidItemIndices(next));
           hasAutoSelectedRef.current = true;
         }
       } catch {
@@ -144,9 +134,16 @@ export default function GenerationDetailPage() {
     try {
       const result = await api.generate.setRevisionUsage(job.id, index, useRevision);
       setJob(result.job);
-      if (useRevision) {
-        setSelected((prev) => new Set(prev).add(index));
-      }
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (useRevision) {
+          next.add(index);
+        } else {
+          const item = result.job.items?.find((candidate) => candidate.index === index);
+          if (item && !isQuestionItemSaveable(item)) next.delete(index);
+        }
+        return next;
+      });
       setMessage(useRevision ? "✅ 수정본을 적용했습니다." : "✅ 원문으로 되돌렸습니다.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "❌ 수정본을 적용하지 못했습니다.");
@@ -172,7 +169,13 @@ export default function GenerationDetailPage() {
   }
 
   async function save() {
-    if (job?.status !== "SUCCEEDED" || selected.size === 0 || saving) return;
+    if (
+      !job ||
+      job.status !== "SUCCEEDED" ||
+      selected.size === 0 ||
+      saving ||
+      getRevisionCounts(job.items).running > 0
+    ) return;
     if (
       job.savedCount > 0 &&
       !window.confirm(`이미 ${job.savedCount}개를 저장했습니다. 다시 저장할까요?`)
@@ -190,7 +193,7 @@ export default function GenerationDetailPage() {
           ? `✅ ${result.savedCount}개 문제에 키워드를 적용했습니다`
           : `✅ ${result.savedCount}개 문제를 저장했습니다`,
       );
-      router.push("/generate");
+      router.push(`/generate?saved=${result.savedCount}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "저장에 실패했습니다");
     } finally {
@@ -198,8 +201,18 @@ export default function GenerationDetailPage() {
     }
   }
 
+  const revisionCounts = getRevisionCounts(job?.items ?? null);
+  const showActionDock =
+    job?.status === "SUCCEEDED" &&
+    (job.kind === "QUESTION" || job.kind === "KEYWORD_TAG");
+
   return (
-    <div className="app-page space-y-4">
+    <div
+      className={
+        "app-page space-y-4" +
+        (showActionDock ? " generation-detail-page" : "")
+      }
+    >
       <div className="page-header">
         <div>
           <h1 className="page-title">생성 작업 #{Number.isFinite(jobId) ? jobId : ""}</h1>
@@ -213,6 +226,7 @@ export default function GenerationDetailPage() {
       </div>
 
       {!job && !message && <p className="muted text-sm">불러오는 중...</p>}
+      {!job && message && <p className="text-sm text-[color:var(--danger)]">{message}</p>}
 
       {job && (
         <section className="surface surface-pad space-y-2">
@@ -269,9 +283,10 @@ export default function GenerationDetailPage() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="section-title">미리보기 및 저장</h2>
             <button
+              type="button"
               onClick={save}
-              disabled={selected.size === 0 || saving}
-              className="btn btn-success"
+              disabled={selected.size === 0 || saving || revisionCounts.running > 0}
+              className="btn btn-secondary"
             >
               {saving ? "저장 중..." : `선택한 ${selected.size}개 문제 저장`}
             </button>
@@ -287,6 +302,8 @@ export default function GenerationDetailPage() {
               : null;
             const revision = item.ok ? item.revision : null;
             const input = revisionInput(item.index);
+            const saveable = isQuestionItemSaveable(item);
+            const revisionApplied = item.ok && hasAppliedRevision(item);
             return <div
               key={item.index}
               className={`surface surface-pad ${
@@ -315,6 +332,11 @@ export default function GenerationDetailPage() {
                     {item.verdict === "unverified" && (
                       <span className="chip">검증 안 됨</span>
                     )}
+                    {revisionApplied && (
+                      <span className="chip generation-revision-active">
+                        수정본 사용 중
+                      </span>
+                    )}
                     <div className="ml-auto flex items-center gap-3">
                       <button
                         type="button"
@@ -328,6 +350,7 @@ export default function GenerationDetailPage() {
                           type="checkbox"
                           checked={selected.has(item.index)}
                           onChange={() => toggle(item.index)}
+                          disabled={!saveable}
                         />
                         저장
                       </label>
@@ -339,7 +362,12 @@ export default function GenerationDetailPage() {
               </div>
               {item.ok ? (
                 <>
-                  <p className="mb-1 text-sm font-semibold">현재 저장될 버전</p>
+                  <div className="generation-current-version mb-1">
+                    <p className="text-sm font-semibold">현재 저장될 버전</p>
+                    <span className={`chip ${revisionApplied ? "generation-revision-active" : ""}`}>
+                      {revisionApplied ? "수정본 사용 중" : "원문 사용 중"}
+                    </span>
+                  </div>
                   <QuestionPreview
                     question={currentQuestion as ImportQuestion}
                     revealed={revealed.has(item.index)}
@@ -358,6 +386,11 @@ export default function GenerationDetailPage() {
                   )}
                   {item.verdict === "pass" && item.verdictComment && (
                     <p className="subtle mt-2 text-xs">{item.verdictComment}</p>
+                  )}
+                  {!saveable && (
+                    <p className="mt-2 whitespace-pre-wrap break-words rounded-[12px] border border-[color:var(--warning)] bg-[color:var(--warning-soft)] p-2 text-sm">
+                      ⚠️ 검증 실패 문항은 수정본을 적용한 뒤 저장할 수 있습니다.
+                    </p>
                   )}
                   <details className="mt-3 border-t border-[color:var(--border)] pt-3">
                     <summary className="cursor-pointer text-sm font-semibold text-[color:var(--brand)]">
@@ -385,6 +418,11 @@ export default function GenerationDetailPage() {
                         disabled={revision?.status === "RUNNING"} className="btn btn-secondary text-sm">
                         {revision?.status === "RUNNING" ? "AI 재검증 중…" : "AI 재검증 및 수정본 받기"}
                       </button>
+                      {revision?.status === "RUNNING" && (
+                        <p className="text-sm" role="status" aria-live="polite">
+                          ⏳ 이 문항의 수정본을 확인하는 중입니다. 확인이 끝날 때까지 저장할 수 없습니다.
+                        </p>
+                      )}
                       {revision?.status === "FAILED" && (
                         <p className="text-sm text-[color:var(--danger)]">❌ {revision.errorMessage}</p>
                       )}
@@ -397,7 +435,7 @@ export default function GenerationDetailPage() {
                             revealed={revealed.has(item.index)}
                           />
                           <div className="flex flex-wrap gap-2">
-                            <button type="button" onClick={() => void setRevisionUsage(item.index, true)} className="btn btn-primary text-sm">수정본 적용</button>
+                            <button type="button" onClick={() => void setRevisionUsage(item.index, true)} disabled={revisionApplied} className="btn btn-primary text-sm">{revisionApplied ? "수정본 사용 중" : "수정본 적용"}</button>
                             {Boolean(revision.appliedQuestion) && <button type="button" onClick={() => void setRevisionUsage(item.index, false)} className="btn btn-secondary text-sm">원문으로 되돌리기</button>}
                           </div>
                         </div>
@@ -422,9 +460,10 @@ export default function GenerationDetailPage() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="section-title">제안된 키워드 확인 및 적용</h2>
             <button
+              type="button"
               onClick={save}
               disabled={selected.size === 0 || saving}
-              className="btn btn-success"
+              className="btn btn-secondary"
             >
               {saving ? "적용 중..." : `선택한 ${selected.size}개 문제에 적용`}
             </button>
@@ -457,7 +496,17 @@ export default function GenerationDetailPage() {
         </section>
       )}
 
-      {message && <p className="text-sm text-[color:var(--brand)]">{message}</p>}
+      {showActionDock && job && (
+        <GenerationActionDock
+          kind={job.kind}
+          selectedCount={selected.size}
+          appliedRevisionCount={revisionCounts.applied}
+          runningRevisionCount={revisionCounts.running}
+          saving={saving}
+          message={message}
+          onSave={() => void save()}
+        />
+      )}
     </div>
   );
 }

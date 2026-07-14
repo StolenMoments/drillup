@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
 import type { GenerationJobSummaryDto } from "@/lib/api-types";
+import { getSavedFlashMessage } from "@/lib/generation-ux";
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -20,9 +22,21 @@ function statusBadge(job: GenerationJobSummaryDto): string {
   }
 }
 
-export default function GenerationListPage() {
+function GenerationListContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const savedParam = searchParams.get("saved");
+  const savedFlashMessage = getSavedFlashMessage(savedParam);
   const [jobs, setJobs] = useState<GenerationJobSummaryDto[] | null>(null);
   const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (!savedFlashMessage) return;
+    const timeout = window.setTimeout(() => {
+      router.replace("/generate", { scroll: false });
+    }, 4500);
+    return () => window.clearTimeout(timeout);
+  }, [router, savedFlashMessage]);
 
   useEffect(() => {
     let ignore = false;
@@ -83,7 +97,9 @@ export default function GenerationListPage() {
         </Link>
       </div>
 
-      {jobs === null && !message && <p className="muted text-sm">불러오는 중...</p>}
+      {jobs === null && !message && !savedFlashMessage && (
+        <p className="muted text-sm">불러오는 중...</p>
+      )}
 
       {jobs !== null && jobs.length === 0 && (
         <p className="muted text-sm">
@@ -130,7 +146,27 @@ export default function GenerationListPage() {
         </div>
       )}
 
-      {message && <p className="text-sm text-[color:var(--danger)]">{message}</p>}
+      {(message || savedFlashMessage) && (
+        <p
+          className={`generation-flash text-sm ${
+            savedFlashMessage
+              ? "generation-flash-success"
+              : "text-[color:var(--danger)]"
+          }`}
+          role="status"
+          aria-live="polite"
+        >
+          {savedFlashMessage ?? message}
+        </p>
+      )}
     </div>
+  );
+}
+
+export default function GenerationListPage() {
+  return (
+    <Suspense fallback={<p className="muted text-sm">불러오는 중...</p>}>
+      <GenerationListContent />
+    </Suspense>
   );
 }

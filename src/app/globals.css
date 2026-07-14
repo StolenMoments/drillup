@@ -249,6 +249,88 @@ textarea::placeholder {
     line-height: 1.35;
   }
 
+  .generation-detail-page {
+    padding-bottom: calc(7.5rem + env(safe-area-inset-bottom));
+  }
+
+  .generation-action-dock {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    border-top: 1px solid var(--border);
+    background: var(--surface-raised);
+    box-shadow: 0 -2px 8px oklch(0.28 0.024 250 / 0.08);
+    padding: 0.75rem 1rem max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  .generation-action-dock-inner {
+    display: flex;
+    max-width: 72rem;
+    margin: 0 auto;
+    flex-direction: column;
+    gap: 0.7rem;
+  }
+
+  .generation-action-dock-summary {
+    min-width: 0;
+  }
+
+  .generation-action-dock-counts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--text);
+    font-size: 0.9rem;
+  }
+
+  .generation-action-dock-counts strong {
+    font-size: 1.05rem;
+  }
+
+  .generation-action-dock-revision-count {
+    color: var(--success);
+  }
+
+  .generation-action-dock-message {
+    margin-top: 0.25rem;
+    color: var(--muted);
+    font-size: 0.75rem;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+
+  .generation-action-dock-button {
+    width: 100%;
+    flex-shrink: 0;
+  }
+
+  .generation-current-version {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .generation-revision-active {
+    background: var(--success-soft);
+    color: var(--success);
+  }
+
+  .generation-flash {
+    border-radius: 10px;
+    padding: 0.7rem 0.8rem;
+  }
+
+  .generation-flash-success {
+    border: 1px solid var(--success);
+    background: var(--success-soft);
+    color: var(--success);
+  }
+
   .diff-comparison {
     display: grid;
     gap: 0.9rem;
@@ -331,6 +413,18 @@ textarea::placeholder {
 }
 
 @media (min-width: 48rem) {
+  .generation-action-dock-inner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .generation-action-dock-button {
+    width: auto;
+    min-width: 15rem;
+  }
+
   .diff-comparison-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
