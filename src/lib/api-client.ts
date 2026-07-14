@@ -122,14 +122,10 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ engine }),
       }),
-    hardenChoices: (
-      id: number,
-      engine: GenerationEngineDto,
-      verifyEngine: GenerationEngineDto,
-    ) =>
+    hardenChoices: (id: number, engine: GenerationEngineDto) =>
       request<HardenPreviewDto>(`/api/questions/${id}/harden-choices`, {
         method: "POST",
-        body: JSON.stringify({ engine, verifyEngine }),
+        body: JSON.stringify({ engine }),
       }),
     reviewFact: (id: number, engine: GenerationEngineDto, concern: string) =>
       request<FactualReviewDto>(`/api/questions/${id}/review-fact`, {

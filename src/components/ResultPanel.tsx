@@ -38,7 +38,7 @@ type EngineState =
 
 type HardenState =
   | { status: "idle" }
-  | { status: "loading" }
+  | { status: "loading"; engine: GenerationEngineDto }
   | { status: "preview"; preview: HardenPreviewDto; applying: boolean }
   | { status: "applied" }
   | { status: "error"; message: string };
@@ -266,11 +266,13 @@ export default function ResultPanel({
 }: ResultPanelProps) {
   const [engineStates, setEngineStates] = useState<
     Record<GenerationEngineDto, EngineState>
-  >(idleEngineStates);
+  >({
+    CLAUDE: { status: "idle" },
+    CODEX: { status: "idle" },
+    ANTIGRAVITY: { status: "idle" },
+  });
 
   const [harden, setHarden] = useState<HardenState>({ status: "idle" });
-  const [hardenEngine, setHardenEngine] = useState<GenerationEngineDto>("CLAUDE");
-  const [verifyEngine, setVerifyEngine] = useState<GenerationEngineDto>("CODEX");
   const [factualApplied, setFactualApplied] = useState(false);
 
   // 사실 확인 이의가 적용되어 문제 payload가 바뀌었으므로, 이전 문제를 기준으로 한
@@ -282,14 +284,10 @@ export default function ResultPanel({
     setFactualApplied(true);
   }
 
-  async function requestHarden() {
-    setHarden({ status: "loading" });
+  async function requestHarden(engine: GenerationEngineDto) {
+    setHarden({ status: "loading", engine });
     try {
-      const preview = await api.questions.hardenChoices(
-        question.id,
-        hardenEngine,
-        verifyEngine,
-      );
+      const preview = await api.questions.hardenChoices(question.id, engine);
       setHarden({ status: "preview", preview, applying: false });
     } catch (err) {
       setHarden({
@@ -303,11 +301,11 @@ export default function ResultPanel({
     if (harden.status !== "preview" || harden.applying) return;
     setHarden({ ...harden, applying: true });
     try {
+      const detail = await api.questions.get(question.id);
       await api.questions.update(question.id, {
         payload: harden.preview.payload,
-        explanation: null,
+        explanation: detail.explanation,
       });
-      setEngineStates(idleEngineStates());
       setHarden({ status: "applied" });
     } catch (err) {
       setHarden({
@@ -463,43 +461,22 @@ export default function ResultPanel({
         <div className="space-y-2 border-t border-[color:var(--border)] pt-3">
           <p className="section-title">🎯 선지 난이도 올리기</p>
           {harden.status !== "applied" && (
-            <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
-              <label className="space-y-1 text-sm">
-                <span className="font-medium">변형 생성 엔진</span>
-                <select
-                  value={hardenEngine}
-                  onChange={(event) => setHardenEngine(event.target.value as GenerationEngineDto)}
-                  disabled={harden.status === "loading" || (harden.status === "preview" && harden.applying)}
-                  className="field"
+            <div className="flex flex-wrap gap-2">
+              {ENGINES.map(({ value }) => (
+                <button
+                  key={value}
+                  onClick={() => requestHarden(value)}
+                  disabled={
+                    harden.status === "loading" ||
+                    (harden.status === "preview" && harden.applying)
+                  }
+                  className="btn btn-secondary text-sm"
                 >
-                  {ENGINES.map(({ value }) => (
-                    <option key={value} value={value}>{engineLabel(value)}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="space-y-1 text-sm">
-                <span className="font-medium">의미 검증 엔진</span>
-                <select
-                  value={verifyEngine}
-                  onChange={(event) => setVerifyEngine(event.target.value as GenerationEngineDto)}
-                  disabled={harden.status === "loading" || (harden.status === "preview" && harden.applying)}
-                  className="field"
-                >
-                  {ENGINES.map(({ value }) => (
-                    <option key={value} value={value}>{engineLabel(value)}</option>
-                  ))}
-                </select>
-              </label>
-              <button
-                onClick={requestHarden}
-                disabled={
-                  harden.status === "loading" ||
-                  (harden.status === "preview" && harden.applying)
-                }
-                className="btn btn-secondary text-sm"
-              >
-                {harden.status === "loading" ? "검증 중..." : "의미 보존 변형 만들기"}
-              </button>
+                  {harden.status === "loading" && harden.engine === value
+                    ? "수정본 받는 중..."
+                    : `${engineLabel(value)}로 올리기`}
+                </button>
+              ))}
             </div>
           )}
           {harden.status === "error" && (
@@ -509,10 +486,7 @@ export default function ResultPanel({
           )}
           {harden.status === "preview" && (
             <div className="surface surface-pad space-y-2">
-              <div className="flex flex-wrap gap-2">
-                <p className="chip">생성: {engineLabel(harden.preview.engine)}</p>
-                <p className="chip">검증: {engineLabel(harden.preview.verifyEngine)}</p>
-              </div>
+              <p className="chip">{engineLabel(harden.preview.engine)}</p>
               {harden.preview.factualConcern && (
                 <FactualConcernBanner
                   questionId={question.id}
@@ -524,57 +498,42 @@ export default function ResultPanel({
               <p className="text-[color:var(--muted)]">
                 {harden.preview.comment}
               </p>
-              <p className="rounded-[10px] border border-[color:var(--success)] bg-[color:var(--success-soft)] px-3 py-2 text-sm">
-                ✅ 의미 보존 검증 통과: {harden.preview.verificationComment}
-              </p>
-              <div className="diff-comparison" aria-label="문제와 선지 원본 및 변형 비교">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <h3 className="section-title">원본 ↔ 변형 비교</h3>
-                    <p className="muted mt-1 text-xs">문제 본문과 정답·오답의 변경 내용을 확인하세요.</p>
-                  </div>
-                  <div className="diff-legend" aria-label="변경 범례">
-                    <span className="diff-legend-item"><del className="diff-deleted">원본</del></span>
-                    <span className="diff-legend-item"><ins className="diff-added">변형</ins></span>
-                  </div>
-                </div>
-                <div className="diff-comparison-grid">
-                  <section className="diff-panel">
-                    <h4 className="diff-panel-title">문제 본문</h4>
-                    <del className="diff-deleted">{question.question}</del>
-                    <ins className="diff-added ml-1">{harden.preview.payload.question}</ins>
-                  </section>
-                  <section className="diff-panel">
-                    <h4 className="diff-panel-title">변경 요약</h4>
-                    <p className="text-sm text-[color:var(--muted)]">정답 인덱스와 선지 순서는 유지됩니다.</p>
-                    <p className="mt-1 text-sm text-[color:var(--muted)]">검증 의견: {harden.preview.verificationComment}</p>
-                  </section>
-                </div>
-                <ul className="space-y-2 text-sm">
+              <ul className="space-y-2 text-sm">
                 {harden.preview.payload.choices.map((newText, i) => {
                   const oldText = question.choices.find(
                     (choice) => choice.original_index === i,
-                  )?.text ?? "(원본 없음)";
+                  )?.text;
                   const isAnswer =
                     harden.preview.payload.answer_indices.includes(i);
+                  if (isAnswer) {
+                    return (
+                      <li key={i}>
+                        <span className="font-medium text-[color:var(--text)]">
+                          {newText}
+                        </span>{" "}
+                        <span className="chip">정답 유지 ✅</span>
+                      </li>
+                    );
+                  }
                   if (oldText === newText) {
                     return (
-                      <li key={i} className="diff-panel">
-                        <p className="font-medium">선지 {i + 1} {isAnswer && <span className="chip ml-1">정답 ✅</span>}</p>
-                        <p className="text-[color:var(--muted)]">변경 없음: {newText}</p>
+                      <li key={i} className="text-[color:var(--muted)]">
+                        {newText}
                       </li>
                     );
                   }
                   return (
-                    <li key={i} className="diff-panel space-y-1">
-                      <p className="font-medium">선지 {i + 1} {isAnswer && <span className="chip ml-1">정답 ✅</span>}</p>
-                      <p><del className="diff-deleted">{oldText}</del></p>
-                      <p><ins className="diff-added">{newText}</ins></p>
+                    <li key={i} className="space-y-1">
+                      <p className="text-[color:var(--muted)] line-through">
+                        {oldText}
+                      </p>
+                      <p className="font-medium text-[color:var(--text)]">
+                        → {newText}
+                      </p>
                     </li>
                   );
                 })}
-                </ul>
-              </div>
+              </ul>
               <button
                 onClick={applyHarden}
                 disabled={harden.applying}

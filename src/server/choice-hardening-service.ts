@@ -2,12 +2,8 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { GenerationEngine } from "@prisma/client";
 import { parseHardenJson } from "@/core/harden-schema";
-import { parseHardenVerificationJson } from "@/core/harden-verification-schema";
 import { extractJsonObject } from "@/core/json-extract";
-import {
-  buildChoiceHardeningPrompt,
-  buildChoiceHardeningVerificationPrompt,
-} from "@/core/prompt-template";
+import { buildChoiceHardeningPrompt } from "@/core/prompt-template";
 import type { McqPayload } from "@/core/types";
 import type { HardenPreviewDto } from "@/lib/api-types";
 import { prisma } from "./db";
@@ -17,7 +13,6 @@ import { runEngine } from "./generation/run-engine";
 export async function hardenQuestionChoices(
   questionId: number,
   engine: GenerationEngine,
-  verifyEngine: GenerationEngine,
 ): Promise<HardenPreviewDto> {
   const question = await prisma.question.findUnique({
     where: { id: questionId },
@@ -38,15 +33,15 @@ export async function hardenQuestionChoices(
   const dir = path.resolve(
     "generation_output",
     "harden",
-    `${questionId}-${engine.toLowerCase()}-${verifyEngine.toLowerCase()}-${randomUUID()}`,
+    `${questionId}-${engine.toLowerCase()}-${randomUUID()}`,
   );
   const prompt = buildChoiceHardeningPrompt(
     question.topic.name,
     original,
-    path.join(dir, "generate-result.json"),
+    path.join(dir, "result.json"),
   );
 
-  const run = await runEngine(engine, prompt, dir, "generate-");
+  const run = await runEngine(engine, prompt, dir);
   if (!run.ok) {
     throw new ServiceError("HARDEN_FAILED", run.failureReason, 502);
   }
@@ -56,45 +51,9 @@ export async function hardenQuestionChoices(
     throw new ServiceError("HARDEN_PARSE_ERROR", parsed.fatal, 502);
   }
 
-  const verificationPrompt = buildChoiceHardeningVerificationPrompt(
-    question.topic.name,
-    original,
-    parsed.payload,
-    path.join(dir, "verify-result.json"),
-  );
-  const verificationRun = await runEngine(
-    verifyEngine,
-    verificationPrompt,
-    dir,
-    "verify-",
-  );
-  if (!verificationRun.ok) {
-    throw new ServiceError(
-      "HARDEN_VERIFY_FAILED",
-      verificationRun.failureReason,
-      502,
-    );
-  }
-
-  const verification = parseHardenVerificationJson(
-    extractJsonObject(verificationRun.resultText),
-  );
-  if (!verification.ok) {
-    throw new ServiceError("HARDEN_VERIFY_PARSE_ERROR", verification.fatal, 502);
-  }
-  if (verification.verdict === "fail") {
-    throw new ServiceError(
-      "HARDEN_VERIFY_REJECTED",
-      `의미 보존 검증을 통과하지 못했습니다: ${verification.comment}`,
-      422,
-    );
-  }
-
   return {
     engine,
-    verifyEngine,
     comment: parsed.comment,
-    verificationComment: verification.comment,
     factualConcern: parsed.factualConcern,
     payload: {
       question: parsed.payload.question,

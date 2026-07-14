@@ -647,35 +647,21 @@ export function buildChoiceHardeningPrompt(
     question: payload.question,
     choices: payload.choices,
     answer_indices: mcqAnswerIndices(payload),
-    choice_explanations: payload.choice_explanations,
   };
-  return `당신은 학습 문제 개선 전문가입니다. 주제 "${topicName}"의 아래 객관식 문제에서, 문제 본문과 정답 선지는 의미 보존형으로 보수적으로 패러프레이즈하고 오답 선지는 더 어렵게 교체하세요.
+  return `당신은 학습 문제 개선 전문가입니다. 주제 "${topicName}"의 아래 객관식 문제는 오답 선지가 너무 쉬워 정답이 쉽게 드러납니다. 오답 선지만 더 어려운 오답으로 교체하세요.
 
-${webVerificationSection("패러프레이즈하기 전에")}## 대상 문제
+${webVerificationSection("선지를 교체하기 전에")}## 대상 문제
 
 \`\`\`json
 ${JSON.stringify(target)}
 \`\`\`
 
-## 본문·정답 선지 패러프레이즈 규칙 (엄격 준수, 본문과 정답 선지에만 적용)
+## 불변 조건 (반드시 준수)
 
-- question 본문은 어순, 조사, 문장 표현, 안전한 동의어만 바꾸고 반드시 변경하세요.
-- 모든 정답 선지 텍스트도 같은 방식으로 어순, 조사, 문장 표현, 안전한 동의어만 바꾸고 반드시 변경하세요.
-- 숫자, 단위, 고유명사, 서비스명, 조건, 제한, 핵심 사실, 문제의 목표와 정답 관계는 원본과 동일하게 유지하세요.
-- 이 규칙은 본문과 정답 선지에만 적용됩니다. 원본에 없는 사실, 조건, 예외, 범위를 새로 추가하지 마세요. 의미를 안전하게 바꿀 수 없는 부분은 억지로 바꾸지 마세요.
-
-## 오답 선지 난이도 강화 규칙 (교체 허용)
-
-- 오답 선지가 너무 쉬워 정답이 드러나는 것이 문제이므로, 오답 선지 중 최소 1개는 더 그럴듯하고 어려운 오답으로 교체하세요. 표현만 다듬는 것이 아니라 내용을 교체해도 됩니다.
-- 오답에는 원본에 없던 새로운 그럴듯한 서비스명, 조건, 내용을 도입해도 됩니다.
-- 단, 교체된 오답은 여전히 명백한 오답이어야 합니다. 문제의 조건을 모두 충족해 정답이 되거나, 정답 선지와 의미가 겹쳐 답이 모호해지면 안 됩니다.
-- 나머지 오답은 유지해도 됩니다.
-
-## 공통 유지 규칙 (반드시 준수)
-
-- answer_indices의 정답 인덱스 집합과 선지 순서를 유지하세요. 정답을 오답으로 만들거나 오답을 정답으로 만들지 마세요.
+- question 텍스트를 한 글자도 바꾸지 마세요.
+- answer_indices 값과 그 위치의 정답 선지 텍스트를 한 글자도 바꾸지 마세요.
 - 선지 개수를 바꾸지 마세요.
-- 선지 텍스트는 서로 중복되지 않아야 하며 choice_explanations는 선지마다 하나씩, 선지 순서대로 작성하세요.
+- 오답 선지만 교체할 수 있으며, 최소 1개는 반드시 교체하세요.
 - 정답 선지 자체가 최신 공식 문서와 다르다고 판단되면, 교체 작업은 위 규칙대로 진행하되 factual_concern 필드에 이유와 근거 공식 문서 URL을 적으세요. 확신이 없으면 넣지 마세요.
 ${EXAM_MCQ_RULES}
 ## 출력 형식
@@ -751,76 +737,6 @@ ${concern.trim()}
 - comment는 반드시 한국어로 작성하세요.
 - evidence_url은 근거가 되는 공식 문서 URL이 있으면 적고, 없으면 생략하세요.
 - revised는 verdict가 confirmed일 때만 포함하세요. rejected나 unverifiable이면 revised를 생략하세요.
-
-## 결과 저장 (반드시 준수)
-
-- 결과 JSON을 stdout에 출력하지 마세요.
-- 결과 JSON은 다음 경로에 UTF-8 텍스트 파일로만 저장하세요: ${resultPath}
-- 파일 내용은 위 출력 형식의 JSON만 포함해야 하며, 코드 펜스나 설명 문장을 추가하지 마세요.
-`;
-}
-
-export function buildChoiceHardeningVerificationPrompt(
-  topicName: string,
-  original: McqPayload,
-  revised: McqPayload,
-  resultPath: string,
-): string {
-  const originalData = {
-    question: original.question,
-    choices: original.choices,
-    answer_indices: mcqAnswerIndices(original),
-    choice_explanations: original.choice_explanations,
-  };
-  const revisedData = {
-    question: revised.question,
-    choices: revised.choices,
-    answer_indices: mcqAnswerIndices(revised),
-    choice_explanations: revised.choice_explanations,
-  };
-
-  return `당신은 학습 문제의 의미 보존을 검증하는 엄격한 검수 전문가입니다. 주제 "${topicName}"의 원본과, 본문·정답 선지는 보수적으로 패러프레이즈하고 오답 선지는 난이도를 높인 변형 후보를 비교하세요.
-
-## 원본 문제
-
-\`\`\`json
-${JSON.stringify(originalData)}
-\`\`\`
-
-## 변형 후보
-
-\`\`\`json
-${JSON.stringify(revisedData)}
-\`\`\`
-
-## 본문·정답 선지 검증 기준 (엄격 검증, 본문과 정답 선지에 한정)
-
-- 문제 본문과 모든 정답 선지는 표현만 바뀌었고 원본과 의미가 같은지 확인하세요.
-- 숫자, 단위, 고유명사, 서비스명, 조건, 제한, 핵심 사실, 문제의 목표가 바뀌거나 빠지거나 추가되지 않았는지 확인하세요. 이 기준은 본문과 정답 선지에 한정됩니다.
-- 보수적인 어순·조사·동의어 변경을 넘어 의미를 바꾸는 변경이 있으면 fail입니다.
-
-## 오답 선지 검증 기준 (변형 폭 판정 금지)
-
-- 오답 선지는 난이도를 높이기 위해 내용이 크게 교체될 수 있으며, 변형의 폭이나 원본과의 차이는 판정 대상이 아닙니다. 오답이 원본과 많이 달라졌다는 이유만으로 fail 처리하지 마세요.
-- 오답이 fail이 되는 경우는 다음 두 가지뿐입니다: (1) 변형된 오답이 문제의 조건을 모두 충족해 사실상 정답이 되는 경우, (2) 정답 선지와 의미가 겹쳐 답이 모호해지는 경우.
-
-## 공통 검증 기준
-
-- 정답 인덱스 집합, 선지 수, 선지 순서가 원본과 같은지 확인하세요.
-- 기존 정답을 틀리게 만들면 안 됩니다.
-- 모든 기준을 통과하면 pass, 하나라도 위반하면 fail입니다.
-
-## 출력 형식
-
-다른 설명 없이 아래 JSON만 작성하세요.
-
-{
-  "verdict": "pass",
-  "comment": "의미 보존 여부를 판단한 간결한 의견"
-}
-
-- verdict는 \`pass\` 또는 \`fail\`만 허용합니다.
-- comment는 반드시 한국어로 작성하고, fail이면 위반한 의미 변경을 구체적으로 적으세요.
 
 ## 결과 저장 (반드시 준수)
 

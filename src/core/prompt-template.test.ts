@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   buildAnswerExplanationPrompt,
   buildChoiceHardeningPrompt,
-  buildChoiceHardeningVerificationPrompt,
   buildCliGenerationFromBlueprintPrompt,
   buildCliGenerationPrompt,
   buildCliQuestionBlueprintPrompt,
@@ -626,19 +625,16 @@ describe("buildChoiceHardeningPrompt", () => {
     answer_indices: [0],
   };
 
-  it("보수적 패러프레이즈 조건과 원본 문제를 포함한다", () => {
+  it("불변 조건과 원본 문제를 포함한다", () => {
     const prompt = buildChoiceHardeningPrompt(
       "AWS SAA",
       payload,
       "C:\\out\\result.json",
     );
-    expect(prompt).toContain("보수적으로 패러프레이즈");
-    expect(prompt).toContain("숫자");
-    expect(prompt).toContain("고유명사");
-    expect(prompt).toContain("모든 정답 선지");
+    expect(prompt).toContain("불변 조건");
     expect(prompt).toContain("S3 버킷 보호 방법은?");
     expect(prompt).toContain("정답 선지");
-    expect(prompt).toContain("오답 선지 중 최소 1개");
+    expect(prompt).toContain("오답 선지만");
     expect(prompt).toContain("C:\\out\\result.json");
   });
 
@@ -654,43 +650,6 @@ describe("buildChoiceHardeningPrompt", () => {
   it("시험 스타일 오답 규칙을 재사용한다", () => {
     const prompt = buildChoiceHardeningPrompt("AWS SAA", payload, "/tmp/r.json");
     expect(prompt).toContain("Mandatory exam-style MCQ contract");
-  });
-
-  it("오답 선지는 내용 교체를 허용하고, 사실 추가 금지 규칙은 본문·정답 선지에만 적용됨을 명시한다", () => {
-    const prompt = buildChoiceHardeningPrompt("AWS SAA", payload, "/tmp/r.json");
-    expect(prompt).toContain("표현만 다듬는 것이 아니라 내용을 교체");
-    expect(prompt).toContain("새로운 그럴듯한 서비스명");
-    expect(prompt).toContain("명백한 오답");
-    expect(prompt).toContain("본문과 정답 선지에만 적용");
-  });
-});
-
-describe("buildChoiceHardeningVerificationPrompt", () => {
-  it("원본·변형 데이터와 의미 보존 검증 규칙 및 결과 경로를 포함한다", () => {
-    const prompt = buildChoiceHardeningVerificationPrompt(
-      "AWS SAA",
-      { question: "원본 질문", choices: ["원본 정답", "원본 오답 1", "원본 오답 2", "원본 오답 3"], answer_indices: [0] },
-      { question: "바뀐 질문", choices: ["바뀐 정답", "바뀐 오답 1", "원본 오답 2", "원본 오답 3"], answer_indices: [0], choice_explanations: ["1", "2", "3", "4"] },
-      "C:\\out\\verify-result.json",
-    );
-    expect(prompt).toContain("의미 보존");
-    expect(prompt).toContain("원본 질문");
-    expect(prompt).toContain("바뀐 질문");
-    expect(prompt).toContain("숫자");
-    expect(prompt).toContain('"verdict": "pass"');
-    expect(prompt).toContain("C:\\out\\verify-result.json");
-  });
-
-  it("오답 선지는 변형 폭을 판정하지 않고, 오답 fail 조건이 두 가지로 한정됨을 명시한다", () => {
-    const prompt = buildChoiceHardeningVerificationPrompt(
-      "AWS SAA",
-      { question: "원본 질문", choices: ["원본 정답", "원본 오답 1", "원본 오답 2", "원본 오답 3"], answer_indices: [0] },
-      { question: "바뀐 질문", choices: ["바뀐 정답", "바뀐 오답 1", "원본 오답 2", "원본 오답 3"], answer_indices: [0], choice_explanations: ["1", "2", "3", "4"] },
-      "C:\\out\\verify-result.json",
-    );
-    expect(prompt).toContain("변형의 폭이나 원본과의 차이는 판정 대상이 아닙니다");
-    expect(prompt).toContain("사실상 정답이 되는 경우");
-    expect(prompt).toContain("정답 선지와 의미가 겹쳐 답이 모호해지는 경우");
   });
 });
 
