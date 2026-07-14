@@ -45,8 +45,8 @@ export function parseHardenJson(
       fatal: "revised에는 answer_indices와 choice_explanations가 필요합니다",
     };
   }
-  if (payload.question !== original.question.trim()) {
-    return { ok: false, fatal: "질문 텍스트가 변경되었습니다" };
+  if (payload.question === original.question.trim()) {
+    return { ok: false, fatal: "질문 텍스트가 변경되지 않았습니다" };
   }
   if (payload.choices.length !== original.choices.length) {
     return { ok: false, fatal: "선지 개수가 변경되었습니다" };
@@ -55,11 +55,11 @@ export function parseHardenJson(
   if (!sameIndexSet(payload.answer_indices, answerIndices)) {
     return { ok: false, fatal: "answer_indices가 변경되었습니다" };
   }
-  const correctChanged = answerIndices.some(
+  const allCorrectChanged = answerIndices.every(
     (index) => payload.choices[index] !== original.choices[index].trim(),
   );
-  if (correctChanged) {
-    return { ok: false, fatal: "정답 선지가 변경되었습니다" };
+  if (!allCorrectChanged) {
+    return { ok: false, fatal: "모든 정답 선지가 변경되어야 합니다" };
   }
   const distractorChanged = payload.choices.some(
     (choice, index) =>

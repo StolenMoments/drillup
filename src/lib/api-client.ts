@@ -121,10 +121,14 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ engine }),
       }),
-    hardenChoices: (id: number, engine: GenerationEngineDto) =>
+    hardenChoices: (
+      id: number,
+      engine: GenerationEngineDto,
+      verifyEngine: GenerationEngineDto,
+    ) =>
       request<HardenPreviewDto>(`/api/questions/${id}/harden-choices`, {
         method: "POST",
-        body: JSON.stringify({ engine }),
+        body: JSON.stringify({ engine, verifyEngine }),
       }),
     addKeyword: (id: number, name: string) =>
       request<KeywordRefDto>(`/api/questions/${id}/keywords`, {
