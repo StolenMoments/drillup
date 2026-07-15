@@ -8,6 +8,7 @@ WorkingDirectory=__DEPLOY_PATH__
 ExecStart=__NPM_BIN__ start
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=25min
 Environment=PORT=3000
 Environment=NODE_ENV=production
 

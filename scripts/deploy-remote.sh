@@ -27,7 +27,11 @@ node scripts/wait-for-generation-drain.mjs
 
 NODE_ENV=development NPM_CONFIG_PRODUCTION=false npm ci --include=dev --ignore-scripts
 ./node_modules/.bin/prisma generate
-./node_modules/.bin/prisma migrate deploy
+if ! ./node_modules/.bin/prisma migrate deploy; then
+  echo "choice hardening migration 실패 기록을 rolled back으로 표시한 뒤 재시도합니다."
+  ./node_modules/.bin/prisma migrate resolve --rolled-back 20260715000000_add_choice_hardening_job
+  ./node_modules/.bin/prisma migrate deploy
+fi
 npm run build
 
 UNIT_DIR="$HOME/.config/systemd/user"

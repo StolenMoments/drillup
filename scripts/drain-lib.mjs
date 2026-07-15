@@ -76,13 +76,38 @@ export function connectionConfig(env) {
   };
 }
 
-// 고아 window 이내의 활성 job만 센다. placeholder는 (cutoff, cutoff) 순서.
-export const ACTIVE_JOBS_SQL = `
+export const CHOICE_HARDENING_TABLE_EXISTS_SQL = `
+  SELECT COUNT(*) AS tableCount
+  FROM information_schema.tables
+  WHERE table_schema = DATABASE()
+    AND table_name = 'choice_hardening_job'
+`;
+
+const LEGACY_ACTIVE_JOBS_SQL = `
   SELECT
     (SELECT COUNT(*) FROM generation_job
       WHERE status IN ('RUNNING', 'VERIFYING') AND created_at > ?)
     +
     (SELECT COUNT(*) FROM generation_item_revision
       WHERE status = 'RUNNING' AND created_at > ?)
-    AS activeCount
 `;
+
+const CHOICE_HARDENING_ACTIVE_JOBS_SQL = `
+    +
+    (SELECT COUNT(*) FROM choice_hardening_job
+      WHERE status = 'RUNNING'
+        AND (started_at > ? OR (started_at IS NULL AND created_at > ?)))
+`;
+
+// 고아 window 이내의 활성 job만 센다. migration 전 첫 drain은 legacy 쿼리를 쓴다.
+export function activeJobsQuery(hasChoiceHardeningTable, cutoff) {
+  const sql = `${LEGACY_ACTIVE_JOBS_SQL}${
+    hasChoiceHardeningTable ? CHOICE_HARDENING_ACTIVE_JOBS_SQL : ""
+  } AS activeCount`;
+  return {
+    sql,
+    params: hasChoiceHardeningTable
+      ? [cutoff, cutoff, cutoff, cutoff]
+      : [cutoff, cutoff],
+  };
+}

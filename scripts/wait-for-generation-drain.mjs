@@ -4,8 +4,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
-  ACTIVE_JOBS_SQL,
+  CHOICE_HARDENING_TABLE_EXISTS_SQL,
   POLL_INTERVAL_MS,
+  activeJobsQuery,
   connectionConfig,
   drainTimeoutMs,
   parseEnvFile,
@@ -30,8 +31,14 @@ const conn = await mariadb.createConnection(connectionConfig(env));
 const deadline = Date.now() + drainTimeoutMs(env);
 
 try {
+  const tableRows = await conn.query(CHOICE_HARDENING_TABLE_EXISTS_SQL);
+  const hasChoiceHardeningTable = Number(tableRows[0]?.tableCount ?? 0) > 0;
   for (;;) {
-    const rows = await conn.query(ACTIVE_JOBS_SQL, [staleCutoff(env), staleCutoff(env)]);
+    const activeJobs = activeJobsQuery(
+      hasChoiceHardeningTable,
+      staleCutoff(env),
+    );
+    const rows = await conn.query(activeJobs.sql, activeJobs.params);
     const active = Number(rows[0]?.activeCount ?? 0);
     if (active === 0) {
       console.log("[drain] 활성 생성 job이 없습니다. 배포를 진행합니다.");

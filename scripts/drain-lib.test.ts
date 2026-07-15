@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  ACTIVE_JOBS_SQL,
+  CHOICE_HARDENING_TABLE_EXISTS_SQL,
+  activeJobsQuery,
   connectionConfig,
   drainTimeoutMs,
   generationTimeoutMs,
@@ -115,12 +117,62 @@ describe("connectionConfig", () => {
   });
 });
 
-describe("ACTIVE_JOBS_SQL", () => {
-  it("두 테이블의 활성 상태를 세고 placeholder가 2개다", () => {
-    expect(ACTIVE_JOBS_SQL).toContain("generation_job");
-    expect(ACTIVE_JOBS_SQL).toContain("generation_item_revision");
-    expect(ACTIVE_JOBS_SQL).toContain("'RUNNING'");
-    expect(ACTIVE_JOBS_SQL).toContain("'VERIFYING'");
-    expect(ACTIVE_JOBS_SQL.split("?").length - 1).toBe(2);
+describe("activeJobsQuery", () => {
+  const cutoff = new Date("2026-07-15T00:00:00.000Z");
+
+  it("테이블 부재 시 기존 두 job 테이블만 조회한다", () => {
+    const query = activeJobsQuery(false, cutoff);
+
+    expect(query.sql).toContain("generation_job");
+    expect(query.sql).toContain("generation_item_revision");
+    expect(query.sql).not.toContain("choice_hardening_job");
+    expect(query.params).toEqual([cutoff, cutoff]);
+    expect(query.sql.split("?").length - 1).toBe(query.params.length);
+  });
+
+  it("테이블 존재 시 non-stale choice hardening RUNNING job을 포함한다", () => {
+    const query = activeJobsQuery(true, cutoff);
+
+    expect(query.sql).toContain("choice_hardening_job");
+    expect(query.sql).toContain("status = 'RUNNING'");
+    expect(query.sql).toContain("started_at > ?");
+    expect(query.sql).toContain("started_at IS NULL AND created_at > ?");
+    expect(query.params).toEqual([cutoff, cutoff, cutoff, cutoff]);
+    expect(query.sql.split("?").length - 1).toBe(query.params.length);
+  });
+
+  it("information_schema에서 choice hardening 테이블 존재 여부를 확인한다", () => {
+    expect(CHOICE_HARDENING_TABLE_EXISTS_SQL).toContain("information_schema.tables");
+    expect(CHOICE_HARDENING_TABLE_EXISTS_SQL).toContain("choice_hardening_job");
+  });
+});
+
+describe("systemd unit", () => {
+  it("after callback이 종료 중 마무리될 25분 유예를 둔다", () => {
+    const unit = readFileSync("deploy/drillup.service", "utf8");
+    expect(unit).toContain("TimeoutStopSec=25min");
+  });
+});
+
+describe("choice hardening migration deployment", () => {
+  it("MariaDB identifier 길이 제한을 넘지 않는다", () => {
+    const migration = readFileSync(
+      "prisma/migrations/20260715000000_add_choice_hardening_job/migration.sql",
+      "utf8",
+    );
+    const identifiers = [...migration.matchAll(/(?:INDEX|CONSTRAINT) `([^`]+)`/g)]
+      .map((match) => match[1]);
+
+    expect(identifiers.length).toBeGreaterThan(0);
+    expect(identifiers.filter((identifier) => identifier.length > 64)).toEqual([]);
+  });
+
+  it("실패 기록을 공식 resolve 후 한 번 재적용한다", () => {
+    const deployScript = readFileSync("scripts/deploy-remote.sh", "utf8");
+
+    expect(deployScript).toContain(
+      "prisma migrate resolve --rolled-back 20260715000000_add_choice_hardening_job",
+    );
+    expect(deployScript.match(/prisma migrate deploy/g)).toHaveLength(2);
   });
 });
