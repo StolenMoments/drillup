@@ -3,6 +3,7 @@ import { handleApiError, jsonOk } from "@/server/http";
 import { listQuestions } from "@/server/question-service";
 import type {
   QuestionListSortDto,
+  QuestionSearchFieldDto,
   QuestionTypeDto,
 } from "@/lib/api-types";
 
@@ -11,6 +12,12 @@ const questionSorts = new Set<QuestionListSortDto>([
   "latest",
   "accuracyAsc",
   "accuracyDesc",
+]);
+const questionSearchFields = new Set<QuestionSearchFieldDto>([
+  "body",
+  "choices",
+  "explanation",
+  "keyword",
 ]);
 
 export async function GET(req: Request) {
@@ -42,6 +49,15 @@ export async function GET(req: Request) {
       throw new ServiceError("BAD_REQUEST", "잘못된 sort입니다", 400);
     }
 
+    const searchRaw = url.searchParams.get("search");
+    const searchInRaw = url.searchParams.get("searchIn");
+    const searchIn = searchRaw && searchInRaw
+      ? (searchInRaw.split(",") as QuestionSearchFieldDto[])
+      : undefined;
+    if (searchIn && searchIn.some((field) => !questionSearchFields.has(field))) {
+      throw new ServiceError("BAD_REQUEST", "잘못된 searchIn입니다", 400);
+    }
+
     const page = pageRaw ? Number(pageRaw) : undefined;
     return jsonOk(
       await listQuestions({
@@ -50,6 +66,8 @@ export async function GET(req: Request) {
         type: typeRaw ? (typeRaw as QuestionTypeDto) : undefined,
         sort: sortRaw ? (sortRaw as QuestionListSortDto) : undefined,
         page: Number.isInteger(page) && page !== undefined && page > 0 ? page : 1,
+        search: searchRaw ?? undefined,
+        searchIn,
       }),
     );
   } catch (e) {
