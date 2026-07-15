@@ -9,6 +9,7 @@ import type {
   KeywordDto,
   QuestionListPageDto,
   QuestionListSortDto,
+  QuestionSearchFieldDto,
   QuestionTypeDto,
   TopicDto,
 } from "@/lib/api-types";
@@ -44,6 +45,14 @@ export default function QuestionsPage() {
   const [typeFilter, setTypeFilter] = useState<QuestionTypeDto | "">("");
   const [sort, setSort] = useState<QuestionListSortDto>("latest");
   const [page, setPage] = useState(1);
+  const [searchDraft, setSearchDraft] = useState("");
+  const [searchFieldsDraft, setSearchFieldsDraft] = useState<
+    QuestionSearchFieldDto[]
+  >(["body"]);
+  const [committedSearch, setCommittedSearch] = useState("");
+  const [committedSearchFields, setCommittedSearchFields] = useState<
+    QuestionSearchFieldDto[]
+  >(["body"]);
   const [pageData, setPageData] = useState<QuestionListPageDto>(emptyPage);
   const [message, setMessage] = useState("");
   const requestIdRef = useRef(0);
@@ -55,6 +64,8 @@ export default function QuestionsPage() {
       selectedType: QuestionTypeDto | "";
       selectedSort: QuestionListSortDto;
       selectedPage: number;
+      selectedSearch: string;
+      selectedSearchFields: QuestionSearchFieldDto[];
     }) => {
       const requestId = ++requestIdRef.current;
       try {
@@ -73,6 +84,10 @@ export default function QuestionsPage() {
             type: options.selectedType === "" ? undefined : options.selectedType,
             sort: options.selectedSort,
             page: options.selectedPage,
+            search: options.selectedSearch || undefined,
+            searchIn: options.selectedSearch
+              ? options.selectedSearchFields
+              : undefined,
           }),
         ]);
         if (requestId !== requestIdRef.current) return;
@@ -101,12 +116,38 @@ export default function QuestionsPage() {
         selectedType: typeFilter,
         selectedSort: sort,
         selectedPage: page,
+        selectedSearch: committedSearch,
+        selectedSearchFields: committedSearchFields,
       }),
     );
-  }, [topicId, keywordId, typeFilter, sort, page, reload]);
+  }, [
+    topicId,
+    keywordId,
+    typeFilter,
+    sort,
+    page,
+    committedSearch,
+    committedSearchFields,
+    reload,
+  ]);
 
   function resetPage() {
     setPage(1);
+  }
+
+  function submitSearch(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCommittedSearch(searchDraft.trim());
+    setCommittedSearchFields(searchFieldsDraft);
+    resetPage();
+  }
+
+  function toggleSearchField(field: QuestionSearchFieldDto) {
+    setSearchFieldsDraft((current) =>
+      current.includes(field)
+        ? current.filter((f) => f !== field)
+        : [...current, field],
+    );
   }
 
   async function removeQuestion(id: number) {
@@ -124,6 +165,8 @@ export default function QuestionsPage() {
       selectedType: typeFilter,
       selectedSort: sort,
       selectedPage: pageData.page,
+      selectedSearch: committedSearch,
+      selectedSearchFields: committedSearchFields,
     });
   }
 
@@ -141,6 +184,8 @@ export default function QuestionsPage() {
         selectedType: typeFilter,
         selectedSort: sort,
         selectedPage: page,
+        selectedSearch: committedSearch,
+        selectedSearchFields: committedSearchFields,
       });
       setMessage("");
     } catch (error) {
@@ -167,6 +212,8 @@ export default function QuestionsPage() {
         selectedType: typeFilter,
         selectedSort: sort,
         selectedPage: page,
+        selectedSearch: committedSearch,
+        selectedSearchFields: committedSearchFields,
       });
       setMessage("✅ 참고 자료 폴더를 설정했습니다");
     } catch (error) {
@@ -272,6 +319,56 @@ export default function QuestionsPage() {
           <option value="accuracyAsc">정답률 낮은순</option>
           <option value="accuracyDesc">정답률 높은순</option>
         </select>
+        <form
+          onSubmit={submitSearch}
+          className="flex flex-wrap items-center gap-2"
+        >
+          <input
+            type="text"
+            value={searchDraft}
+            onChange={(event) => setSearchDraft(event.target.value)}
+            placeholder="검색어"
+            className="field w-auto min-w-48"
+          />
+          <label className="flex items-center gap-1 text-sm">
+            <input
+              type="checkbox"
+              checked={searchFieldsDraft.includes("body")}
+              onChange={() => toggleSearchField("body")}
+            />
+            본문
+          </label>
+          <label className="flex items-center gap-1 text-sm">
+            <input
+              type="checkbox"
+              checked={searchFieldsDraft.includes("choices")}
+              onChange={() => toggleSearchField("choices")}
+            />
+            선택지
+          </label>
+          <label className="flex items-center gap-1 text-sm">
+            <input
+              type="checkbox"
+              checked={searchFieldsDraft.includes("explanation")}
+              onChange={() => toggleSearchField("explanation")}
+            />
+            해설
+          </label>
+          <label className="flex items-center gap-1 text-sm">
+            <input
+              type="checkbox"
+              checked={searchFieldsDraft.includes("keyword")}
+              onChange={() => toggleSearchField("keyword")}
+            />
+            키워드
+          </label>
+          <button
+            type="submit"
+            className="btn btn-secondary min-h-9 px-3 text-sm"
+          >
+            검색
+          </button>
+        </form>
         {topicId !== "" && (
           <>
             <button
