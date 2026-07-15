@@ -113,6 +113,10 @@ export const api = {
       if (params.type) searchParams.set("type", params.type);
       if (params.sort) searchParams.set("sort", params.sort);
       if (params.page) searchParams.set("page", String(params.page));
+      if (params.search) searchParams.set("search", params.search);
+      if (params.search && params.searchIn && params.searchIn.length > 0) {
+        searchParams.set("searchIn", params.searchIn.join(","));
+      }
       const query = searchParams.toString();
       return request<QuestionListPageDto>(
         `/api/questions${query ? `?${query}` : ""}`,
