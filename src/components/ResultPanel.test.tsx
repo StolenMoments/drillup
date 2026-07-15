@@ -67,9 +67,23 @@ function job(overrides: Record<string, unknown> = {}) {
     startedAt: null,
     finishedAt: null,
     appliedAt: null,
+    autoApplied: false,
+    dismissedAt: null,
     ...overrides,
   };
 }
+
+const preview = {
+  engine: "CLAUDE" as const,
+  comment: "오답을 더 어렵게 바꿨습니다",
+  factualConcern: null,
+  payload: {
+    question: "원본 질문",
+    choices: ["정답", "강화 오답 1", "강화 오답 2", "강화 오답 3"],
+    answer_indices: [0],
+    choice_explanations: ["근거", "근거", "근거", "근거"],
+  },
+};
 
 async function startTracking() {
   apiMock.hardenChoices.mockResolvedValue({ job: job() });
@@ -116,7 +130,7 @@ describe("ResultPanel choice hardening polling", () => {
     });
 
     expect(apiMock.getHardenChoices).toHaveBeenCalledWith(7, 11);
-    expect(screen.getAllByText("생성 중...")).toHaveLength(2);
+    expect(screen.getByText(/생성 중 — 완료되면 자동 반영됩니다/)).toBeVisible();
   });
 
   it("visibilitychange와 pageshow에서 즉시 조회한다", async () => {
@@ -146,13 +160,13 @@ describe("ResultPanel choice hardening polling", () => {
       await vi.advanceTimersByTimeAsync(5_000);
     });
     expect(screen.getByText(/연결이 끊겼습니다/)).toBeInTheDocument();
-    expect(screen.getAllByText("생성 중...")).toHaveLength(2);
+    expect(screen.getByText(/생성 중 — 완료되면 자동 반영됩니다/)).toBeVisible();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5_000);
     });
     expect(screen.queryByText(/연결이 끊겼습니다/)).not.toBeInTheDocument();
-    expect(screen.getAllByText("생성 중...")).toHaveLength(2);
+    expect(screen.getByText(/생성 중 — 완료되면 자동 반영됩니다/)).toBeVisible();
     expect(apiMock.getHardenChoices).toHaveBeenCalledTimes(2);
   });
 
@@ -242,5 +256,96 @@ describe("ResultPanel choice hardening polling", () => {
     expect(apiMock.reviewFact).toHaveBeenCalledWith(7, "CLAUDE", "정답이 최신 문서와 다릅니다");
     expect(apiMock.update).toHaveBeenCalledWith(7, { payload: corrected, explanation: null });
     expect(screen.getByText(/사실 교정이 적용되었습니다/)).toBeInTheDocument();
+  });
+
+  it("자동 반영이 확인되면 자동 반영 문구를 보여준다", async () => {
+    apiMock.getHardenChoices.mockResolvedValue({
+      job: job({
+        status: "SUCCEEDED",
+        preview,
+        appliedAt: "2026-07-15T00:05:00.000Z",
+        autoApplied: true,
+      }),
+    });
+    await startTracking();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(
+      screen.getByText("✅ 자동 반영됨 — 다음 학습부터 새 선지가 나옵니다 🎉"),
+    ).toBeVisible();
+  });
+
+  it("검증 의견이 있으면 선지 검토 링크를 보여준다", async () => {
+    apiMock.getHardenChoices.mockResolvedValue({
+      job: job({
+        status: "SUCCEEDED",
+        preview: { ...preview, factualConcern: "정답이 최신 문서와 다릅니다" },
+      }),
+    });
+    await startTracking();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(screen.getByText(/검증 의견이 있어요/)).toBeVisible();
+    expect(screen.getByRole("link", { name: "선지 검토" })).toHaveAttribute(
+      "href",
+      "/hardening",
+    );
+  });
+
+  it("concern 없이 미반영이 지속되면 3회 폴링 후 수동 승인 안내로 전환한다", async () => {
+    apiMock.getHardenChoices.mockResolvedValue({
+      job: job({ status: "SUCCEEDED", preview }),
+    });
+    await startTracking();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(screen.queryByText(/수동으로 승인할 수 있어요/)).not.toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(screen.getByText(/수동으로 승인할 수 있어요/)).toBeVisible();
+  });
+
+  it("적용하기 버튼을 렌더하지 않는다", async () => {
+    apiMock.getHardenChoices.mockResolvedValue({
+      job: job({ status: "SUCCEEDED", preview }),
+    });
+    await startTracking();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(
+      screen.queryByRole("button", { name: "✅ 적용하기" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("거절된 job을 받으면 새로 생성 안내로 전환한다", async () => {
+    apiMock.hardenChoices.mockResolvedValue({
+      job: job({
+        status: "SUCCEEDED",
+        preview,
+        dismissedAt: "2026-07-15T00:06:00.000Z",
+      }),
+    });
+    render(
+      <ResultPanel question={question} result={result} onNext={vi.fn()} isLast={false} />,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Claude로 올리기" }));
+    });
+
+    expect(screen.getByText(/이전 결과를 거절했습니다/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "새로 생성" })).toBeVisible();
   });
 });
