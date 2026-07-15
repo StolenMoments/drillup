@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api-client";
 import { engineLabel } from "@/lib/engine-label";
@@ -161,7 +162,7 @@ export default function ResultPanel({ question, result, onNext, isLast, nextLabe
         {(harden.status === "idle" || harden.status === "loading" || harden.status === "error") && <div className="flex flex-wrap gap-2">{HARDEN_ENGINES.map((value) => <button key={value} onClick={() => void requestHarden(value)} disabled={harden.status === "loading"} className="btn btn-secondary text-sm">{harden.status === "loading" && harden.engine === value ? "요청 중..." : `${engineLabel(value)}로 올리기`}</button>)}</div>}
         {harden.status === "tracking" && <div className="rounded-[10px] border border-[color:var(--brand)] bg-[color:var(--brand-soft)] px-3 py-2 text-sm" role="status" aria-live="polite"><p className="font-semibold">생성 중 — 완료되면 자동 반영됩니다</p><p className="mt-1 text-[color:var(--muted)]">페이지를 떠나도 작업은 서버에서 계속 진행돼요.</p>{harden.pollError && <p className="mt-2 rounded-[10px] bg-[color:var(--warning-soft)] px-3 py-2" role="alert">⚠️ {harden.pollError} 자동 확인은 계속됩니다.</p>}</div>}
         {harden.status === "autoApplied" && <p className="text-[color:var(--success)]">✅ 자동 반영됨 — 다음 학습부터 새 선지가 나옵니다 🎉</p>}
-        {harden.status === "needsReview" && <p className="rounded-[10px] bg-[color:var(--warning-soft)] px-3 py-2 text-sm">{harden.kind === "concern" ? "⚠️ 검증 의견이 있어요 — " : "⏳ 아직 반영되지 않았어요 — "}<a href="/hardening" className="font-medium underline underline-offset-2">선지 검토</a>{harden.kind === "concern" ? "에서 승인해 주세요" : "에서 수동으로 승인할 수 있어요"}</p>}
+        {harden.status === "needsReview" && <p className="rounded-[10px] bg-[color:var(--warning-soft)] px-3 py-2 text-sm">{harden.kind === "concern" ? "⚠️ 검증 의견이 있어요 — " : "⏳ 아직 반영되지 않았어요 — "}<Link href="/hardening" className="font-medium underline underline-offset-2">선지 검토</Link>{harden.kind === "concern" ? "에서 승인해 주세요" : "에서 수동으로 승인할 수 있어요"}</p>}
         {harden.status === "error" && <div className="space-y-2"><p className="text-[color:var(--danger)]">❌ {harden.message}</p>{harden.job && <button onClick={() => void requestHarden(harden.job!.engine, true)} className="btn btn-secondary text-sm">새로 생성</button>}</div>}
       </div>}
       <button onClick={onNext} className="btn btn-secondary w-full">{nextLabel ?? (isLast ? "완료" : "다음 문제")}</button>

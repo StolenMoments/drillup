@@ -21,7 +21,8 @@ import {
   countPendingChoiceHardeningJobs,
   dismissChoiceHardeningJob,
   getChoiceHardeningJob,
-  listChoiceHardeningJobs,
+  getChoiceHardeningJobPage,
+  getChoiceHardeningJobSummary,
   startChoiceHardeningJob,
 } from "./choice-hardening-service";
 
@@ -441,15 +442,17 @@ describe("choice hardening job service", () => {
     }
   });
 
-  it("목록은 4개 분류를 조건에 맞게 조회한다", async () => {
+  it("요약은 4개 상태를 조건에 맞게 최신 5건과 전체 건수로 조회한다", async () => {
     const withTopic = { question: { topic: { name: "주제" } } };
     prismaMock.choiceHardeningJob.findMany.mockResolvedValue([
       { ...job({ status: "SUCCEEDED", preview, finishedAt: new Date() }), ...withTopic },
     ]);
+    prismaMock.choiceHardeningJob.count.mockResolvedValue(8);
 
-    const result = await listChoiceHardeningJobs();
+    const result = await getChoiceHardeningJobSummary();
 
-    expect(result.pending).toHaveLength(1);
+    expect(result.pending).toMatchObject({ totalItems: 8 });
+    expect(result.pending.items).toHaveLength(1);
     const wheres = prismaMock.choiceHardeningJob.findMany.mock.calls.map(
       ([arg]) => (arg as { where: Record<string, unknown> }).where,
     );
@@ -461,39 +464,81 @@ describe("choice hardening job service", () => {
     expect(wheres).toContainEqual({ status: "RUNNING" });
     expect(wheres).toContainEqual({ status: "FAILED", dismissedAt: null });
     expect(wheres).toContainEqual({ appliedAt: { not: null } });
+    expect(prismaMock.choiceHardeningJob.findMany).toHaveBeenCalledTimes(4);
+    expect(prismaMock.choiceHardeningJob.count).toHaveBeenCalledTimes(4);
+    for (const [query] of prismaMock.choiceHardeningJob.findMany.mock.calls) {
+      expect(query).toMatchObject({ take: 5 });
+      expect(query).not.toHaveProperty("skip");
+    }
   });
 
-  it("반영 이력은 최근 20건으로 제한한다", async () => {
-    prismaMock.choiceHardeningJob.findMany.mockResolvedValue([]);
-
-    await listChoiceHardeningJobs();
-
-    const appliedCall = prismaMock.choiceHardeningJob.findMany.mock.calls.find(
-      ([arg]) =>
-        JSON.stringify((arg as { where: unknown }).where) ===
-        JSON.stringify({ appliedAt: { not: null } }),
-    );
-    expect(appliedCall?.[0]).toMatchObject({
-      take: 20,
-      orderBy: { appliedAt: "desc" },
-    });
-  });
-
-  it("목록 항목은 questionPreview, topicName, source를 포함한다", async () => {
+  it("요약 항목은 questionPreview, topicName, source를 포함한다", async () => {
     prismaMock.choiceHardeningJob.findMany.mockResolvedValue([
       {
         ...job({ status: "SUCCEEDED", preview, finishedAt: new Date() }),
         question: { topic: { name: "AWS" } },
       },
     ]);
+    prismaMock.choiceHardeningJob.count.mockResolvedValue(1);
 
-    const result = await listChoiceHardeningJobs();
+    const result = await getChoiceHardeningJobSummary();
 
-    expect(result.pending[0]).toMatchObject({
+    expect(result.pending.items[0]).toMatchObject({
       questionPreview: original.question,
       topicName: "AWS",
       source: { question: original.question, choices: original.choices },
     });
+  });
+
+  it("상태 상세는 count 후 10건씩 skip/take로 조회한다", async () => {
+    prismaMock.choiceHardeningJob.count.mockResolvedValue(25);
+    prismaMock.choiceHardeningJob.findMany.mockResolvedValue([]);
+
+    await expect(getChoiceHardeningJobPage("failed", 2)).resolves.toEqual({
+      items: [],
+      page: 2,
+      pageSize: 10,
+      totalItems: 25,
+      totalPages: 3,
+    });
+    expect(prismaMock.choiceHardeningJob.count).toHaveBeenCalledWith({
+      where: { status: "FAILED", dismissedAt: null },
+    });
+    expect(prismaMock.choiceHardeningJob.findMany).toHaveBeenCalledWith({
+      where: { status: "FAILED", dismissedAt: null },
+      orderBy: { finishedAt: "desc" },
+      include: expect.any(Object),
+      skip: 10,
+      take: 10,
+    });
+  });
+
+  it("상태 상세는 마지막 페이지를 초과한 요청을 보정한다", async () => {
+    prismaMock.choiceHardeningJob.count.mockResolvedValue(11);
+    prismaMock.choiceHardeningJob.findMany.mockResolvedValue([]);
+
+    const result = await getChoiceHardeningJobPage("applied", 99);
+
+    expect(result).toMatchObject({ page: 2, totalPages: 2, totalItems: 11 });
+    expect(prismaMock.choiceHardeningJob.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 10, take: 10 }),
+    );
+  });
+
+  it("빈 상태 상세는 1페이지 빈 목록을 반환한다", async () => {
+    prismaMock.choiceHardeningJob.count.mockResolvedValue(0);
+    prismaMock.choiceHardeningJob.findMany.mockResolvedValue([]);
+
+    await expect(getChoiceHardeningJobPage("running", 4)).resolves.toEqual({
+      items: [],
+      page: 1,
+      pageSize: 10,
+      totalItems: 0,
+      totalPages: 1,
+    });
+    expect(prismaMock.choiceHardeningJob.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 0, take: 10 }),
+    );
   });
 
   it("승인 대기 건수를 센다", async () => {

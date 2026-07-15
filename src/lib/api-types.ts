@@ -195,11 +195,30 @@ export interface ChoiceHardeningJobListItemDto extends ChoiceHardeningJobDto {
   source: ChoiceHardeningSourceDto;
 }
 
-export interface ChoiceHardeningJobListDto {
-  pending: ChoiceHardeningJobListItemDto[];
-  running: ChoiceHardeningJobListItemDto[];
-  failed: ChoiceHardeningJobListItemDto[];
-  recentApplied: ChoiceHardeningJobListItemDto[];
+export type ChoiceHardeningListStatusDto =
+  | "pending"
+  | "running"
+  | "failed"
+  | "applied";
+
+export interface ChoiceHardeningJobSummaryGroupDto {
+  items: ChoiceHardeningJobListItemDto[];
+  totalItems: number;
+}
+
+export interface ChoiceHardeningJobSummaryDto {
+  pending: ChoiceHardeningJobSummaryGroupDto;
+  running: ChoiceHardeningJobSummaryGroupDto;
+  failed: ChoiceHardeningJobSummaryGroupDto;
+  applied: ChoiceHardeningJobSummaryGroupDto;
+}
+
+export interface ChoiceHardeningJobPageDto {
+  items: ChoiceHardeningJobListItemDto[];
+  page: number;
+  pageSize: 10;
+  totalItems: number;
+  totalPages: number;
 }
 
 export type GenerationEngineDto = "CLAUDE" | "CODEX" | "ANTIGRAVITY";

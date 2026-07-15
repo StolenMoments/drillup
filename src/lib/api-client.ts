@@ -1,7 +1,9 @@
 import type {
   AnswerExplanationDto,
   ChoiceHardeningJobDto,
-  ChoiceHardeningJobListDto,
+  ChoiceHardeningJobPageDto,
+  ChoiceHardeningJobSummaryDto,
+  ChoiceHardeningListStatusDto,
   ChoiceCountDto,
   CorrectAnswerCountDto,
   FactualReviewDto,
@@ -172,7 +174,11 @@ export const api = {
       }),
   },
   hardenJobs: {
-    list: () => request<ChoiceHardeningJobListDto>("/api/harden-jobs"),
+    summary: () => request<ChoiceHardeningJobSummaryDto>("/api/harden-jobs"),
+    page: (status: ChoiceHardeningListStatusDto, page: number) =>
+      request<ChoiceHardeningJobPageDto>(
+        `/api/harden-jobs?status=${status}&page=${page}`,
+      ),
     pendingCount: () =>
       request<{ count: number }>("/api/harden-jobs/pending-count"),
   },

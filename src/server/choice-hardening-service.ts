@@ -3,8 +3,10 @@ import { sha256Fingerprint } from "@/core/stable-json";
 import type { McqPayload } from "@/core/types";
 import type {
   ChoiceHardeningJobDto,
-  ChoiceHardeningJobListDto,
+  ChoiceHardeningJobPageDto,
   ChoiceHardeningJobListItemDto,
+  ChoiceHardeningJobSummaryDto,
+  ChoiceHardeningListStatusDto,
   HardenPreviewDto,
 } from "@/lib/api-types";
 import { prisma } from "./db";
@@ -269,7 +271,8 @@ export async function dismissChoiceHardeningJob(
   });
 }
 
-const APPLIED_HISTORY_LIMIT = 20;
+const SUMMARY_SIZE = 5;
+const PAGE_SIZE = 10;
 
 const listInclude = {
   question: { select: { topic: { select: { name: true } } } },
@@ -292,36 +295,83 @@ function toListItem(job: JobWithTopic): ChoiceHardeningJobListItemDto {
   };
 }
 
-export async function listChoiceHardeningJobs(): Promise<ChoiceHardeningJobListDto> {
-  await recoverStaleChoiceHardeningJobs();
-  const [pending, running, failed, recentApplied] = await Promise.all([
+const listQueries: Record<
+  ChoiceHardeningListStatusDto,
+  {
+    where: Prisma.ChoiceHardeningJobWhereInput;
+    orderBy: Prisma.ChoiceHardeningJobOrderByWithRelationInput;
+  }
+> = {
+  pending: {
+    where: { status: "SUCCEEDED", appliedAt: null, dismissedAt: null },
+    orderBy: { finishedAt: "desc" },
+  },
+  running: {
+    where: { status: "RUNNING" },
+    orderBy: { createdAt: "desc" },
+  },
+  failed: {
+    where: { status: "FAILED", dismissedAt: null },
+    orderBy: { finishedAt: "desc" },
+  },
+  applied: {
+    where: { appliedAt: { not: null } },
+    orderBy: { appliedAt: "desc" },
+  },
+};
+
+async function getSummaryGroup(
+  status: ChoiceHardeningListStatusDto,
+): Promise<{ items: ChoiceHardeningJobListItemDto[]; totalItems: number }> {
+  const query = listQueries[status];
+  const [jobs, totalItems] = await Promise.all([
     prisma.choiceHardeningJob.findMany({
-      where: { status: "SUCCEEDED", appliedAt: null, dismissedAt: null },
-      orderBy: { finishedAt: "desc" },
+      ...query,
       include: listInclude,
+      take: SUMMARY_SIZE,
     }),
-    prisma.choiceHardeningJob.findMany({
-      where: { status: "RUNNING" },
-      orderBy: { createdAt: "desc" },
-      include: listInclude,
-    }),
-    prisma.choiceHardeningJob.findMany({
-      where: { status: "FAILED", dismissedAt: null },
-      orderBy: { finishedAt: "desc" },
-      include: listInclude,
-    }),
-    prisma.choiceHardeningJob.findMany({
-      where: { appliedAt: { not: null } },
-      orderBy: { appliedAt: "desc" },
-      take: APPLIED_HISTORY_LIMIT,
-      include: listInclude,
-    }),
+    prisma.choiceHardeningJob.count({ where: query.where }),
   ]);
+  return { items: jobs.map(toListItem), totalItems };
+}
+
+export async function getChoiceHardeningJobSummary(): Promise<ChoiceHardeningJobSummaryDto> {
+  await recoverStaleChoiceHardeningJobs();
+  const [pending, running, failed, applied] = await Promise.all([
+    getSummaryGroup("pending"),
+    getSummaryGroup("running"),
+    getSummaryGroup("failed"),
+    getSummaryGroup("applied"),
+  ]);
+  return { pending, running, failed, applied };
+}
+
+export async function getChoiceHardeningJobPage(
+  status: ChoiceHardeningListStatusDto,
+  requestedPage: number,
+): Promise<ChoiceHardeningJobPageDto> {
+  await recoverStaleChoiceHardeningJobs();
+  const query = listQueries[status];
+  const totalItems = await prisma.choiceHardeningJob.count({
+    where: query.where,
+  });
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const normalizedPage = Number.isInteger(requestedPage) && requestedPage > 0
+    ? requestedPage
+    : 1;
+  const page = Math.min(normalizedPage, totalPages);
+  const jobs = await prisma.choiceHardeningJob.findMany({
+    ...query,
+    include: listInclude,
+    skip: (page - 1) * PAGE_SIZE,
+    take: PAGE_SIZE,
+  });
   return {
-    pending: pending.map(toListItem),
-    running: running.map(toListItem),
-    failed: failed.map(toListItem),
-    recentApplied: recentApplied.map(toListItem),
+    items: jobs.map(toListItem),
+    page,
+    pageSize: PAGE_SIZE,
+    totalItems,
+    totalPages,
   };
 }
 

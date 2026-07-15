@@ -126,6 +126,10 @@ model ChoiceHardeningJob {
 
   @@unique([questionId, sourceHash, engine, verifyEngine], map: "ch_job_source_engine_key")
   @@index([status, startedAt])
+  @@index([status, appliedAt, dismissedAt, finishedAt], map: "ch_job_pending_list_idx")
+  @@index([status, dismissedAt, finishedAt], map: "ch_job_failed_list_idx")
+  @@index([status, createdAt], map: "ch_job_running_list_idx")
+  @@index([appliedAt], map: "ch_job_applied_list_idx")
   @@map("choice_hardening_job")
 }
 

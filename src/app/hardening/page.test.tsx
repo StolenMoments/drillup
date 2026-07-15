@@ -11,11 +11,17 @@ const questionsMock = vi.hoisted(() => ({
   reviewFact: vi.fn(),
   update: vi.fn(),
 }));
-const hardenJobsMock = vi.hoisted(() => ({ list: vi.fn(), pendingCount: vi.fn() }));
+const hardenJobsMock = vi.hoisted(() => ({
+  summary: vi.fn(),
+  page: vi.fn(),
+  pendingCount: vi.fn(),
+}));
 
 vi.mock("@/lib/api-client", () => ({
   ApiError: class ApiError extends Error {
-    constructor(public code: string, message: string, public status: number) { super(message); }
+    constructor(public code: string, message: string, public status: number) {
+      super(message);
+    }
   },
   api: { questions: questionsMock, hardenJobs: hardenJobsMock },
 }));
@@ -34,67 +40,103 @@ function listItem(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function emptyList() { return { pending: [], running: [], failed: [], recentApplied: [] }; }
+function group(items: ReturnType<typeof listItem>[] = [], totalItems = items.length) {
+  return { items, totalItems };
+}
 
-describe("선지 검토 페이지", () => {
-  beforeEach(() => { for (const mock of Object.values(questionsMock)) mock.mockReset(); for (const mock of Object.values(hardenJobsMock)) mock.mockReset(); });
+function emptySummary() {
+  return { pending: group(), running: group(), failed: group(), applied: group() };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+describe("선지 검토 요약 페이지", () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+    for (const mock of Object.values(questionsMock)) mock.mockReset();
+    for (const mock of Object.values(hardenJobsMock)) mock.mockReset();
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+  });
   afterEach(() => cleanup());
 
-  it("4개 섹션을 렌더한다", async () => {
-    hardenJobsMock.list.mockResolvedValue(emptyList());
+  it("4개 섹션에 전체 건수를 표시한다", async () => {
+    hardenJobsMock.summary.mockResolvedValue(emptySummary());
     await act(async () => { render(<HardeningReviewPage />); });
-    expect(screen.getByText("⏳ 승인 대기")).toBeVisible();
-    expect(screen.getByText("🔄 진행 중")).toBeVisible();
-    expect(screen.getByText("❌ 실패")).toBeVisible();
-    expect(screen.getByText("📜 최근 반영 이력")).toBeVisible();
+    expect(screen.getByText("⏳ 승인 대기 · 0건")).toBeVisible();
+    expect(screen.getByText("🔄 진행 중 · 0건")).toBeVisible();
+    expect(screen.getByText("❌ 실패 · 0건")).toBeVisible();
+    expect(screen.getByText("📜 반영 이력 · 0건")).toBeVisible();
   });
 
-  it("승인 대기 카드에서 승인하면 apply를 호출하고 목록을 갱신한다", async () => {
-    hardenJobsMock.list.mockResolvedValue({ ...emptyList(), pending: [listItem()] });
+  it("5건을 초과하는 상태에 전체 N건 보기 링크를 표시한다", async () => {
+    hardenJobsMock.summary.mockResolvedValue({
+      ...emptySummary(),
+      pending: group([listItem()], 6),
+    });
+    await act(async () => { render(<HardeningReviewPage />); });
+    expect(screen.getByRole("link", { name: "전체 6건 보기" })).toHaveAttribute(
+      "href",
+      "/hardening/pending",
+    );
+    expect(screen.queryByRole("link", { name: "전체 0건 보기" })).not.toBeInTheDocument();
+  });
+
+  it("승인 대기 카드에서 승인하면 현재 요약을 다시 조회한다", async () => {
+    hardenJobsMock.summary.mockResolvedValue({
+      ...emptySummary(), pending: group([listItem()]),
+    });
     questionsMock.applyHardenChoices.mockResolvedValue({ ok: true });
     await act(async () => { render(<HardeningReviewPage />); });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "✅ 승인" })); });
     expect(questionsMock.applyHardenChoices).toHaveBeenCalledWith(7, 11);
-    expect(hardenJobsMock.list).toHaveBeenCalledTimes(2);
+    expect(hardenJobsMock.summary).toHaveBeenCalledTimes(2);
   });
 
-  it("거절 버튼은 dismiss를 호출한다", async () => {
-    hardenJobsMock.list.mockResolvedValue({ ...emptyList(), pending: [listItem()] });
-    questionsMock.dismissHardenChoices.mockResolvedValue({ ok: true });
+  it("숨겨진 탭에서는 폴링하지 않고 복귀할 때 즉시 갱신한다", async () => {
+    vi.useFakeTimers();
+    hardenJobsMock.summary.mockResolvedValue(emptySummary());
     await act(async () => { render(<HardeningReviewPage />); });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "🗑 거절" })); });
-    expect(questionsMock.dismissHardenChoices).toHaveBeenCalledWith(7, 11);
+    expect(hardenJobsMock.summary).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    await act(async () => { vi.advanceTimersByTime(5000); });
+    expect(hardenJobsMock.summary).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(hardenJobsMock.summary).toHaveBeenCalledTimes(2);
   });
 
-  it("검증 의견이 있으면 사실 확인 배너를 보여준다", async () => {
-    const item = listItem();
-    (item.preview as { factualConcern: string | null }).factualConcern = "정답이 최신 문서와 다릅니다";
-    hardenJobsMock.list.mockResolvedValue({ ...emptyList(), pending: [item] });
-    await act(async () => { render(<HardeningReviewPage />); });
-    expect(screen.getByText(/사실 확인 필요/)).toBeVisible();
-    expect(screen.getByRole("button", { name: "🔍 사실 확인 요청" })).toBeVisible();
-  });
+  it("늦게 도착한 이전 응답이 최신 목록을 덮지 않는다", async () => {
+    const first = deferred<ReturnType<typeof emptySummary>>();
+    const latest = {
+      ...emptySummary(),
+      running: group([listItem({ id: 12, questionPreview: "최신 작업", status: "RUNNING" })]),
+    };
+    hardenJobsMock.summary
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(latest);
 
-  it("승인 409 충돌은 안내 메시지를 보여준다", async () => {
-    const { ApiError } = await import("@/lib/api-client");
-    hardenJobsMock.list.mockResolvedValue({ ...emptyList(), pending: [listItem()] });
-    questionsMock.applyHardenChoices.mockRejectedValue(new ApiError("CHOICE_HARDENING_SOURCE_CHANGED", "원본 변경", 409));
-    await act(async () => { render(<HardeningReviewPage />); });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "✅ 승인" })); });
-    expect(screen.getByText(/원본이 변경되어 적용할 수 없습니다/)).toBeVisible();
-  });
+    render(<HardeningReviewPage />);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(await screen.findByText("최신 작업")).toBeVisible();
 
-  it("실패 항목은 재시도와 거절 버튼을 보여준다", async () => {
-    hardenJobsMock.list.mockResolvedValue({ ...emptyList(), failed: [listItem({ status: "FAILED", preview: null, errorMessage: "CLI 실행 실패" })] });
-    await act(async () => { render(<HardeningReviewPage />); });
-    expect(screen.getByText(/CLI 실행 실패/)).toBeVisible();
-    expect(screen.getByRole("button", { name: "🔁 재시도" })).toBeVisible();
-  });
-
-  it("반영 이력은 자동/수동 배지를 구분한다", async () => {
-    hardenJobsMock.list.mockResolvedValue({ ...emptyList(), recentApplied: [listItem({ appliedAt: "2026-07-15T00:05:00.000Z", autoApplied: true }), listItem({ id: 12, appliedAt: "2026-07-15T00:06:00.000Z", autoApplied: false })] });
-    await act(async () => { render(<HardeningReviewPage />); });
-    expect(screen.getByText("자동 반영")).toBeVisible();
-    expect(screen.getByText("수동 반영")).toBeVisible();
+    await act(async () => {
+      first.resolve({
+        ...emptySummary(),
+        running: group([listItem({ questionPreview: "오래된 작업", status: "RUNNING" })]),
+      });
+      await first.promise;
+    });
+    expect(screen.getByText("최신 작업")).toBeVisible();
+    expect(screen.queryByText("오래된 작업")).not.toBeInTheDocument();
   });
 });
