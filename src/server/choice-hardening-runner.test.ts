@@ -8,13 +8,18 @@ const prismaMock = vi.hoisted(() => ({
   },
 }));
 const runEngineMock = vi.hoisted(() => vi.fn());
+const applyMock = vi.hoisted(() => vi.fn());
 
 vi.mock("./db", () => ({ prisma: prismaMock }));
 vi.mock("./generation/run-engine", () => ({
   runEngine: runEngineMock,
   generationTimeoutMs: () => 1_000,
 }));
+vi.mock("./choice-hardening-service", () => ({
+  applyChoiceHardeningJob: applyMock,
+}));
 
+import { ServiceError } from "./errors";
 import { runChoiceHardeningJob } from "./choice-hardening-runner";
 
 const original = {
@@ -71,6 +76,8 @@ describe("choice hardening runner", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     runEngineMock.mockReset();
+    applyMock.mockReset();
+    applyMock.mockResolvedValue(undefined);
     prismaMock.choiceHardeningJob.findUnique.mockResolvedValue(
       job({ startedAt: new Date("2026-07-15T00:00:00.000Z") }),
     );
@@ -218,6 +225,71 @@ describe("choice hardening runner", () => {
           startedAt: expect.any(Date),
         }),
         data: expect.objectContaining({ status: "FAILED" }),
+      }),
+    );
+  });
+
+  it("concern 없는 성공은 자동 반영을 호출한다", async () => {
+    runEngineMock.mockResolvedValueOnce(success(JSON.stringify(generated)));
+
+    await runChoiceHardeningJob(11);
+
+    expect(applyMock).toHaveBeenCalledWith(7, 11, { auto: true });
+  });
+
+  it("factualConcern이 있으면 자동 반영하지 않는다", async () => {
+    runEngineMock.mockResolvedValueOnce(
+      success(JSON.stringify({ ...generated, factual_concern: "정답 검증 필요" })),
+    );
+
+    await runChoiceHardeningJob(11);
+
+    expect(applyMock).not.toHaveBeenCalled();
+    expect(prismaMock.choiceHardeningJob.updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "SUCCEEDED" }),
+      }),
+    );
+  });
+
+  it("fencing에 밀린 늦은 성공은 자동 반영하지 않는다", async () => {
+    prismaMock.choiceHardeningJob.updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+    runEngineMock.mockResolvedValueOnce(success(JSON.stringify(generated)));
+
+    await runChoiceHardeningJob(11);
+
+    expect(applyMock).not.toHaveBeenCalled();
+  });
+
+  it("원본 변경 충돌은 job을 FAILED로 마감한다", async () => {
+    runEngineMock.mockResolvedValueOnce(success(JSON.stringify(generated)));
+    applyMock.mockRejectedValue(
+      new ServiceError("CHOICE_HARDENING_SOURCE_CHANGED", "원본 변경", 409),
+    );
+
+    await runChoiceHardeningJob(11);
+
+    expect(prismaMock.choiceHardeningJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: 11, attempt: 2, status: "SUCCEEDED", appliedAt: null },
+      data: {
+        status: "FAILED",
+        errorMessage: "원본 문제가 변경되어 자동 반영할 수 없습니다",
+        finishedAt: expect.any(Date),
+      },
+    });
+  });
+
+  it("자동 반영의 일시 오류는 SUCCEEDED를 유지한다", async () => {
+    runEngineMock.mockResolvedValueOnce(success(JSON.stringify(generated)));
+    applyMock.mockRejectedValue(new Error("DB 연결 끊김"));
+
+    await runChoiceHardeningJob(11);
+
+    expect(prismaMock.choiceHardeningJob.updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "SUCCEEDED" }),
       }),
     );
   });

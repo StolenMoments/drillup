@@ -5,6 +5,8 @@ import { extractJsonObject } from "@/core/json-extract";
 import { buildChoiceHardeningPrompt } from "@/core/prompt-template";
 import type { McqPayload } from "@/core/types";
 import { prisma } from "./db";
+import { applyChoiceHardeningJob } from "./choice-hardening-service";
+import { ServiceError } from "./errors";
 import { runEngine } from "./generation/run-engine";
 
 function outputDir(jobId: number, attempt: number): string {
@@ -44,6 +46,33 @@ async function markFailed(
       finishedAt: new Date(),
     },
   });
+}
+
+async function autoApply(questionId: number, token: ClaimToken): Promise<void> {
+  try {
+    await applyChoiceHardeningJob(questionId, token.id, { auto: true });
+  } catch (error) {
+    if (
+      error instanceof ServiceError &&
+      error.code === "CHOICE_HARDENING_SOURCE_CHANGED"
+    ) {
+      await prisma.choiceHardeningJob.updateMany({
+        where: {
+          id: token.id,
+          attempt: token.attempt,
+          status: "SUCCEEDED",
+          appliedAt: null,
+        },
+        data: {
+          status: "FAILED",
+          errorMessage: "원본 문제가 변경되어 자동 반영할 수 없습니다",
+          finishedAt: new Date(),
+        },
+      });
+      return;
+    }
+    console.error("choice hardening auto-apply failed", error);
+  }
 }
 
 export async function runChoiceHardeningJob(jobId: number): Promise<void> {
@@ -94,7 +123,7 @@ export async function runChoiceHardeningJob(jobId: number): Promise<void> {
       return;
     }
 
-    await prisma.choiceHardeningJob.updateMany({
+    const succeeded = await prisma.choiceHardeningJob.updateMany({
       where: claimedWhere(token),
       data: {
         status: "SUCCEEDED",
@@ -113,6 +142,8 @@ export async function runChoiceHardeningJob(jobId: number): Promise<void> {
         finishedAt: new Date(),
       },
     });
+    if (succeeded.count === 0 || parsed.factualConcern !== null) return;
+    await autoApply(job.questionId, token);
   } catch (error) {
     await markFailed(
       token,
