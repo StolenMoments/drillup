@@ -180,6 +180,8 @@ export interface ChoiceHardeningJobDto {
   startedAt: string | null;
   finishedAt: string | null;
   appliedAt: string | null;
+  autoApplied: boolean;
+  dismissedAt: string | null;
 }
 
 export type GenerationEngineDto = "CLAUDE" | "CODEX" | "ANTIGRAVITY";

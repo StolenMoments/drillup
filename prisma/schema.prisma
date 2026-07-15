@@ -120,6 +120,8 @@ model ChoiceHardeningJob {
   startedAt     DateTime?                @map("started_at")
   finishedAt    DateTime?                @map("finished_at")
   appliedAt     DateTime?                @map("applied_at")
+  autoApplied   Boolean                  @default(false) @map("auto_applied")
+  dismissedAt   DateTime?                @map("dismissed_at")
   question      Question                 @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
   @@unique([questionId, sourceHash, engine, verifyEngine], map: "ch_job_source_engine_key")

@@ -27,6 +27,8 @@ function toDto(job: ChoiceHardeningJob): ChoiceHardeningJobDto {
     startedAt: job.startedAt?.toISOString() ?? null,
     finishedAt: job.finishedAt?.toISOString() ?? null,
     appliedAt: job.appliedAt?.toISOString() ?? null,
+    autoApplied: job.autoApplied,
+    dismissedAt: job.dismissedAt?.toISOString() ?? null,
   };
 }
 

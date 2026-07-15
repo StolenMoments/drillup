@@ -56,6 +56,8 @@ function job(overrides: Record<string, unknown> = {}) {
     startedAt: null,
     finishedAt: null,
     appliedAt: null,
+    autoApplied: false,
+    dismissedAt: null,
     ...overrides,
   };
 }
@@ -221,6 +223,25 @@ describe("choice hardening job service", () => {
     expect(lockSql).toContain("FROM question");
     expect(lockSql).toContain("FROM choice_hardening_job");
     expect(lockSql.match(/FOR UPDATE/g)).toHaveLength(2);
+  });
+
+  it("job 조회 DTO는 autoApplied와 dismissedAt을 포함한다", async () => {
+    prismaMock.choiceHardeningJob.findUnique.mockResolvedValue(
+      job({
+        status: "SUCCEEDED",
+        preview,
+        autoApplied: true,
+        appliedAt: new Date("2026-07-15T00:03:00.000Z"),
+        dismissedAt: new Date("2026-07-15T00:04:00.000Z"),
+        finishedAt: new Date("2026-07-15T00:02:00.000Z"),
+      }),
+    );
+
+    await expect(getChoiceHardeningJob(7, 11)).resolves.toMatchObject({
+      autoApplied: true,
+      appliedAt: "2026-07-15T00:03:00.000Z",
+      dismissedAt: "2026-07-15T00:04:00.000Z",
+    });
   });
 
   it("잠금 후 이미 적용된 job은 idempotent 성공으로 처리한다", async () => {
