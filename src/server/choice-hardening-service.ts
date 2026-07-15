@@ -183,6 +183,7 @@ export async function getChoiceHardeningJob(
 export async function applyChoiceHardeningJob(
   questionId: number,
   jobId: number,
+  options: { auto?: boolean } = {},
 ): Promise<void> {
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM question WHERE id = ${questionId} FOR UPDATE`;
@@ -199,6 +200,13 @@ export async function applyChoiceHardeningJob(
       throw new ServiceError("NOT_FOUND", "선지 강화 작업을 찾을 수 없습니다", 404);
     }
     if (job.appliedAt) return;
+    if (job.dismissedAt) {
+      throw new ServiceError(
+        "CHOICE_HARDENING_DISMISSED",
+        "거절된 작업은 적용할 수 없습니다",
+        409,
+      );
+    }
     if (job.status !== "SUCCEEDED" || !job.preview) {
       throw new ServiceError(
         "CHOICE_HARDENING_NOT_READY",
@@ -227,8 +235,34 @@ export async function applyChoiceHardeningJob(
     await tx.answerExplanation.deleteMany({ where: { questionId } });
     await tx.choiceHardeningJob.update({
       where: { id: jobId },
-      data: { appliedAt: new Date() },
+      data: { appliedAt: new Date(), autoApplied: options.auto === true },
     });
+  });
+}
+
+export async function dismissChoiceHardeningJob(
+  questionId: number,
+  jobId: number,
+): Promise<void> {
+  const job = await findJobOrThrow(questionId, jobId);
+  if (job.appliedAt) {
+    throw new ServiceError(
+      "CHOICE_HARDENING_ALREADY_APPLIED",
+      "이미 반영된 작업은 거절할 수 없습니다",
+      409,
+    );
+  }
+  if (job.status === "RUNNING") {
+    throw new ServiceError(
+      "CHOICE_HARDENING_NOT_READY",
+      "진행 중인 작업은 거절할 수 없습니다",
+      409,
+    );
+  }
+  if (job.dismissedAt) return;
+  await prisma.choiceHardeningJob.updateMany({
+    where: { id: jobId, appliedAt: null, dismissedAt: null },
+    data: { dismissedAt: new Date() },
   });
 }
 

@@ -145,6 +145,11 @@ export const api = {
         `/api/questions/${id}/harden-choices/${jobId}/apply`,
         { method: "POST" },
       ),
+    dismissHardenChoices: (id: number, jobId: number) =>
+      request<{ ok: true }>(
+        `/api/questions/${id}/harden-choices/${jobId}/dismiss`,
+        { method: "POST" },
+      ),
     reviewFact: (id: number, engine: GenerationEngineDto, concern: string) =>
       request<FactualReviewDto>(`/api/questions/${id}/review-fact`, {
         method: "POST",

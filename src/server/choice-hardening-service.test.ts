@@ -16,6 +16,7 @@ vi.mock("./db", () => ({ prisma: prismaMock }));
 
 import {
   applyChoiceHardeningJob,
+  dismissChoiceHardeningJob,
   getChoiceHardeningJob,
   startChoiceHardeningJob,
 } from "./choice-hardening-service";
@@ -214,7 +215,10 @@ describe("choice hardening job service", () => {
     );
     expect(tx.answerExplanation.deleteMany).toHaveBeenCalledWith({ where: { questionId: 7 } });
     expect(tx.choiceHardeningJob.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 11 }, data: { appliedAt: expect.any(Date) } }),
+      expect.objectContaining({
+        where: { id: 11 },
+        data: { appliedAt: expect.any(Date), autoApplied: false },
+      }),
     );
     expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
     const lockSql = tx.$queryRaw.mock.calls
@@ -276,6 +280,88 @@ describe("choice hardening job service", () => {
       finishedAt: "2026-07-15T00:02:00.000Z",
       errorMessage: "검증 실패",
     });
+  });
+
+  it("auto 옵션 적용은 autoApplied를 기록한다", async () => {
+    const sourceHash = await sha256Fingerprint(original);
+    const tx = transactionClient(
+      { id: 7, type: "MCQ", payload: original },
+      job({ status: "SUCCEEDED", sourceHash, preview }),
+    );
+    prismaMock.$transaction.mockImplementation(
+      async (callback: (client: typeof tx) => Promise<void>) => callback(tx),
+    );
+
+    await applyChoiceHardeningJob(7, 11, { auto: true });
+
+    expect(tx.choiceHardeningJob.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { appliedAt: expect.any(Date), autoApplied: true },
+      }),
+    );
+  });
+
+  it("거절된 job 적용은 409로 거부한다", async () => {
+    const sourceHash = await sha256Fingerprint(original);
+    const tx = transactionClient(
+      { id: 7, type: "MCQ", payload: original },
+      job({ status: "SUCCEEDED", sourceHash, preview, dismissedAt: new Date() }),
+    );
+    prismaMock.$transaction.mockImplementation(
+      async (callback: (client: typeof tx) => Promise<void>) => callback(tx),
+    );
+
+    await expect(applyChoiceHardeningJob(7, 11)).rejects.toMatchObject({
+      code: "CHOICE_HARDENING_DISMISSED",
+      status: 409,
+    });
+    expect(tx.question.update).not.toHaveBeenCalled();
+  });
+
+  it("완료된 job 거절은 dismissedAt을 기록한다", async () => {
+    prismaMock.choiceHardeningJob.findUnique.mockResolvedValue(
+      job({ status: "SUCCEEDED", preview, finishedAt: new Date() }),
+    );
+    prismaMock.choiceHardeningJob.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(dismissChoiceHardeningJob(7, 11)).resolves.toBeUndefined();
+
+    expect(prismaMock.choiceHardeningJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: 11, appliedAt: null, dismissedAt: null },
+      data: { dismissedAt: expect.any(Date) },
+    });
+  });
+
+  it("이미 반영된 job 거절은 409로 거부한다", async () => {
+    prismaMock.choiceHardeningJob.findUnique.mockResolvedValue(
+      job({ status: "SUCCEEDED", preview, appliedAt: new Date() }),
+    );
+
+    await expect(dismissChoiceHardeningJob(7, 11)).rejects.toMatchObject({
+      code: "CHOICE_HARDENING_ALREADY_APPLIED",
+      status: 409,
+    });
+  });
+
+  it("진행 중 job 거절은 409로 거부한다", async () => {
+    prismaMock.choiceHardeningJob.findUnique.mockResolvedValue(
+      job({ status: "RUNNING", startedAt: new Date() }),
+    );
+
+    await expect(dismissChoiceHardeningJob(7, 11)).rejects.toMatchObject({
+      code: "CHOICE_HARDENING_NOT_READY",
+      status: 409,
+    });
+  });
+
+  it("이미 거절된 job 거절은 no-op 성공이다", async () => {
+    prismaMock.choiceHardeningJob.findUnique.mockResolvedValue(
+      job({ status: "FAILED", errorMessage: "실패", dismissedAt: new Date() }),
+    );
+
+    await expect(dismissChoiceHardeningJob(7, 11)).resolves.toBeUndefined();
+
+    expect(prismaMock.choiceHardeningJob.updateMany).not.toHaveBeenCalled();
   });
 
   it("오래 실행된 job은 조회 전에 stale FAILED 상태로 정리한다", async () => {
