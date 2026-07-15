@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { api } from "@/lib/api-client";
+import { useCallback, useEffect, useState } from "react";
+import { ApiError, api } from "@/lib/api-client";
 import type {
+  ChoiceHardeningJobDto,
   ChoiceExplanationDto,
   FactualReviewDto,
   GenerationEngineDto,
@@ -39,9 +40,10 @@ type EngineState =
 type HardenState =
   | { status: "idle" }
   | { status: "loading"; engine: GenerationEngineDto }
-  | { status: "preview"; preview: HardenPreviewDto; applying: boolean }
+  | { status: "tracking"; job: ChoiceHardeningJobDto; pollError: string | null }
+  | { status: "preview"; job: ChoiceHardeningJobDto; preview: HardenPreviewDto; applying: boolean }
   | { status: "applied" }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string; job?: ChoiceHardeningJobDto };
 
 function engineLabel(engine: GenerationEngineDto): string {
   if (engine === "CLAUDE") return "Claude";
@@ -55,6 +57,23 @@ function idleEngineStates(): Record<GenerationEngineDto, EngineState> {
     CODEX: { status: "idle" },
     ANTIGRAVITY: { status: "idle" },
   };
+}
+
+function hardenStateForJob(job: ChoiceHardeningJobDto): HardenState {
+  if (job.status === "SUCCEEDED" && job.preview) {
+    return { status: "preview", job, preview: job.preview, applying: false };
+  }
+  if (job.status === "FAILED") {
+    return { status: "error", message: job.errorMessage ?? "작업이 실패했습니다", job };
+  }
+  return { status: "tracking", job, pollError: null };
+}
+
+function userFacingError(error: unknown, fallback: string): string {
+  if (error instanceof ApiError && error.code === "NETWORK_ERROR") {
+    return "연결이 끊겼습니다. 앱으로 돌아오면 진행 상태를 다시 확인할 수 있습니다.";
+  }
+  return error instanceof Error ? error.message : fallback;
 }
 
 function resultTitle(isCorrect: boolean): string {
@@ -284,15 +303,56 @@ export default function ResultPanel({
     setFactualApplied(true);
   }
 
-  async function requestHarden(engine: GenerationEngineDto) {
+  const pollHardenJob = useCallback(async (jobId: number) => {
+    try {
+      const { job } = await api.questions.getHardenChoices(question.id, jobId);
+      setHarden((current) => {
+        if (current.status !== "tracking" || current.job.id !== jobId) return current;
+        return hardenStateForJob(job);
+      });
+    } catch (error) {
+      setHarden((current) => {
+        if (current.status !== "tracking" || current.job.id !== jobId) return current;
+        if (error instanceof ApiError && error.code === "NETWORK_ERROR") {
+          return { ...current, pollError: userFacingError(error, "진행 상태 확인 실패") };
+        }
+        return {
+          status: "error",
+          message: userFacingError(error, "진행 상태 확인 실패"),
+          job: current.job,
+        };
+      });
+    }
+  }, [question.id]);
+
+  const trackedJobId = harden.status === "tracking" ? harden.job.id : null;
+
+  useEffect(() => {
+    if (trackedJobId === null) return;
+    const refresh = () => void pollHardenJob(trackedJobId);
+    const interval = window.setInterval(refresh, 5_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    const onPageShow = () => refresh();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [pollHardenJob, trackedJobId]);
+
+  async function requestHarden(engine: GenerationEngineDto, force = false) {
     setHarden({ status: "loading", engine });
     try {
-      const preview = await api.questions.hardenChoices(question.id, engine);
-      setHarden({ status: "preview", preview, applying: false });
+      const { job } = await api.questions.hardenChoices(question.id, engine, force);
+      setHarden(hardenStateForJob(job));
     } catch (err) {
       setHarden({
         status: "error",
-        message: err instanceof Error ? err.message : "요청 실패",
+        message: userFacingError(err, "요청 실패"),
       });
     }
   }
@@ -301,16 +361,14 @@ export default function ResultPanel({
     if (harden.status !== "preview" || harden.applying) return;
     setHarden({ ...harden, applying: true });
     try {
-      const detail = await api.questions.get(question.id);
-      await api.questions.update(question.id, {
-        payload: harden.preview.payload,
-        explanation: detail.explanation,
-      });
+      await api.questions.applyHardenChoices(question.id, harden.job.id);
+      setEngineStates(idleEngineStates());
       setHarden({ status: "applied" });
     } catch (err) {
       setHarden({
         status: "error",
-        message: err instanceof Error ? err.message : "적용 실패",
+        message: userFacingError(err, "적용 실패"),
+        job: harden.job,
       });
     }
   }
@@ -468,21 +526,53 @@ export default function ResultPanel({
                   onClick={() => requestHarden(value)}
                   disabled={
                     harden.status === "loading" ||
+                    harden.status === "tracking" ||
                     (harden.status === "preview" && harden.applying)
                   }
                   className="btn btn-secondary text-sm"
                 >
-                  {harden.status === "loading" && harden.engine === value
-                    ? "수정본 받는 중..."
+                  {(harden.status === "loading" && harden.engine === value) ||
+                  (harden.status === "tracking" && harden.job.engine === value)
+                    ? "생성 중..."
                     : `${engineLabel(value)}로 올리기`}
                 </button>
               ))}
             </div>
           )}
+          {harden.status === "tracking" && (
+            <div
+              className="rounded-[10px] border border-[color:var(--brand)] bg-[color:var(--brand-soft)] px-3 py-2 text-sm"
+              role="status"
+              aria-live="polite"
+            >
+              <p className="font-semibold">생성 중...</p>
+              <p className="mt-1 text-[color:var(--muted)]">
+                앱을 잠시 나가도 작업은 서버에서 계속됩니다. 돌아오면 진행 상태를 다시 확인합니다.
+              </p>
+              {harden.pollError && (
+                <p
+                  className="mt-2 rounded-[10px] bg-[color:var(--warning-soft)] px-3 py-2 text-[color:var(--text)]"
+                  role="alert"
+                >
+                  ⚠️ {harden.pollError} 자동 확인은 계속됩니다.
+                </p>
+              )}
+            </div>
+          )}
           {harden.status === "error" && (
-            <p className="text-[color:var(--danger)]">
-              ❌ 수정본을 가져오지 못했습니다: {harden.message}
-            </p>
+            <div className="space-y-2">
+              <p className="text-[color:var(--danger)]">
+                ❌ 수정본을 가져오지 못했습니다: {harden.message}
+              </p>
+              {harden.job && (
+                <button
+                  onClick={() => requestHarden(harden.job!.engine, true)}
+                  className="btn btn-secondary text-sm"
+                >
+                  새로 생성
+                </button>
+              )}
+            </div>
           )}
           {harden.status === "preview" && (
             <div className="surface surface-pad space-y-2">
@@ -540,6 +630,13 @@ export default function ResultPanel({
                 className="btn btn-primary text-sm"
               >
                 {harden.applying ? "적용 중..." : "✅ 적용하기"}
+              </button>
+              <button
+                onClick={() => requestHarden(harden.job.engine, true)}
+                disabled={harden.applying}
+                className="btn btn-secondary ml-2 text-sm"
+              >
+                새로 생성
               </button>
             </div>
           )}

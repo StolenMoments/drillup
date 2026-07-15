@@ -1,5 +1,6 @@
 import type {
   AnswerExplanationDto,
+  ChoiceHardeningJobDto,
   ChoiceCountDto,
   CorrectAnswerCountDto,
   FactualReviewDto,
@@ -7,7 +8,6 @@ import type {
   GenerationJobDto,
   GenerationJobSummaryDto,
   GenerationRunLogDto,
-  HardenPreviewDto,
   KeywordDto,
   KeywordRefDto,
   KeywordSuggestionDto,
@@ -36,11 +36,20 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-    credentials: "include",
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+      credentials: "include",
+    });
+  } catch {
+    throw new ApiError(
+      "NETWORK_ERROR",
+      "네트워크 연결이 끊겼습니다. 연결을 확인한 뒤 다시 시도해 주세요",
+      0,
+    );
+  }
   const body: unknown = await res.json().catch(() => null);
 
   if (
@@ -122,11 +131,20 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ engine }),
       }),
-    hardenChoices: (id: number, engine: GenerationEngineDto) =>
-      request<HardenPreviewDto>(`/api/questions/${id}/harden-choices`, {
+    hardenChoices: (id: number, engine: GenerationEngineDto, force = false) =>
+      request<{ job: ChoiceHardeningJobDto }>(`/api/questions/${id}/harden-choices`, {
         method: "POST",
-        body: JSON.stringify({ engine }),
+        body: JSON.stringify({ engine, ...(force ? { force: true } : {}) }),
       }),
+    getHardenChoices: (id: number, jobId: number) =>
+      request<{ job: ChoiceHardeningJobDto }>(
+        `/api/questions/${id}/harden-choices/${jobId}`,
+      ),
+    applyHardenChoices: (id: number, jobId: number) =>
+      request<{ ok: true }>(
+        `/api/questions/${id}/harden-choices/${jobId}/apply`,
+        { method: "POST" },
+      ),
     reviewFact: (id: number, engine: GenerationEngineDto, concern: string) =>
       request<FactualReviewDto>(`/api/questions/${id}/review-fact`, {
         method: "POST",
