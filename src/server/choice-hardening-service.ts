@@ -1,7 +1,10 @@
 import { Prisma, type ChoiceHardeningJob, type GenerationEngine } from "@prisma/client";
 import { sha256Fingerprint } from "@/core/stable-json";
+import type { McqPayload } from "@/core/types";
 import type {
   ChoiceHardeningJobDto,
+  ChoiceHardeningJobListDto,
+  ChoiceHardeningJobListItemDto,
   HardenPreviewDto,
 } from "@/lib/api-types";
 import { prisma } from "./db";
@@ -263,6 +266,68 @@ export async function dismissChoiceHardeningJob(
   await prisma.choiceHardeningJob.updateMany({
     where: { id: jobId, appliedAt: null, dismissedAt: null },
     data: { dismissedAt: new Date() },
+  });
+}
+
+const APPLIED_HISTORY_LIMIT = 20;
+
+const listInclude = {
+  question: { select: { topic: { select: { name: true } } } },
+} as const;
+
+type JobWithTopic = ChoiceHardeningJob & {
+  question: { topic: { name: string } };
+};
+
+function toListItem(job: JobWithTopic): ChoiceHardeningJobListItemDto {
+  const source = job.sourcePayload as unknown as McqPayload;
+  return {
+    ...toDto(job),
+    questionPreview:
+      source.question.length > 80
+        ? `${source.question.slice(0, 80)}...`
+        : source.question,
+    topicName: job.question.topic.name,
+    source: { question: source.question, choices: source.choices },
+  };
+}
+
+export async function listChoiceHardeningJobs(): Promise<ChoiceHardeningJobListDto> {
+  await recoverStaleChoiceHardeningJobs();
+  const [pending, running, failed, recentApplied] = await Promise.all([
+    prisma.choiceHardeningJob.findMany({
+      where: { status: "SUCCEEDED", appliedAt: null, dismissedAt: null },
+      orderBy: { finishedAt: "desc" },
+      include: listInclude,
+    }),
+    prisma.choiceHardeningJob.findMany({
+      where: { status: "RUNNING" },
+      orderBy: { createdAt: "desc" },
+      include: listInclude,
+    }),
+    prisma.choiceHardeningJob.findMany({
+      where: { status: "FAILED", dismissedAt: null },
+      orderBy: { finishedAt: "desc" },
+      include: listInclude,
+    }),
+    prisma.choiceHardeningJob.findMany({
+      where: { appliedAt: { not: null } },
+      orderBy: { appliedAt: "desc" },
+      take: APPLIED_HISTORY_LIMIT,
+      include: listInclude,
+    }),
+  ]);
+  return {
+    pending: pending.map(toListItem),
+    running: running.map(toListItem),
+    failed: failed.map(toListItem),
+    recentApplied: recentApplied.map(toListItem),
+  };
+}
+
+export async function countPendingChoiceHardeningJobs(): Promise<number> {
+  return prisma.choiceHardeningJob.count({
+    where: { status: "SUCCEEDED", appliedAt: null, dismissedAt: null },
   });
 }
 

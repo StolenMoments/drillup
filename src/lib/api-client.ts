@@ -1,6 +1,7 @@
 import type {
   AnswerExplanationDto,
   ChoiceHardeningJobDto,
+  ChoiceHardeningJobListDto,
   ChoiceCountDto,
   CorrectAnswerCountDto,
   FactualReviewDto,
@@ -169,6 +170,11 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ engine }),
       }),
+  },
+  hardenJobs: {
+    list: () => request<ChoiceHardeningJobListDto>("/api/harden-jobs"),
+    pendingCount: () =>
+      request<{ count: number }>("/api/harden-jobs/pending-count"),
   },
   keywords: {
     list: (topicId?: number) =>

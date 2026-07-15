@@ -184,6 +184,24 @@ export interface ChoiceHardeningJobDto {
   dismissedAt: string | null;
 }
 
+export interface ChoiceHardeningSourceDto {
+  question: string;
+  choices: string[];
+}
+
+export interface ChoiceHardeningJobListItemDto extends ChoiceHardeningJobDto {
+  questionPreview: string;
+  topicName: string;
+  source: ChoiceHardeningSourceDto;
+}
+
+export interface ChoiceHardeningJobListDto {
+  pending: ChoiceHardeningJobListItemDto[];
+  running: ChoiceHardeningJobListItemDto[];
+  failed: ChoiceHardeningJobListItemDto[];
+  recentApplied: ChoiceHardeningJobListItemDto[];
+}
+
 export type GenerationEngineDto = "CLAUDE" | "CODEX" | "ANTIGRAVITY";
 export type CorrectAnswerCountDto = 1 | 2;
 export type ChoiceCountDto = 4 | 5 | 6;

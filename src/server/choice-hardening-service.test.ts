@@ -5,6 +5,8 @@ const prismaMock = vi.hoisted(() => ({
   question: { findUnique: vi.fn() },
   choiceHardeningJob: {
     findUnique: vi.fn(),
+    findMany: vi.fn(),
+    count: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
@@ -16,8 +18,10 @@ vi.mock("./db", () => ({ prisma: prismaMock }));
 
 import {
   applyChoiceHardeningJob,
+  countPendingChoiceHardeningJobs,
   dismissChoiceHardeningJob,
   getChoiceHardeningJob,
+  listChoiceHardeningJobs,
   startChoiceHardeningJob,
 } from "./choice-hardening-service";
 
@@ -435,5 +439,70 @@ describe("choice hardening job service", () => {
       if (previousTimeout === undefined) delete process.env.GENERATION_TIMEOUT_MS;
       else process.env.GENERATION_TIMEOUT_MS = previousTimeout;
     }
+  });
+
+  it("목록은 4개 분류를 조건에 맞게 조회한다", async () => {
+    const withTopic = { question: { topic: { name: "주제" } } };
+    prismaMock.choiceHardeningJob.findMany.mockResolvedValue([
+      { ...job({ status: "SUCCEEDED", preview, finishedAt: new Date() }), ...withTopic },
+    ]);
+
+    const result = await listChoiceHardeningJobs();
+
+    expect(result.pending).toHaveLength(1);
+    const wheres = prismaMock.choiceHardeningJob.findMany.mock.calls.map(
+      ([arg]) => (arg as { where: Record<string, unknown> }).where,
+    );
+    expect(wheres).toContainEqual({
+      status: "SUCCEEDED",
+      appliedAt: null,
+      dismissedAt: null,
+    });
+    expect(wheres).toContainEqual({ status: "RUNNING" });
+    expect(wheres).toContainEqual({ status: "FAILED", dismissedAt: null });
+    expect(wheres).toContainEqual({ appliedAt: { not: null } });
+  });
+
+  it("반영 이력은 최근 20건으로 제한한다", async () => {
+    prismaMock.choiceHardeningJob.findMany.mockResolvedValue([]);
+
+    await listChoiceHardeningJobs();
+
+    const appliedCall = prismaMock.choiceHardeningJob.findMany.mock.calls.find(
+      ([arg]) =>
+        JSON.stringify((arg as { where: unknown }).where) ===
+        JSON.stringify({ appliedAt: { not: null } }),
+    );
+    expect(appliedCall?.[0]).toMatchObject({
+      take: 20,
+      orderBy: { appliedAt: "desc" },
+    });
+  });
+
+  it("목록 항목은 questionPreview, topicName, source를 포함한다", async () => {
+    prismaMock.choiceHardeningJob.findMany.mockResolvedValue([
+      {
+        ...job({ status: "SUCCEEDED", preview, finishedAt: new Date() }),
+        question: { topic: { name: "AWS" } },
+      },
+    ]);
+
+    const result = await listChoiceHardeningJobs();
+
+    expect(result.pending[0]).toMatchObject({
+      questionPreview: original.question,
+      topicName: "AWS",
+      source: { question: original.question, choices: original.choices },
+    });
+  });
+
+  it("승인 대기 건수를 센다", async () => {
+    prismaMock.choiceHardeningJob.count.mockResolvedValue(3);
+
+    await expect(countPendingChoiceHardeningJobs()).resolves.toBe(3);
+
+    expect(prismaMock.choiceHardeningJob.count).toHaveBeenCalledWith({
+      where: { status: "SUCCEEDED", appliedAt: null, dismissedAt: null },
+    });
   });
 });
