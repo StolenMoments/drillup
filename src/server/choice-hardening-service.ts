@@ -1,22 +1,93 @@
-import { randomUUID } from "node:crypto";
-import path from "node:path";
-import type { GenerationEngine } from "@prisma/client";
-import { parseHardenJson } from "@/core/harden-schema";
-import { extractJsonObject } from "@/core/json-extract";
-import { buildChoiceHardeningPrompt } from "@/core/prompt-template";
-import type { McqPayload } from "@/core/types";
-import type { HardenPreviewDto } from "@/lib/api-types";
+import { Prisma, type ChoiceHardeningJob, type GenerationEngine } from "@prisma/client";
+import { sha256Fingerprint } from "@/core/stable-json";
+import type {
+  ChoiceHardeningJobDto,
+  HardenPreviewDto,
+} from "@/lib/api-types";
 import { prisma } from "./db";
 import { ServiceError } from "./errors";
-import { runEngine } from "./generation/run-engine";
+import { generationTimeoutMs } from "./generation/run-engine";
 
-export async function hardenQuestionChoices(
+const STALE_GRACE_MS = 60_000;
+const STALE_JOB_MESSAGE = "서버 재시작 또는 시간 초과로 작업이 중단되었습니다";
+
+function toDto(job: ChoiceHardeningJob): ChoiceHardeningJobDto {
+  return {
+    id: job.id,
+    questionId: job.questionId,
+    sourceHash: job.sourceHash,
+    engine: job.engine,
+    verifyEngine: job.verifyEngine,
+    attempt: job.attempt,
+    status: job.status,
+    stage: job.stage,
+    preview: job.preview as HardenPreviewDto | null,
+    errorMessage: job.errorMessage,
+    createdAt: job.createdAt.toISOString(),
+    startedAt: job.startedAt?.toISOString() ?? null,
+    finishedAt: job.finishedAt?.toISOString() ?? null,
+    appliedAt: job.appliedAt?.toISOString() ?? null,
+  };
+}
+
+async function recoverStaleChoiceHardeningJobs(): Promise<void> {
+  const staleBefore = new Date(
+    Date.now() - 2 * generationTimeoutMs() - STALE_GRACE_MS,
+  );
+  await prisma.choiceHardeningJob.updateMany({
+    where: {
+      status: "RUNNING",
+      OR: [
+        { startedAt: { lt: staleBefore } },
+        { startedAt: null, createdAt: { lt: staleBefore } },
+      ],
+    },
+    data: {
+      status: "FAILED",
+      errorMessage: STALE_JOB_MESSAGE,
+      finishedAt: new Date(),
+    },
+  });
+}
+
+async function findJobByKey(
+  questionId: number,
+  sourceHash: string,
+  engine: GenerationEngine,
+  verifyEngine: GenerationEngine,
+): Promise<ChoiceHardeningJob | null> {
+  return prisma.choiceHardeningJob.findUnique({
+    where: {
+      questionId_sourceHash_engine_verifyEngine: {
+        questionId,
+        sourceHash,
+        engine,
+        verifyEngine,
+      },
+    },
+  });
+}
+
+async function findJobOrThrow(
+  questionId: number,
+  jobId: number,
+): Promise<ChoiceHardeningJob> {
+  const job = await prisma.choiceHardeningJob.findUnique({ where: { id: jobId } });
+  if (!job || job.questionId !== questionId) {
+    throw new ServiceError("NOT_FOUND", "선지 강화 작업을 찾을 수 없습니다", 404);
+  }
+  return job;
+}
+
+export async function startChoiceHardeningJob(
   questionId: number,
   engine: GenerationEngine,
-): Promise<HardenPreviewDto> {
+  force: boolean,
+): Promise<ChoiceHardeningJobDto> {
+  await recoverStaleChoiceHardeningJobs();
+
   const question = await prisma.question.findUnique({
     where: { id: questionId },
-    include: { topic: { select: { name: true } } },
   });
   if (!question) {
     throw new ServiceError("NOT_FOUND", "문제를 찾을 수 없습니다", 404);
@@ -29,37 +100,134 @@ export async function hardenQuestionChoices(
     );
   }
 
-  const original = question.payload as unknown as McqPayload;
-  const dir = path.resolve(
-    "generation_output",
-    "harden",
-    `${questionId}-${engine.toLowerCase()}-${randomUUID()}`,
-  );
-  const prompt = buildChoiceHardeningPrompt(
-    question.topic.name,
-    original,
-    path.join(dir, "result.json"),
-  );
-
-  const run = await runEngine(engine, prompt, dir);
-  if (!run.ok) {
-    throw new ServiceError("HARDEN_FAILED", run.failureReason, 502);
-  }
-
-  const parsed = parseHardenJson(extractJsonObject(run.resultText), original);
-  if (!parsed.ok) {
-    throw new ServiceError("HARDEN_PARSE_ERROR", parsed.fatal, 502);
-  }
-
-  return {
+  const sourceHash = await sha256Fingerprint(question.payload);
+  let existing = await findJobByKey(
+    questionId,
+    sourceHash,
     engine,
-    comment: parsed.comment,
-    factualConcern: parsed.factualConcern,
-    payload: {
-      question: parsed.payload.question,
-      choices: parsed.payload.choices,
-      answer_indices: parsed.payload.answer_indices ?? [],
-      choice_explanations: parsed.payload.choice_explanations ?? [],
-    },
-  };
+    engine,
+  );
+
+  if (!existing) {
+    try {
+      existing = await prisma.choiceHardeningJob.create({
+        data: {
+          questionId,
+          sourceHash,
+          sourcePayload: question.payload as Prisma.InputJsonValue,
+          engine,
+          verifyEngine: engine,
+        },
+      });
+    } catch (error) {
+      if (
+        !(
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2002"
+        )
+      ) {
+        throw error;
+      }
+      existing = await findJobByKey(
+        questionId,
+        sourceHash,
+        engine,
+        engine,
+      );
+      if (!existing) throw error;
+    }
+  }
+
+  if (
+    force &&
+    (existing.status === "SUCCEEDED" || existing.status === "FAILED")
+  ) {
+    await prisma.choiceHardeningJob.updateMany({
+      where: {
+        id: existing.id,
+        status: { in: ["SUCCEEDED", "FAILED"] },
+      },
+      data: {
+        attempt: { increment: 1 },
+        status: "RUNNING",
+        stage: "GENERATING",
+        preview: Prisma.JsonNull,
+        errorMessage: null,
+        startedAt: null,
+        finishedAt: null,
+        appliedAt: null,
+      },
+    });
+    const refreshed = await prisma.choiceHardeningJob.findUnique({
+      where: { id: existing.id },
+    });
+    if (!refreshed) {
+      throw new ServiceError("INTERNAL", "선지 강화 작업을 불러오지 못했습니다", 500);
+    }
+    existing = refreshed;
+  }
+
+  return toDto(existing);
 }
+
+export async function getChoiceHardeningJob(
+  questionId: number,
+  jobId: number,
+): Promise<ChoiceHardeningJobDto> {
+  await recoverStaleChoiceHardeningJobs();
+  return toDto(await findJobOrThrow(questionId, jobId));
+}
+
+export async function applyChoiceHardeningJob(
+  questionId: number,
+  jobId: number,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM question WHERE id = ${questionId} FOR UPDATE`;
+    await tx.$queryRaw`SELECT id FROM choice_hardening_job WHERE id = ${jobId} FOR UPDATE`;
+
+    const [question, job] = await Promise.all([
+      tx.question.findUnique({ where: { id: questionId } }),
+      tx.choiceHardeningJob.findUnique({ where: { id: jobId } }),
+    ]);
+    if (!question) {
+      throw new ServiceError("NOT_FOUND", "문제를 찾을 수 없습니다", 404);
+    }
+    if (!job || job.questionId !== questionId) {
+      throw new ServiceError("NOT_FOUND", "선지 강화 작업을 찾을 수 없습니다", 404);
+    }
+    if (job.appliedAt) return;
+    if (job.status !== "SUCCEEDED" || !job.preview) {
+      throw new ServiceError(
+        "CHOICE_HARDENING_NOT_READY",
+        "완료된 선지 강화 결과만 적용할 수 있습니다",
+        409,
+      );
+    }
+
+    const currentHash = await sha256Fingerprint(question.payload);
+    if (currentHash !== job.sourceHash) {
+      throw new ServiceError(
+        "CHOICE_HARDENING_SOURCE_CHANGED",
+        "원본 문제가 변경되어 기존 결과를 적용할 수 없습니다. 다시 생성해 주세요",
+        409,
+      );
+    }
+
+    const preview = job.preview as unknown as HardenPreviewDto;
+    await tx.question.update({
+      where: { id: questionId },
+      data: {
+        payload: preview.payload as unknown as Prisma.InputJsonValue,
+        explanation: null,
+      },
+    });
+    await tx.answerExplanation.deleteMany({ where: { questionId } });
+    await tx.choiceHardeningJob.update({
+      where: { id: jobId },
+      data: { appliedAt: new Date() },
+    });
+  });
+}
+
+export { recoverStaleChoiceHardeningJobs, toDto as choiceHardeningJobDto };
