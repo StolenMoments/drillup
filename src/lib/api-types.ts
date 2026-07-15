@@ -162,6 +162,26 @@ export interface FactualReviewDto {
   payload: HardenedMcqPayloadDto | null;
 }
 
+export type ChoiceHardeningJobStatusDto = "RUNNING" | "SUCCEEDED" | "FAILED";
+export type ChoiceHardeningJobStageDto = "GENERATING" | "VERIFYING";
+
+export interface ChoiceHardeningJobDto {
+  id: number;
+  questionId: number;
+  sourceHash: string;
+  engine: GenerationEngineDto;
+  verifyEngine: GenerationEngineDto;
+  attempt: number;
+  status: ChoiceHardeningJobStatusDto;
+  stage: ChoiceHardeningJobStageDto;
+  preview: HardenPreviewDto | null;
+  errorMessage: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  appliedAt: string | null;
+}
+
 export type GenerationEngineDto = "CLAUDE" | "CODEX" | "ANTIGRAVITY";
 export type CorrectAnswerCountDto = 1 | 2;
 export type ChoiceCountDto = 4 | 5 | 6;

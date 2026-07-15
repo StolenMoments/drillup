@@ -62,6 +62,17 @@ enum GenerationRunStatus {
   FAILED
 }
 
+enum ChoiceHardeningJobStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum ChoiceHardeningJobStage {
+  GENERATING
+  VERIFYING
+}
+
 model Topic {
   id             Int             @id @default(autoincrement())
   name           String          @unique @db.VarChar(100)
@@ -75,21 +86,45 @@ model Topic {
 }
 
 model Question {
-  id                 Int                 @id @default(autoincrement())
-  topicId            Int                 @map("topic_id")
-  type               QuestionType
-  payload            Json
-  explanation        String?             @db.Text
-  testedDistinction  String?             @map("tested_distinction") @db.Text
-  createdAt          DateTime            @default(now()) @map("created_at")
-  updatedAt          DateTime            @updatedAt @map("updated_at")
-  topic              Topic               @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  srsState           SrsState?
-  reviewLogs         ReviewLog[]
-  answerExplanations AnswerExplanation[]
-  keywords           QuestionKeyword[]
+  id                  Int                  @id @default(autoincrement())
+  topicId             Int                  @map("topic_id")
+  type                QuestionType
+  payload             Json
+  explanation         String?              @db.Text
+  testedDistinction   String?              @map("tested_distinction") @db.Text
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  topic               Topic                @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  srsState            SrsState?
+  reviewLogs          ReviewLog[]
+  answerExplanations  AnswerExplanation[]
+  keywords            QuestionKeyword[]
+  choiceHardeningJobs ChoiceHardeningJob[]
 
   @@map("question")
+}
+
+model ChoiceHardeningJob {
+  id            Int                      @id @default(autoincrement())
+  questionId    Int                      @map("question_id")
+  sourceHash    String                   @map("source_hash") @db.Char(64)
+  sourcePayload Json                     @map("source_payload")
+  engine        GenerationEngine
+  verifyEngine  GenerationEngine         @map("verify_engine")
+  attempt       Int                      @default(1)
+  status        ChoiceHardeningJobStatus @default(RUNNING)
+  stage         ChoiceHardeningJobStage  @default(GENERATING)
+  preview       Json?
+  errorMessage  String?                  @map("error_message") @db.Text
+  createdAt     DateTime                 @default(now()) @map("created_at")
+  startedAt     DateTime?                @map("started_at")
+  finishedAt    DateTime?                @map("finished_at")
+  appliedAt     DateTime?                @map("applied_at")
+  question      Question                 @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, sourceHash, engine, verifyEngine], map: "ch_job_source_engine_key")
+  @@index([status, startedAt])
+  @@map("choice_hardening_job")
 }
 
 model SrsState {
@@ -118,28 +153,28 @@ model ReviewLog {
 }
 
 model GenerationJob {
-  id                Int                      @id @default(autoincrement())
-  topicId           Int                      @map("topic_id")
-  engine            GenerationEngine
-  verifyEngine      GenerationEngine         @default(CLAUDE) @map("verify_engine")
-  instructions      String                   @db.Text
-  correctAnswerCount Int?                    @map("correct_answer_count")
-  choiceCount       Int?                     @map("choice_count")
-  status            GenerationStatus         @default(RUNNING)
-  result            Json?
-  errorMessage      String?                  @map("error_message") @db.Text
-  verifyWarning     String?                  @map("verify_warning") @db.Text
-  rawOutput         String?                  @map("raw_output") @db.MediumText
-  referenceFiles    Json?                    @map("reference_files")
-  kind              GenerationJobKind        @default(QUESTION)
-  sourceQuestionIds Json?                    @map("source_question_ids")
-  createdAt         DateTime                 @default(now()) @map("created_at")
-  finishedAt        DateTime?                @map("finished_at")
-  approvedAt        DateTime?                @map("approved_at")
-  savedCount        Int                      @default(0) @map("saved_count")
-  topic             Topic                    @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  itemRevisions     GenerationItemRevision[]
-  runLogs           GenerationRunLog[]
+  id                 Int                      @id @default(autoincrement())
+  topicId            Int                      @map("topic_id")
+  engine             GenerationEngine
+  verifyEngine       GenerationEngine         @default(CLAUDE) @map("verify_engine")
+  instructions       String                   @db.Text
+  correctAnswerCount Int?                     @map("correct_answer_count")
+  choiceCount        Int?                     @map("choice_count")
+  status             GenerationStatus         @default(RUNNING)
+  result             Json?
+  errorMessage       String?                  @map("error_message") @db.Text
+  verifyWarning      String?                  @map("verify_warning") @db.Text
+  rawOutput          String?                  @map("raw_output") @db.MediumText
+  referenceFiles     Json?                    @map("reference_files")
+  kind               GenerationJobKind        @default(QUESTION)
+  sourceQuestionIds  Json?                    @map("source_question_ids")
+  createdAt          DateTime                 @default(now()) @map("created_at")
+  finishedAt         DateTime?                @map("finished_at")
+  approvedAt         DateTime?                @map("approved_at")
+  savedCount         Int                      @default(0) @map("saved_count")
+  topic              Topic                    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  itemRevisions      GenerationItemRevision[]
+  runLogs            GenerationRunLog[]
 
   @@map("generation_job")
 }
