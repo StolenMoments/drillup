@@ -3,6 +3,11 @@ export type QuestionListSortDto =
   | "latest"
   | "accuracyAsc"
   | "accuracyDesc";
+export type QuestionSearchFieldDto =
+  | "body"
+  | "choices"
+  | "explanation"
+  | "keyword";
 
 export interface QuestionListParams {
   topicId?: number;
@@ -10,6 +15,8 @@ export interface QuestionListParams {
   type?: QuestionTypeDto;
   sort?: QuestionListSortDto;
   page?: number;
+  search?: string;
+  searchIn?: QuestionSearchFieldDto[];
 }
 
 export interface KeywordRefDto {

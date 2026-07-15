@@ -145,6 +145,107 @@ describe("question-service", () => {
     expect(clozePage.totalItems).toBe(2);
   });
 
+  it("본문에 검색어가 포함된 문제만 반환한다", async () => {
+    prismaMock.question.findMany.mockResolvedValue([
+      makeQuestion({ id: 1 }),
+      { ...makeQuestion({ id: 2 }), payload: { question: "특별한 문구가 들어간 질문", choices: ["A", "B", "C", "D"], answer_index: 0 } },
+    ]);
+
+    const page = await listQuestions({ search: "특별한", searchIn: ["body"] });
+
+    expect(page.items.map((question) => question.id)).toEqual([2]);
+  });
+
+  it("searchIn을 생략하면 본문만 검색한다", async () => {
+    prismaMock.question.findMany.mockResolvedValue([
+      { ...makeQuestion({ id: 1 }), explanation: "특별한 해설" },
+      { ...makeQuestion({ id: 2 }), payload: { question: "특별한 질문", choices: ["A", "B", "C", "D"], answer_index: 0 } },
+    ]);
+
+    const page = await listQuestions({ search: "특별한" });
+
+    expect(page.items.map((question) => question.id)).toEqual([2]);
+  });
+
+  it("대소문자를 구분하지 않고 검색한다", async () => {
+    prismaMock.question.findMany.mockResolvedValue([
+      { ...makeQuestion({ id: 1 }), payload: { question: "Hello World", choices: ["A", "B", "C", "D"], answer_index: 0 } },
+    ]);
+
+    const page = await listQuestions({ search: "hello", searchIn: ["body"] });
+
+    expect(page.items.map((question) => question.id)).toEqual([1]);
+  });
+
+  it("선택지에서 검색어를 찾는다", async () => {
+    prismaMock.question.findMany.mockResolvedValue([
+      makeQuestion({ id: 1 }),
+      { ...makeQuestion({ id: 2 }), payload: { question: "질문", choices: ["A", "특이한선택지", "C", "D"], answer_index: 0 } },
+    ]);
+
+    const page = await listQuestions({ search: "특이한선택지", searchIn: ["choices"] });
+
+    expect(page.items.map((question) => question.id)).toEqual([2]);
+  });
+
+  it("해설에서 검색어를 찾는다", async () => {
+    prismaMock.question.findMany.mockResolvedValue([
+      { ...makeQuestion({ id: 1 }), explanation: null },
+      { ...makeQuestion({ id: 2 }), explanation: "특별한 해설 내용" },
+    ]);
+
+    const page = await listQuestions({ search: "특별한 해설", searchIn: ["explanation"] });
+
+    expect(page.items.map((question) => question.id)).toEqual([2]);
+  });
+
+  it("키워드 이름에서 검색어를 찾는다", async () => {
+    prismaMock.question.findMany.mockResolvedValue([
+      { ...makeQuestion({ id: 1 }), keywords: [{ keyword: { id: 1, name: "일반키워드" } }] },
+      { ...makeQuestion({ id: 2 }), keywords: [{ keyword: { id: 2, name: "특별키워드" } }] },
+    ]);
+
+    const page = await listQuestions({ search: "특별키워드", searchIn: ["keyword"] });
+
+    expect(page.items.map((question) => question.id)).toEqual([2]);
+  });
+
+  it("여러 필드를 동시에 선택하면 하나라도 일치하면 포함한다", async () => {
+    prismaMock.question.findMany.mockResolvedValue([
+      { ...makeQuestion({ id: 1 }), explanation: "특별 단서" },
+      makeQuestion({ id: 2 }),
+    ]);
+
+    const page = await listQuestions({
+      search: "특별",
+      searchIn: ["body", "explanation"],
+    });
+
+    expect(page.items.map((question) => question.id)).toEqual([1]);
+  });
+
+  it("검색어가 비어있으면 필터를 적용하지 않는다", async () => {
+    prismaMock.question.findMany.mockResolvedValue([
+      makeQuestion({ id: 1 }),
+      makeQuestion({ id: 2 }),
+    ]);
+
+    const page = await listQuestions({ search: "" });
+
+    expect(page.items.map((question) => question.id)).toEqual([2, 1]);
+  });
+
+  it("검색은 type 필터와 AND로 결합된다", async () => {
+    prismaMock.question.findMany.mockResolvedValue([
+      { ...makeQuestion({ id: 1, type: "MCQ" }), payload: { question: "특별 MCQ", choices: ["A", "B", "C", "D"], answer_index: 0 } },
+      { ...makeQuestion({ id: 2, type: "CLOZE" }), payload: { text: "특별 {{blank_2:answer}}", blanks: [{ id: "blank_2", answer: "answer" }] } },
+    ]);
+
+    const page = await listQuestions({ search: "특별", searchIn: ["body"], type: "CLOZE" });
+
+    expect(page.items.map((question) => question.id)).toEqual([2]);
+  });
+
   it("sorts questions by low and high accuracy", async () => {
     prismaMock.question.findMany.mockResolvedValue([
       makeQuestion({ id: 1, correct: 1, wrong: 3 }),

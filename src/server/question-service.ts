@@ -8,6 +8,7 @@ import type {
   QuestionListPageDto,
   QuestionListParams,
   QuestionListSortDto,
+  QuestionSearchFieldDto,
   QuestionTypeDto,
 } from "@/lib/api-types";
 import { prisma } from "./db";
@@ -21,6 +22,52 @@ function previewOf(type: QuestionTypeDto, payload: unknown): string {
       ? (payload as unknown as McqPayload).question
       : (payload as unknown as ClozePayload).text;
   return text.length > 80 ? `${text.slice(0, 80)}...` : text;
+}
+
+function bodyTextOf(type: QuestionTypeDto, payload: unknown): string {
+  return type === "MCQ"
+    ? (payload as unknown as McqPayload).question
+    : (payload as unknown as ClozePayload).text;
+}
+
+function choicesTextOf(type: QuestionTypeDto, payload: unknown): string {
+  if (type !== "MCQ") return "";
+  return (payload as unknown as McqPayload).choices.join(" ");
+}
+
+function matchesSearch(
+  question: {
+    type: QuestionTypeDto;
+    payload: unknown;
+    explanation: string | null;
+    keywords?: Array<{ keyword: { name: string } }>;
+  },
+  search: string,
+  searchIn: QuestionSearchFieldDto[],
+): boolean {
+  const needle = search.toLowerCase();
+  const haystacks: string[] = [];
+  if (searchIn.includes("body")) {
+    haystacks.push(bodyTextOf(question.type, question.payload));
+  }
+  if (searchIn.includes("choices")) {
+    haystacks.push(choicesTextOf(question.type, question.payload));
+  }
+  if (searchIn.includes("explanation")) {
+    haystacks.push(question.explanation ?? "");
+  }
+  if (searchIn.includes("keyword")) {
+    for (const link of question.keywords ?? []) {
+      haystacks.push(link.keyword.name);
+    }
+  }
+  return haystacks.some((text) => text.toLowerCase().includes(needle));
+}
+
+function resolveSearchFields(
+  searchIn: QuestionSearchFieldDto[] | undefined,
+): QuestionSearchFieldDto[] {
+  return searchIn && searchIn.length > 0 ? searchIn : ["body"];
 }
 
 function accuracyOf(question: QuestionListItemDto): number | null {
@@ -71,11 +118,20 @@ export async function listQuestions(
         ? { keywords: { some: { keywordId: params.keywordId } } }
         : {}),
     },
-    include: { reviewLogs: { select: { isCorrect: true } } },
+    include: {
+      reviewLogs: { select: { isCorrect: true } },
+      keywords: { include: { keyword: true } },
+    },
     orderBy: { id: "desc" },
   });
 
-  const items = questions.map((q) => ({
+  const searchFiltered = params.search
+    ? questions.filter((q) =>
+        matchesSearch(q, params.search!, resolveSearchFields(params.searchIn)),
+      )
+    : questions;
+
+  const items = searchFiltered.map((q) => ({
     id: q.id,
     topicId: q.topicId,
     type: q.type,
