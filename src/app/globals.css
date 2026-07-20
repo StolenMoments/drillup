@@ -440,3 +440,120 @@ textarea::placeholder {
     animation-iteration-count: 1 !important;
   }
 }
+
+@layer components {
+  .note-sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    background: oklch(0.18 0.02 250 / 0.48);
+    padding-top: max(1rem, env(safe-area-inset-top));
+  }
+
+  .note-sheet {
+    display: flex;
+    width: min(100%, 48rem);
+    max-height: min(85dvh, calc(100dvh - env(safe-area-inset-top)));
+    flex-direction: column;
+    overflow: hidden;
+    border-bottom: 0;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .note-sheet-header {
+    display: flex;
+    flex-shrink: 0;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-raised);
+    padding: 1rem;
+  }
+
+  .note-sheet-content {
+    display: grid;
+    gap: 0.9rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--surface-raised);
+    padding: 1rem 1rem max(1rem, env(safe-area-inset-bottom));
+  }
+
+  /* 노트 패널 마크다운 렌더링 */
+  .note-markdown {
+    font-size: 0.875rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+
+  .note-markdown h1,
+  .note-markdown h2,
+  .note-markdown h3 {
+    font-weight: 700;
+    margin: 1em 0 0.4em;
+    text-wrap: balance;
+  }
+
+  .note-markdown h1 {
+    font-size: 1.15rem;
+  }
+
+  .note-markdown h2 {
+    font-size: 1.05rem;
+  }
+
+  .note-markdown h3 {
+    font-size: 0.95rem;
+  }
+
+  .note-markdown ul,
+  .note-markdown ol {
+    padding-left: 1.25rem;
+    margin: 0.4em 0;
+  }
+
+  .note-markdown ul {
+    list-style: disc;
+  }
+
+  .note-markdown ol {
+    list-style: decimal;
+  }
+
+  .note-markdown li {
+    margin: 0.15em 0;
+  }
+
+  .note-markdown p {
+    margin: 0.4em 0;
+  }
+
+  .note-markdown img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .note-markdown code {
+    font-size: 0.8rem;
+    padding: 0.1em 0.3em;
+    border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+
+  .note-markdown table {
+    border-collapse: collapse;
+    margin: 0.5em 0;
+    width: 100%;
+  }
+
+  .note-markdown th,
+  .note-markdown td {
+    border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+    padding: 0.3em 0.5em;
+    text-align: left;
+  }
+}

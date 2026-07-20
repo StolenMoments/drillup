@@ -5,6 +5,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import ClozeCard from "@/components/ClozeCard";
 import McqCard from "@/components/McqCard";
+import NotePanel from "@/components/NotePanel";
 import ResultPanel from "@/components/ResultPanel";
 import { api } from "@/lib/api-client";
 import type {
@@ -39,6 +40,7 @@ function StudySession({
   const [result, setResult] = useState<ReviewResultDto | null>(null);
   const [error, setError] = useState("");
   const [keywordName, setKeywordName] = useState<string | null>(null);
+  const [noteOpen, setNoteOpen] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -141,18 +143,26 @@ function StudySession({
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <div className="surface surface-pad flex items-center justify-between gap-3 text-sm">
+      <div className="surface surface-pad flex flex-wrap items-center justify-between gap-3 text-sm">
         <span className="font-semibold">
           {modeLabel(mode)}
           {keywordName && (
             <span className="chip ml-2">🏷️ {keywordName}</span>
           )}
         </span>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <span className="chip">
             {index + 1} / {queue.length}
           </span>
           <button
+            type="button"
+            onClick={() => setNoteOpen(true)}
+            className="btn btn-secondary text-sm"
+          >
+            📝 노트
+          </button>
+          <button
+            type="button"
             onClick={removeCurrentQuestion}
             className="btn btn-danger text-sm"
           >
@@ -183,6 +193,13 @@ function StudySession({
           result={result}
           onNext={next}
           isLast={index + 1 >= queue.length}
+        />
+      )}
+      {noteOpen && current && (
+        <NotePanel
+          key={current.topicId}
+          topicId={current.topicId}
+          onClose={() => setNoteOpen(false)}
         />
       )}
     </div>
