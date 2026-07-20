@@ -73,6 +73,12 @@ enum ChoiceHardeningJobStage {
   VERIFYING
 }
 
+enum NoteTidyJobStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
 model Topic {
   id             Int             @id @default(autoincrement())
   name           String          @unique @db.VarChar(100)
@@ -81,6 +87,8 @@ model Topic {
   createdAt      DateTime        @default(now()) @map("created_at")
   questions      Question[]
   generationJobs GenerationJob[]
+  note           TopicNote?
+  noteTidyJobs   NoteTidyJob[]
 
   @@map("topic")
 }
@@ -262,4 +270,34 @@ model QuestionKeyword {
 
   @@id([questionId, keywordId])
   @@map("question_keyword")
+}
+
+model TopicNote {
+  id        Int      @id @default(autoincrement())
+  topicId   Int      @unique @map("topic_id")
+  content   String   @db.MediumText
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@map("topic_note")
+}
+
+model NoteTidyJob {
+  id           Int               @id @default(autoincrement())
+  topicId      Int               @map("topic_id")
+  sourceHash   String            @map("source_hash") @db.Char(64)
+  engine       GenerationEngine
+  status       NoteTidyJobStatus @default(RUNNING)
+  preview      String?           @db.MediumText
+  errorMessage String?           @map("error_message") @db.Text
+  createdAt    DateTime          @default(now()) @map("created_at")
+  startedAt    DateTime?         @map("started_at")
+  finishedAt   DateTime?         @map("finished_at")
+  appliedAt    DateTime?         @map("applied_at")
+  dismissedAt  DateTime?         @map("dismissed_at")
+  topic        Topic             @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@index([topicId, createdAt])
+  @@map("note_tidy_job")
 }
