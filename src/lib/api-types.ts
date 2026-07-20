@@ -353,3 +353,9 @@ export interface TopicNoteDto {
   updatedAt: string | null;
   activeTidyJob: { id: number; status: NoteTidyJobStatusDto } | null;
 }
+
+export interface NoteExtractDto {
+  engine: GenerationEngineDto;
+  /** 기존 노트에 없는 새 항목만 담긴 마크다운. 새 내용이 없으면 빈 문자열. */
+  extracted: string;
+}
