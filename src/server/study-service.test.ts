@@ -36,6 +36,7 @@ describe("study-service", () => {
       {
         question: {
           id: 1,
+          topicId: 101,
           type: "MCQ",
           payload: {
             question: "Which one is correct?",
@@ -51,6 +52,7 @@ describe("study-service", () => {
     expect(queue).toEqual([
       {
         id: 1,
+        topicId: 101,
         type: "MCQ",
         question: "Which one is correct?",
         selectionCount: 1,
@@ -68,6 +70,7 @@ describe("study-service", () => {
   it("returns one shuffled practice question without the answer", async () => {
     mocks.prisma.question.findUnique.mockResolvedValue({
       id: 7,
+      topicId: 707,
       type: "MCQ",
       payload: {
         question: "Which option is correct?",
@@ -78,6 +81,7 @@ describe("study-service", () => {
 
     await expect(getStudyQuestion(7)).resolves.toEqual({
       id: 7,
+      topicId: 707,
       type: "MCQ",
       question: "Which option is correct?",
       selectionCount: 1,
@@ -102,6 +106,7 @@ describe("study-service", () => {
   it("returns a shuffled cloze word bank without blank answers", async () => {
     mocks.prisma.question.findUnique.mockResolvedValue({
       id: 8,
+      topicId: 808,
       type: "CLOZE",
       payload: {
         text: "{{1}} is stored in {{2}}.",
@@ -115,6 +120,7 @@ describe("study-service", () => {
 
     await expect(getStudyQuestion(8)).resolves.toEqual({
       id: 8,
+      topicId: 808,
       type: "CLOZE",
       text: "{{1}} is stored in {{2}}.",
       blankIds: [1, 2],

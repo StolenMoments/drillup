@@ -30,6 +30,7 @@ import ResultPanel from "./ResultPanel";
 
 const question = {
   id: 7,
+  topicId: 1,
   type: "MCQ" as const,
   question: "원본 질문",
   choices: [

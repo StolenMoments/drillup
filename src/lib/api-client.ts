@@ -14,6 +14,7 @@ import type {
   KeywordDto,
   KeywordRefDto,
   KeywordSuggestionDto,
+  NoteTidyJobDto,
   QuestionDetailDto,
   QuestionListPageDto,
   QuestionListParams,
@@ -23,6 +24,7 @@ import type {
   StudyQuestionDto,
   SubmitReviewInput,
   TopicDto,
+  TopicNoteDto,
 } from "./api-types";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
@@ -185,6 +187,30 @@ export const api = {
       ),
     pendingCount: () =>
       request<{ count: number }>("/api/harden-jobs/pending-count"),
+  },
+  notes: {
+    get: (topicId: number) =>
+      request<TopicNoteDto>(`/api/topics/${topicId}/note`),
+    save: (topicId: number, content: string) =>
+      request<TopicNoteDto>(`/api/topics/${topicId}/note`, {
+        method: "PUT",
+        body: JSON.stringify({ content }),
+      }),
+    tidy: (topicId: number, engine: GenerationEngineDto) =>
+      request<{ job: NoteTidyJobDto }>(`/api/topics/${topicId}/note/tidy`, {
+        method: "POST",
+        body: JSON.stringify({ engine }),
+      }),
+    tidyJob: (jobId: number) =>
+      request<{ job: NoteTidyJobDto }>(`/api/note-tidy-jobs/${jobId}`),
+    applyTidy: (jobId: number) =>
+      request<TopicNoteDto>(`/api/note-tidy-jobs/${jobId}/apply`, {
+        method: "POST",
+      }),
+    dismissTidy: (jobId: number) =>
+      request<{ ok: true }>(`/api/note-tidy-jobs/${jobId}/dismiss`, {
+        method: "POST",
+      }),
   },
   keywords: {
     list: (topicId?: number) =>

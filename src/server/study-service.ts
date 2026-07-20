@@ -18,6 +18,7 @@ const UNLEARNED_QUEUE_LIMIT = 20;
 
 function toStudyDto(question: {
   id: number;
+  topicId: number;
   type: "MCQ" | "CLOZE";
   payload: unknown;
 }): StudyQuestionDto {
@@ -25,6 +26,7 @@ function toStudyDto(question: {
     const payload = question.payload as unknown as McqPayload;
     return {
       id: question.id,
+      topicId: question.topicId,
       type: "MCQ",
       question: payload.question,
       selectionCount: mcqAnswerIndices(payload).length === 2 ? 2 : 1,
@@ -40,6 +42,7 @@ function toStudyDto(question: {
   const payload = question.payload as unknown as ClozePayload;
   return {
     id: question.id,
+    topicId: question.topicId,
     type: "CLOZE",
     text: payload.text,
     blankIds: payload.blanks.map((blank) => blank.id),

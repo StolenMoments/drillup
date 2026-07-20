@@ -74,9 +74,10 @@ export interface McqChoiceDto {
 }
 
 export type StudyQuestionDto =
-  | { id: number; type: "MCQ"; question: string; choices: McqChoiceDto[]; selectionCount: 1 | 2 }
+  | { id: number; topicId: number; type: "MCQ"; question: string; choices: McqChoiceDto[]; selectionCount: 1 | 2 }
   | {
       id: number;
+      topicId: number;
       type: "CLOZE";
       text: string;
       blankIds: number[];
