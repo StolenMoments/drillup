@@ -36,3 +36,35 @@ describe("parseNoteTidyResult", () => {
     });
   });
 });
+
+describe("parseNoteTidyResult - allowEmpty", () => {
+  it("기본값에서는 빈 note를 실패로 처리한다", () => {
+    const result = parseNoteTidyResult('{"note":"   "}');
+    expect(result).toEqual({ ok: false, fatal: "정리된 노트가 비어 있습니다" });
+  });
+
+  it("allowEmpty가 true면 빈 note를 빈 문자열 성공으로 처리한다", () => {
+    const result = parseNoteTidyResult('{"note":"   "}', { allowEmpty: true });
+    expect(result).toEqual({ ok: true, note: "" });
+  });
+
+  it("allowEmpty가 true여도 note 필드가 없으면 실패한다", () => {
+    const result = parseNoteTidyResult('{"other":"x"}', { allowEmpty: true });
+    expect(result).toEqual({ ok: false, fatal: "note 필드가 필요합니다" });
+  });
+
+  it("allowEmpty가 true여도 JSON이 아니면 실패한다", () => {
+    const result = parseNoteTidyResult("not json", { allowEmpty: true });
+    expect(result).toEqual({ ok: false, fatal: "올바른 JSON이 아닙니다" });
+  });
+
+  it("내용이 있으면 옵션과 무관하게 trim해서 반환한다", () => {
+    expect(parseNoteTidyResult('{"note":"  - 항목  "}')).toEqual({
+      ok: true,
+      note: "- 항목",
+    });
+    expect(
+      parseNoteTidyResult('{"note":"  - 항목  "}', { allowEmpty: true }),
+    ).toEqual({ ok: true, note: "- 항목" });
+  });
+});
