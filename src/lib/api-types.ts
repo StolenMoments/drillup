@@ -329,3 +329,26 @@ export interface GenerationJobSummaryDto {
   createdAt: string;
   finishedAt: string | null;
 }
+
+export type NoteTidyJobStatusDto = "RUNNING" | "SUCCEEDED" | "FAILED";
+
+export interface NoteTidyJobDto {
+  id: number;
+  topicId: number;
+  sourceHash: string;
+  engine: GenerationEngineDto;
+  status: NoteTidyJobStatusDto;
+  preview: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  appliedAt: string | null;
+  dismissedAt: string | null;
+}
+
+export interface TopicNoteDto {
+  content: string;
+  updatedAt: string | null;
+  activeTidyJob: { id: number; status: NoteTidyJobStatusDto } | null;
+}
