@@ -1,6 +1,6 @@
 # 문제 핵심 내용 AI 추출 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 학습 중인 문제에서 노트에 적을 만한 핵심 포인트를 AI가 추출해 미리보기로 보여주고, 사용자가 확인 후 주제 노트에 추가할 수 있게 한다.
 
