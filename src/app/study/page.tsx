@@ -199,6 +199,7 @@ function StudySession({
         <NotePanel
           key={current.topicId}
           topicId={current.topicId}
+          questionId={current.id}
           onClose={() => setNoteOpen(false)}
         />
       )}

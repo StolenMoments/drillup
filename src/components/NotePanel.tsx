@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { ApiError, api } from "@/lib/api-client";
 import type {
   GenerationEngineDto,
+  NoteExtractDto,
   NoteTidyJobDto,
   TopicNoteDto,
 } from "@/lib/api-types";
@@ -23,6 +24,7 @@ const FOCUSABLE_SELECTOR = [
 
 interface NotePanelProps {
   topicId: number;
+  questionId: number;
   onClose: () => void;
 }
 
@@ -50,7 +52,7 @@ export default function NotePanel(props: NotePanelProps) {
   return <NotePanelContent key={props.topicId} {...props} />;
 }
 
-function NotePanelContent({ topicId, onClose }: NotePanelProps) {
+function NotePanelContent({ topicId, questionId, onClose }: NotePanelProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -71,6 +73,11 @@ function NotePanelContent({ topicId, onClose }: NotePanelProps) {
   const [engine, setEngine] = useState<GenerationEngineDto>("CLAUDE");
   const [job, setJob] = useState<NoteTidyJobDto | null>(null);
   const [comparing, setComparing] = useState<"draft" | "current">("draft");
+  const [extracting, setExtracting] = useState(false);
+  const [extractResult, setExtractResult] = useState<NoteExtractDto | null>(
+    null,
+  );
+  const [appending, setAppending] = useState(false);
 
   const invalidateJobRequests = useCallback(() => {
     jobRequestTokenRef.current += 1;
@@ -202,6 +209,7 @@ function NotePanelContent({ topicId, onClose }: NotePanelProps) {
     setMode("edit");
     setFeedback("");
     setError("");
+    setExtractResult(null);
   }
 
   async function save() {
@@ -300,6 +308,51 @@ function NotePanelContent({ topicId, onClose }: NotePanelProps) {
     } finally {
       if (topicGenerationRef.current === topicGeneration) {
         setTidyAction(null);
+      }
+    }
+  }
+
+  async function runExtract() {
+    const topicGeneration = topicGenerationRef.current;
+    setExtracting(true);
+    setError("");
+    setFeedback("");
+    setExtractResult(null);
+    try {
+      const result = await api.notes.extract(questionId, engine);
+      if (topicGenerationRef.current !== topicGeneration) return;
+      setExtractResult(result);
+    } catch (extractError) {
+      if (topicGenerationRef.current !== topicGeneration) return;
+      setError(errorMessage(extractError, "AI 추출에 실패했습니다"));
+    } finally {
+      if (topicGenerationRef.current === topicGeneration) {
+        setExtracting(false);
+      }
+    }
+  }
+
+  async function appendExtract() {
+    if (!note || !extractResult || extractResult.extracted.length === 0) return;
+    const topicGeneration = topicGenerationRef.current;
+    const base = note.content.trimEnd();
+    const merged = base
+      ? `${base}\n\n${extractResult.extracted}`
+      : extractResult.extracted;
+    setAppending(true);
+    setError("");
+    try {
+      const saved = await api.notes.save(topicId, merged);
+      if (topicGenerationRef.current !== topicGeneration) return;
+      setNote(saved);
+      setExtractResult(null);
+      setFeedback("노트에 추가했습니다 ✅");
+    } catch (appendError) {
+      if (topicGenerationRef.current !== topicGeneration) return;
+      setError(errorMessage(appendError, "노트 추가에 실패했습니다"));
+    } finally {
+      if (topicGenerationRef.current === topicGeneration) {
+        setAppending(false);
       }
     }
   }
@@ -412,6 +465,21 @@ function NotePanelContent({ topicId, onClose }: NotePanelProps) {
                         </>
                       )}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => void runExtract()}
+                      disabled={extracting}
+                      className="btn btn-secondary text-sm"
+                    >
+                      {extracting ? (
+                        "AI 추출 중..."
+                      ) : (
+                        <>
+                          <span aria-hidden="true">✨ </span>
+                          AI 추출
+                        </>
+                      )}
+                    </button>
                   </>
                 )}
                 {job?.status === "FAILED" && (
@@ -423,6 +491,39 @@ function NotePanelContent({ topicId, onClose }: NotePanelProps) {
                   </p>
                 )}
               </div>
+              {extractResult !== null && extractResult.extracted.length === 0 && (
+                <p role="status" aria-live="polite" className="muted text-sm">
+                  추가할 새 내용이 없습니다. 이미 노트에 정리되어 있어요.
+                </p>
+              )}
+              {extractResult !== null && extractResult.extracted.length > 0 && (
+                <div className="grid gap-2 border-t border-[color:var(--border)] pt-3">
+                  <span role="status" aria-live="polite" className="chip justify-self-start">
+                    ✨ 추출 초안
+                  </span>
+                  <div className="rounded-[10px] border border-[color:var(--border)] bg-[color:var(--bg-soft)] p-3">
+                    <Markdown content={extractResult.extracted} />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void appendExtract()}
+                      disabled={appending}
+                      className="btn btn-primary text-sm"
+                    >
+                      {appending ? "추가 중..." : "노트에 추가"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExtractResult(null)}
+                      disabled={appending}
+                      className="btn btn-secondary text-sm"
+                    >
+                      닫기
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
 

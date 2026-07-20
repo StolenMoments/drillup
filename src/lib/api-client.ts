@@ -14,6 +14,7 @@ import type {
   KeywordDto,
   KeywordRefDto,
   KeywordSuggestionDto,
+  NoteExtractDto,
   NoteTidyJobDto,
   QuestionDetailDto,
   QuestionListPageDto,
@@ -189,6 +190,11 @@ export const api = {
       request<{ count: number }>("/api/harden-jobs/pending-count"),
   },
   notes: {
+    extract: (questionId: number, engine: GenerationEngineDto) =>
+      request<NoteExtractDto>(`/api/questions/${questionId}/note-extract`, {
+        method: "POST",
+        body: JSON.stringify({ engine }),
+      }),
     get: (topicId: number) =>
       request<TopicNoteDto>(`/api/topics/${topicId}/note`),
     save: (topicId: number, content: string) =>

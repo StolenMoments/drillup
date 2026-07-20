@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const notesApiMock = vi.hoisted(() => ({
   applyTidy: vi.fn(),
   dismissTidy: vi.fn(),
+  extract: vi.fn(),
   get: vi.fn(),
   save: vi.fn(),
   tidy: vi.fn(),
@@ -76,7 +77,7 @@ function tidyJob(overrides: Record<string, unknown> = {}) {
 
 async function renderPanel() {
   await act(async () => {
-    render(<NotePanel topicId={3} onClose={vi.fn()} />);
+    render(<NotePanel topicId={3} questionId={42} onClose={vi.fn()} />);
   });
 }
 
@@ -216,11 +217,13 @@ describe("NotePanel", () => {
 
     let rerender!: ReturnType<typeof render>["rerender"];
     await act(async () => {
-      ({ rerender } = render(<NotePanel topicId={3} onClose={vi.fn()} />));
+      ({ rerender } = render(
+        <NotePanel topicId={3} questionId={42} onClose={vi.fn()} />,
+      ));
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3_000);
-      rerender(<NotePanel topicId={4} onClose={vi.fn()} />);
+      rerender(<NotePanel topicId={4} questionId={43} onClose={vi.fn()} />);
     });
 
     expect(screen.getByRole("status")).toHaveTextContent("정리 초안 도착");
@@ -251,7 +254,9 @@ describe("NotePanel", () => {
 
     let rerender!: ReturnType<typeof render>["rerender"];
     await act(async () => {
-      ({ rerender } = render(<NotePanel topicId={3} onClose={vi.fn()} />));
+      ({ rerender } = render(
+        <NotePanel topicId={3} questionId={42} onClose={vi.fn()} />,
+      ));
     });
     fireEvent.click(screen.getByRole("button", { name: "편집" }));
     fireEvent.change(screen.getByRole("textbox", { name: "노트 내용" }), {
@@ -259,7 +264,7 @@ describe("NotePanel", () => {
     });
 
     await act(async () => {
-      rerender(<NotePanel topicId={4} onClose={vi.fn()} />);
+      rerender(<NotePanel topicId={4} questionId={43} onClose={vi.fn()} />);
     });
     expect(screen.queryByDisplayValue("이전 topic draft")).not.toBeInTheDocument();
     expect(screen.queryByText("이전 노트")).not.toBeInTheDocument();
@@ -285,11 +290,11 @@ describe("NotePanel", () => {
     notesApiMock.get.mockResolvedValue(note("노트 내용"));
     await renderPanel();
     const closeButton = screen.getByRole("button", { name: "닫기" });
-    const tidyButton = screen.getByRole("button", { name: "AI 정리" });
+    const extractButton = screen.getByRole("button", { name: "AI 추출" });
 
     expect(closeButton).toHaveFocus();
     fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
-    expect(tidyButton).toHaveFocus();
+    expect(extractButton).toHaveFocus();
 
     fireEvent.keyDown(document, { key: "Tab" });
     expect(closeButton).toHaveFocus();
@@ -344,5 +349,99 @@ describe("NotePanel", () => {
 
     expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
     expect(screen.getByRole("status")).toHaveTextContent("정리 초안 도착");
+  });
+
+  it("AI 추출 결과를 미리보기로 보여주고 노트 끝에 덧붙여 저장한다", async () => {
+    notesApiMock.get.mockResolvedValue(note("## 기존\n\n- 이미 아는 것"));
+    notesApiMock.extract.mockResolvedValue({
+      engine: "CLAUDE",
+      extracted: "- S3는 객체 스토리지",
+    });
+    notesApiMock.save.mockImplementation((_topicId: number, content: string) =>
+      Promise.resolve(note(content)),
+    );
+    await renderPanel();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "AI 추출" }));
+    });
+
+    expect(notesApiMock.extract).toHaveBeenCalledWith(42, "CLAUDE");
+    expect(screen.getByText("S3는 객체 스토리지")).toBeVisible();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "노트에 추가" }));
+    });
+
+    expect(notesApiMock.save).toHaveBeenCalledWith(
+      3,
+      "## 기존\n\n- 이미 아는 것\n\n- S3는 객체 스토리지",
+    );
+    expect(screen.getByText("노트에 추가했습니다 ✅")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "노트에 추가" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("빈 노트에서는 추출 결과를 그대로 저장한다", async () => {
+    notesApiMock.get.mockResolvedValue(note());
+    notesApiMock.extract.mockResolvedValue({
+      engine: "CLAUDE",
+      extracted: "- 첫 항목",
+    });
+    notesApiMock.save.mockImplementation((_topicId: number, content: string) =>
+      Promise.resolve(note(content)),
+    );
+    await renderPanel();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "AI 추출" }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "노트에 추가" }));
+    });
+
+    expect(notesApiMock.save).toHaveBeenCalledWith(3, "- 첫 항목");
+  });
+
+  it("추출할 새 내용이 없으면 안내만 보여준다", async () => {
+    notesApiMock.get.mockResolvedValue(note("## 기존\n\n- 이미 아는 것"));
+    notesApiMock.extract.mockResolvedValue({
+      engine: "CLAUDE",
+      extracted: "",
+    });
+    await renderPanel();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "AI 추출" }));
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "추가할 새 내용이 없습니다",
+    );
+    expect(
+      screen.queryByRole("button", { name: "노트에 추가" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("추출 저장에 실패하면 오류를 알리고 초안을 유지한다", async () => {
+    notesApiMock.get.mockResolvedValue(note("기존 내용"));
+    notesApiMock.extract.mockResolvedValue({
+      engine: "CLAUDE",
+      extracted: "- 지켜야 할 초안",
+    });
+    notesApiMock.save.mockRejectedValue(new Error("저장 서버 오류"));
+    await renderPanel();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "AI 추출" }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "노트에 추가" }));
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("저장 서버 오류");
+    expect(screen.getByText("지켜야 할 초안")).toBeVisible();
+    expect(screen.getByRole("button", { name: "노트에 추가" })).toBeEnabled();
   });
 });
