@@ -1,5 +1,5 @@
 import type {
-  AnswerExplanationDto,
+  AnswerExplanationJobDto,
   ChoiceHardeningJobDto,
   ChoiceHardeningJobPageDto,
   ChoiceHardeningJobSummaryDto,
@@ -137,10 +137,14 @@ export const api = {
     remove: (id: number) =>
       request<{ ok: true }>(`/api/questions/${id}`, { method: "DELETE" }),
     explain: (id: number, engine: GenerationEngineDto) =>
-      request<AnswerExplanationDto>(`/api/questions/${id}/explain`, {
+      request<{ job: AnswerExplanationJobDto }>(`/api/questions/${id}/explain`, {
         method: "POST",
         body: JSON.stringify({ engine }),
       }),
+    getExplanationJob: (id: number, jobId: number) =>
+      request<{ job: AnswerExplanationJobDto }>(
+        `/api/questions/${id}/explain/${jobId}`,
+      ),
     hardenChoices: (id: number, engine: GenerationEngineDto, force = false) =>
       request<{ job: ChoiceHardeningJobDto }>(`/api/questions/${id}/harden-choices`, {
         method: "POST",

@@ -146,6 +146,26 @@ export interface ChoiceExplanationDto {
   };
 }
 
+export type AnswerExplanationJobStatusDto = "RUNNING" | "SUCCEEDED" | "FAILED";
+
+export interface AnswerExplanationJobResultDto {
+  content: string;
+  choiceExplanations: ChoiceExplanationDto[] | null;
+  factualConcern: string | null;
+}
+
+export interface AnswerExplanationJobDto {
+  id: number;
+  questionId: number;
+  engine: GenerationEngineDto;
+  status: AnswerExplanationJobStatusDto;
+  result: AnswerExplanationJobResultDto | null;
+  errorMessage: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
 export interface HardenedMcqPayloadDto {
   question: string;
   choices: string[];
