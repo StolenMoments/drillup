@@ -79,6 +79,12 @@ enum NoteTidyJobStatus {
   FAILED
 }
 
+enum AnswerExplanationJobStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
 model Topic {
   id             Int             @id @default(autoincrement())
   name           String          @unique @db.VarChar(100)
@@ -94,20 +100,21 @@ model Topic {
 }
 
 model Question {
-  id                  Int                  @id @default(autoincrement())
-  topicId             Int                  @map("topic_id")
-  type                QuestionType
-  payload             Json
-  explanation         String?              @db.Text
-  testedDistinction   String?              @map("tested_distinction") @db.Text
-  createdAt           DateTime             @default(now()) @map("created_at")
-  updatedAt           DateTime             @updatedAt @map("updated_at")
-  topic               Topic                @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  srsState            SrsState?
-  reviewLogs          ReviewLog[]
-  answerExplanations  AnswerExplanation[]
-  keywords            QuestionKeyword[]
-  choiceHardeningJobs ChoiceHardeningJob[]
+  id                    Int                    @id @default(autoincrement())
+  topicId               Int                    @map("topic_id")
+  type                  QuestionType
+  payload               Json
+  explanation           String?                @db.Text
+  testedDistinction     String?                @map("tested_distinction") @db.Text
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+  topic                 Topic                  @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  srsState              SrsState?
+  reviewLogs            ReviewLog[]
+  answerExplanations    AnswerExplanation[]
+  keywords              QuestionKeyword[]
+  choiceHardeningJobs   ChoiceHardeningJob[]
+  answerExplanationJobs AnswerExplanationJob[]
 
   @@map("question")
 }
@@ -139,6 +146,22 @@ model ChoiceHardeningJob {
   @@index([status, createdAt], map: "ch_job_running_list_idx")
   @@index([appliedAt], map: "ch_job_applied_list_idx")
   @@map("choice_hardening_job")
+}
+
+model AnswerExplanationJob {
+  id           Int                        @id @default(autoincrement())
+  questionId   Int                        @map("question_id")
+  engine       GenerationEngine
+  status       AnswerExplanationJobStatus @default(RUNNING)
+  errorMessage String?                    @map("error_message") @db.Text
+  createdAt    DateTime                   @default(now()) @map("created_at")
+  startedAt    DateTime?                  @map("started_at")
+  finishedAt   DateTime?                  @map("finished_at")
+  question     Question                   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, engine], map: "ae_job_question_engine_key")
+  @@index([status, startedAt])
+  @@map("answer_explanation_job")
 }
 
 model SrsState {
