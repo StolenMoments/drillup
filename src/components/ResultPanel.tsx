@@ -55,6 +55,7 @@ function engineStateForJob(job: AnswerExplanationJobDto): EngineState {
   if (job.status === "SUCCEEDED" && job.result) {
     return { status: "done", content: job.result.content, choiceExplanations: job.result.choiceExplanations, factualConcern: job.result.factualConcern };
   }
+  if (job.status === "SUCCEEDED") return { status: "error", message: "결과를 불러오지 못했습니다" };
   return { status: "tracking", jobId: job.id, pollError: null };
 }
 

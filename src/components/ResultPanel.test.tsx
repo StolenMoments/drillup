@@ -9,6 +9,7 @@ const apiMock = vi.hoisted(() => ({
   getHardenChoices: vi.fn(),
   applyHardenChoices: vi.fn(),
   explain: vi.fn(),
+  getExplanationJob: vi.fn(),
   reviewFact: vi.fn(),
   update: vi.fn(),
 }));
@@ -360,5 +361,168 @@ describe("ResultPanel choice hardening polling", () => {
 
     expect(screen.getByText(/이전 결과를 거절했습니다/)).toBeVisible();
     expect(screen.getByRole("button", { name: "새로 생성" })).toBeVisible();
+  });
+});
+
+function explanationJob(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 21,
+    questionId: 7,
+    engine: "CLAUDE" as const,
+    status: "RUNNING" as const,
+    result: null,
+    errorMessage: null,
+    createdAt: "2026-07-15T00:00:00.000Z",
+    startedAt: null,
+    finishedAt: null,
+    ...overrides,
+  };
+}
+
+async function startExplanationTracking(
+  engine: Record<string, unknown> = {},
+  buttonLabel = "Claude로 해설받기",
+) {
+  apiMock.explain.mockResolvedValue({ job: explanationJob(engine) });
+  render(
+    <ResultPanel question={question} result={result} onNext={vi.fn()} isLast={false} />,
+  );
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: buttonLabel }));
+  });
+}
+
+describe("ResultPanel explanation polling", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    for (const mock of Object.values(apiMock)) mock.mockReset();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it("RUNNING job을 받으면 생성 중 상태를 표시하고 버튼을 비활성화한다", async () => {
+    await startExplanationTracking();
+
+    expect(
+      screen.getByText(/생성 중 — 완료되면 여기에 표시됩니다/),
+    ).toBeVisible();
+    const button = screen.getByRole("button", { name: "생성 중..." });
+    expect(button).toBeDisabled();
+  });
+
+  it("폴링이 RUNNING에서 SUCCEEDED로 전환되면 완료 화면을 렌더한다", async () => {
+    apiMock.getExplanationJob.mockResolvedValue({
+      job: explanationJob({
+        status: "SUCCEEDED",
+        result: {
+          content: "해설 내용",
+          choiceExplanations: null,
+          factualConcern: null,
+        },
+        finishedAt: "2026-07-15T00:01:00.000Z",
+      }),
+    });
+    await startExplanationTracking();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(apiMock.getExplanationJob).toHaveBeenCalledWith(7, 21);
+    expect(screen.getByText("해설 내용")).toBeVisible();
+    expect(screen.getByText("Claude")).toBeVisible();
+    expect(
+      screen.queryByText(/생성 중 — 완료되면 여기에 표시됩니다/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("폴링이 FAILED로 전환되면 에러 상태를 렌더한다", async () => {
+    apiMock.getExplanationJob.mockResolvedValue({
+      job: explanationJob({ status: "FAILED", errorMessage: "생성 실패" }),
+    });
+    await startExplanationTracking();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(
+      screen.getByText(/Claude로 해설받기 해설을 가져오지 못했습니다: 생성 실패/),
+    ).toBeInTheDocument();
+  });
+
+  it("폴링 중 네트워크 오류가 나면 경고 배너를 보여주되 생성 중 상태를 유지한다", async () => {
+    const { ApiError } = await import("@/lib/api-client");
+    apiMock.getExplanationJob.mockRejectedValueOnce(
+      new ApiError("NETWORK_ERROR", "offline", 0),
+    );
+    await startExplanationTracking();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(screen.getByText(/연결이 끊겼습니다/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/생성 중 — 완료되면 여기에 표시됩니다/),
+    ).toBeVisible();
+  });
+
+  it("두 엔진을 동시에 추적해도 서로 상태에 영향을 주지 않는다", async () => {
+    apiMock.explain
+      .mockResolvedValueOnce({ job: explanationJob({ id: 21, engine: "CLAUDE" }) })
+      .mockResolvedValueOnce({ job: explanationJob({ id: 22, engine: "CODEX" }) });
+    apiMock.getExplanationJob.mockImplementation((_questionId: number, jobId: number) => {
+      if (jobId === 21) {
+        return Promise.resolve({
+          job: explanationJob({
+            id: 21,
+            engine: "CLAUDE",
+            status: "SUCCEEDED",
+            result: { content: "Claude 해설", choiceExplanations: null, factualConcern: null },
+          }),
+        });
+      }
+      return Promise.resolve({ job: explanationJob({ id: 22, engine: "CODEX" }) });
+    });
+    render(
+      <ResultPanel question={question} result={result} onNext={vi.fn()} isLast={false} />,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Claude로 해설받기" }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Codex로 해설받기" }));
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(screen.getByText("Claude 해설")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "생성 중..." }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Codex로 해설받기" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("SUCCEEDED인데 result가 없으면 에러 상태로 처리한다", async () => {
+    apiMock.getExplanationJob.mockResolvedValue({
+      job: explanationJob({ status: "SUCCEEDED", result: null }),
+    });
+    await startExplanationTracking();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(
+      screen.getByText(/Claude로 해설받기 해설을 가져오지 못했습니다: 결과를 불러오지 못했습니다/),
+    ).toBeInTheDocument();
   });
 });
