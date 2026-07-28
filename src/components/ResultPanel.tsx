@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api-client";
 import { engineLabel } from "@/lib/engine-label";
 import type {
+  AnswerExplanationJobDto,
   ChoiceExplanationDto,
   ChoiceHardeningJobDto,
   GenerationEngineDto,
@@ -31,6 +32,7 @@ const HARDEN_ENGINES: GenerationEngineDto[] = ["CLAUDE", "CODEX", "ANTIGRAVITY"]
 type EngineState =
   | { status: "idle" }
   | { status: "loading" }
+  | { status: "tracking"; jobId: number; pollError: string | null }
   | { status: "done"; content: string; choiceExplanations: ChoiceExplanationDto[] | null; factualConcern: string | null }
   | { status: "error"; message: string };
 
@@ -46,6 +48,14 @@ const MANUAL_REVIEW_POLL_THRESHOLD = 3;
 
 function idleEngineStates(): Record<GenerationEngineDto, EngineState> {
   return { CLAUDE: { status: "idle" }, CODEX: { status: "idle" }, ANTIGRAVITY: { status: "idle" } };
+}
+
+function engineStateForJob(job: AnswerExplanationJobDto): EngineState {
+  if (job.status === "FAILED") return { status: "error", message: job.errorMessage ?? "요청 실패" };
+  if (job.status === "SUCCEEDED" && job.result) {
+    return { status: "done", content: job.result.content, choiceExplanations: job.result.choiceExplanations, factualConcern: job.result.factualConcern };
+  }
+  return { status: "tracking", jobId: job.id, pollError: null };
 }
 
 function hardenStateForJob(job: ChoiceHardeningJobDto, succeededPolls = 0): HardenState {
@@ -130,12 +140,48 @@ export default function ResultPanel({ question, result, onNext, isLast, nextLabe
   async function requestExplanation(engine: GenerationEngineDto) {
     setEngineStates((prev) => ({ ...prev, [engine]: { status: "loading" } }));
     try {
-      const res = await api.questions.explain(question.id, engine);
-      setEngineStates((prev) => ({ ...prev, [engine]: { status: "done", content: res.content, choiceExplanations: res.choiceExplanations, factualConcern: res.factualConcern } }));
+      const { job } = await api.questions.explain(question.id, engine);
+      setEngineStates((prev) => ({ ...prev, [engine]: engineStateForJob(job) }));
     } catch (error) {
       setEngineStates((prev) => ({ ...prev, [engine]: { status: "error", message: error instanceof Error ? error.message : "요청 실패" } }));
     }
   }
+
+  const pollExplanationJob = useCallback(async (engine: GenerationEngineDto, jobId: number) => {
+    try {
+      const { job } = await api.questions.getExplanationJob(question.id, jobId);
+      setEngineStates((prev) => {
+        const current = prev[engine];
+        if (current.status !== "tracking" || current.jobId !== jobId) return prev;
+        return { ...prev, [engine]: engineStateForJob(job) };
+      });
+    } catch (error) {
+      setEngineStates((prev) => {
+        const current = prev[engine];
+        if (current.status !== "tracking" || current.jobId !== jobId) return prev;
+        if (error instanceof ApiError && error.code === "NETWORK_ERROR") {
+          return { ...prev, [engine]: { ...current, pollError: userFacingError(error, "진행 상태 확인 실패") } };
+        }
+        return { ...prev, [engine]: { status: "error", message: userFacingError(error, "진행 상태 확인 실패") } };
+      });
+    }
+  }, [question.id]);
+
+  const trackingEntries = (Object.entries(engineStates) as [GenerationEngineDto, EngineState][])
+    .filter((entry): entry is [GenerationEngineDto, Extract<EngineState, { status: "tracking" }>] => entry[1].status === "tracking");
+  const trackingKey = trackingEntries.map(([engine, s]) => `${engine}:${s.jobId}`).join(",");
+
+  useEffect(() => {
+    if (trackingEntries.length === 0) return;
+    const refresh = () => { for (const [engine, s] of trackingEntries) void pollExplanationJob(engine, s.jobId); };
+    const interval = window.setInterval(refresh, 5_000);
+    const onVisibilityChange = () => { if (document.visibilityState === "visible") refresh(); };
+    const onPageShow = () => refresh();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pageshow", onPageShow);
+    return () => { window.clearInterval(interval); document.removeEventListener("visibilitychange", onVisibilityChange); window.removeEventListener("pageshow", onPageShow); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackingKey, pollExplanationJob]);
 
   const isCorrect = result.isCorrect;
   return (
@@ -148,10 +194,11 @@ export default function ResultPanel({ question, result, onNext, isLast, nextLabe
         <p className="section-title">🤖 AI 해설 받기</p>
         <div className="flex flex-wrap gap-2">{ENGINES.map(({ value, label }) => {
           const state = engineStates[value];
-          return <button key={value} onClick={() => void requestExplanation(value)} disabled={state.status === "loading" || state.status === "done"} className="btn btn-secondary text-sm">{state.status === "loading" ? "불러오는 중..." : state.status === "done" ? `${label} ✓` : label}</button>;
+          return <button key={value} onClick={() => void requestExplanation(value)} disabled={state.status === "loading" || state.status === "tracking" || state.status === "done"} className="btn btn-secondary text-sm">{state.status === "loading" || state.status === "tracking" ? "생성 중..." : state.status === "done" ? `${label} ✓` : label}</button>;
         })}</div>
         {ENGINES.map(({ value, label }) => {
           const state = engineStates[value];
+          if (state.status === "tracking") return <div key={value} className="rounded-[10px] border border-[color:var(--brand)] bg-[color:var(--brand-soft)] px-3 py-2 text-sm" role="status" aria-live="polite"><p className="font-semibold">생성 중 — 완료되면 여기에 표시됩니다</p><p className="mt-1 text-[color:var(--muted)]">페이지를 떠나도 작업은 서버에서 계속 진행돼요.</p>{state.pollError && <p className="mt-2 rounded-[10px] bg-[color:var(--warning-soft)] px-3 py-2" role="alert">⚠️ {state.pollError} 자동 확인은 계속됩니다.</p>}</div>;
           if (state.status === "done") return <div key={value} className="surface surface-pad space-y-1"><p className="chip">{engineLabel(value)}</p>{state.factualConcern && question.type === "MCQ" && <FactualConcernBanner questionId={question.id} original={bannerOriginal(question)} concern={state.factualConcern} onApplied={resetAfterFactualApply} />}<p className="whitespace-pre-wrap text-[color:var(--muted)]">{state.content}</p></div>;
           if (state.status === "error") return <p key={value} className="text-[color:var(--danger)]">❌ {label} 해설을 가져오지 못했습니다: {state.message}</p>;
           return null;

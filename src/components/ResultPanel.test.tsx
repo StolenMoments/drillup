@@ -230,9 +230,21 @@ describe("ResultPanel choice hardening polling", () => {
       choice_explanations: ["근거 1", "근거 2", "근거 3", "근거 4"],
     };
     apiMock.explain.mockResolvedValue({
-      content: "해설",
-      choiceExplanations: null,
-      factualConcern: "정답이 최신 문서와 다릅니다",
+      job: {
+        id: 21,
+        questionId: 7,
+        engine: "CLAUDE",
+        status: "SUCCEEDED",
+        result: {
+          content: "해설",
+          choiceExplanations: null,
+          factualConcern: "정답이 최신 문서와 다릅니다",
+        },
+        errorMessage: null,
+        createdAt: "2026-07-15T00:00:00.000Z",
+        startedAt: null,
+        finishedAt: "2026-07-15T00:01:00.000Z",
+      },
     });
     apiMock.reviewFact.mockResolvedValue({
       engine: "CLAUDE",
