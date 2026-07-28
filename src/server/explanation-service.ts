@@ -11,34 +11,19 @@ import { prisma } from "./db";
 import { ServiceError } from "./errors";
 import { runEngine } from "./generation/run-engine";
 
-export async function getAnswerExplanation(
+export async function generateAndCacheExplanation(
   questionId: number,
   engine: GenerationEngine,
 ): Promise<{
-  engine: GenerationEngine;
   content: string;
   choiceExplanations: ChoiceExplanation[] | null;
   factualConcern: string | null;
-  cached: boolean;
 }> {
   const question = await prisma.question.findUnique({
     where: { id: questionId },
   });
   if (!question) {
     throw new ServiceError("NOT_FOUND", "문제를 찾을 수 없습니다", 404);
-  }
-
-  const existing = await prisma.answerExplanation.findUnique({
-    where: { questionId_engine: { questionId, engine } },
-  });
-  if (existing) {
-    return {
-      engine,
-      content: existing.content,
-      choiceExplanations: existing.choiceExplanations as ChoiceExplanation[] | null,
-      factualConcern: existing.factualConcern,
-      cached: true,
-    };
   }
 
   const dir = path.resolve(
@@ -81,10 +66,8 @@ export async function getAnswerExplanation(
   });
 
   return {
-    engine,
     content: parsed.explanation,
     choiceExplanations: parsed.choiceExplanations,
     factualConcern: parsed.factualConcern,
-    cached: false,
   };
 }
