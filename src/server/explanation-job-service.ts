@@ -135,9 +135,14 @@ export async function startAnswerExplanationJob(
     }
   }
 
-  if (existing.status === "FAILED") {
+  if (existing.status === "FAILED" || existing.status === "SUCCEEDED") {
+    // A SUCCEEDED job with no matching cache row can occur when the cache
+    // was invalidated independently (e.g. choice-hardening apply deletes
+    // AnswerExplanation rows without touching AnswerExplanationJob rows).
+    // Treat that the same as FAILED: reset to RUNNING so the runner
+    // regenerates it, instead of returning a broken SUCCEEDED/result:null DTO.
     await prisma.answerExplanationJob.updateMany({
-      where: { id: existing.id, status: "FAILED" },
+      where: { id: existing.id, status: existing.status },
       data: {
         status: "RUNNING",
         errorMessage: null,

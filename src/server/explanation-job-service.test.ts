@@ -126,6 +126,34 @@ describe("answer explanation job service", () => {
         },
       });
     });
+
+    it("SUCCEEDED job인데 캐시가 삭제되어 있으면 재생성을 위해 RUNNING으로 리셋한다", async () => {
+      // choice-hardening apply 등으로 AnswerExplanation 캐시만 삭제되고
+      // AnswerExplanationJob은 SUCCEEDED로 남아있는 상황을 재현한다.
+      const succeededStale = job({
+        status: "SUCCEEDED",
+        finishedAt: new Date("2026-07-15T00:05:00.000Z"),
+      });
+      const reset = job({ status: "RUNNING" });
+      prismaMock.answerExplanation.findUnique.mockResolvedValue(null);
+      prismaMock.answerExplanationJob.findUnique
+        .mockResolvedValueOnce(succeededStale)
+        .mockResolvedValueOnce(reset);
+      prismaMock.answerExplanationJob.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await startAnswerExplanationJob(7, "CLAUDE");
+
+      expect(result).toMatchObject({ id: 11, status: "RUNNING", result: null });
+      expect(prismaMock.answerExplanationJob.updateMany).toHaveBeenCalledWith({
+        where: { id: 11, status: "SUCCEEDED" },
+        data: {
+          status: "RUNNING",
+          errorMessage: null,
+          startedAt: null,
+          finishedAt: null,
+        },
+      });
+    });
   });
 
   describe("getAnswerExplanationJob", () => {
