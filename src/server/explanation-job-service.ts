@@ -102,8 +102,12 @@ export async function startAnswerExplanationJob(
     where: { questionId_engine: { questionId, engine } },
   });
   if (cached) {
+    // Cache-hit synthetic DTO: this is not a real AnswerExplanationJob, so
+    // `id` is a sentinel (0), not a pollable job id. Safe today because this
+    // branch always returns status "SUCCEEDED" with a non-null result, so
+    // the client never polls GET /explain/{jobId} using this value.
     return {
-      id: cached.id,
+      id: 0,
       questionId,
       engine,
       status: "SUCCEEDED",

@@ -144,7 +144,7 @@ export default function ResultPanel({ question, result, onNext, isLast, nextLabe
       const { job } = await api.questions.explain(question.id, engine);
       setEngineStates((prev) => ({ ...prev, [engine]: engineStateForJob(job) }));
     } catch (error) {
-      setEngineStates((prev) => ({ ...prev, [engine]: { status: "error", message: error instanceof Error ? error.message : "요청 실패" } }));
+      setEngineStates((prev) => ({ ...prev, [engine]: { status: "error", message: userFacingError(error, "요청 실패") } }));
     }
   }
 

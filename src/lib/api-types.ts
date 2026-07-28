@@ -129,14 +129,6 @@ export interface ReferenceFileListDto {
   dirExists: boolean;
 }
 
-export interface AnswerExplanationDto {
-  engine: GenerationEngineDto;
-  content: string;
-  choiceExplanations: ChoiceExplanationDto[] | null;
-  factualConcern: string | null;
-  cached: boolean;
-}
-
 export interface ChoiceExplanationDto {
   choice: string;
   explanation: string;
