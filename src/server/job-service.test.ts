@@ -59,9 +59,10 @@ function transactionClient() {
       return [{ id: 1 }];
     }),
     job: {
-      findUnique: vi.fn(async ({ where }: { where: { id: number } }) =>
-        database.jobs.find((job) => job.id === where.id) ?? null,
-      ),
+      findUnique: vi.fn(async ({ where }: { where: { id: number } }) => {
+        database.events.push("find");
+        return database.jobs.find((job) => job.id === where.id) ?? null;
+      }),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         database.events.push("create");
         const relation = detailRelations.find((key) => key in data);
@@ -303,6 +304,125 @@ describe("common job service", () => {
     });
     expect(database.jobs[0]).toMatchObject({ id: 1, status: "FAILED" });
     expect(database.jobs[1]).toMatchObject({ id: 2, retryOfJobId: 1 });
+    expect(database.events).toEqual([
+      "lock",
+      "create",
+      "find",
+      "lock",
+      "create",
+    ]);
+  });
+
+  it("runs retry policy after original validation and target lock, before creation", async () => {
+    const original = await createPendingJob(pendingNoteInput());
+    database.jobs[0].status = "FAILED";
+    database.events = [];
+
+    await retryJob(original.id, pendingNoteInput(), {
+      resolveExisting: async () => {
+        database.events.push("policy");
+        return null;
+      },
+    });
+
+    expect(database.events).toEqual(["find", "lock", "policy", "create"]);
+  });
+
+  it("does not run retry policy before terminal, type, and target validation", async () => {
+    const original = await createPendingJob(pendingNoteInput());
+    let policyRuns = 0;
+    const options = {
+      resolveExisting: async () => {
+        policyRuns += 1;
+        return null;
+      },
+    };
+    database.events = [];
+
+    await expect(
+      retryJob(original.id, pendingNoteInput(), options),
+    ).rejects.toThrow(/terminal/i);
+    expect(database.events).toEqual(["find"]);
+
+    database.jobs[0].status = "FAILED";
+    database.events = [];
+    await expect(
+      retryJob(
+        original.id,
+        {
+          type: "ANSWER_EXPLANATION",
+          engine: "CLAUDE",
+          target: { questionId: 7 },
+          detail: {
+            type: "ANSWER_EXPLANATION",
+            data: { sourceHash: "b".repeat(64) },
+          },
+        },
+        options,
+      ),
+    ).rejects.toThrow(/type/i);
+    expect(database.events).toEqual(["find"]);
+
+    database.events = [];
+    await expect(
+      retryJob(
+        original.id,
+        pendingNoteInput({ target: { topicId: 8 } }),
+        options,
+      ),
+    ).rejects.toThrow(/target/i);
+    expect(database.events).toEqual(["find"]);
+    expect(policyRuns).toBe(0);
+  });
+
+  it("reuses a matching active job during retry without inserting", async () => {
+    const original = await createPendingJob(pendingNoteInput());
+    database.jobs[0].status = "FAILED";
+    const active = {
+      ...database.jobs[0],
+      id: 40,
+      status: "RUNNING",
+      retryOfJobId: null,
+      runToken: "11111111-1111-4111-8111-111111111111",
+      finishedAt: null,
+    } as unknown as Job;
+    database.jobs.push(active as unknown as StoredJob);
+    const jobCount = database.jobs.length;
+    const detailCount = database.details.size;
+    database.events = [];
+
+    const result = await retryJob(original.id, pendingNoteInput(), {
+      resolveExisting: async () => active,
+    });
+
+    expect(result).toMatchObject({ id: 40, type: "NOTE_TIDY", topicId: 7 });
+    expect(database.jobs).toHaveLength(jobCount);
+    expect(database.details.size).toBe(detailCount);
+    expect(database.events).toEqual(["find", "lock"]);
+  });
+
+  it.each([
+    ["different type", { type: "ANSWER_EXPLANATION", topicId: 7 }],
+    ["different target", { type: "NOTE_TIDY", topicId: 8 }],
+  ])("rejects a mismatched retry policy result: %s", async (_case, mismatch) => {
+    const original = await createPendingJob(pendingNoteInput());
+    database.jobs[0].status = "FAILED";
+    const existing = {
+      ...database.jobs[0],
+      id: 40,
+      type: mismatch.type,
+      topicId: mismatch.topicId,
+    } as unknown as Job;
+    database.events = [];
+
+    await expect(
+      retryJob(original.id, pendingNoteInput(), {
+        resolveExisting: async () => existing,
+      }),
+    ).rejects.toThrow(/policy/i);
+    expect(database.jobs).toHaveLength(1);
+    expect(database.details.size).toBe(1);
+    expect(database.events).toEqual(["find", "lock"]);
   });
 
   it("rejects retry of a non-terminal job or a different type/target", async () => {

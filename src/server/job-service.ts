@@ -247,6 +247,7 @@ function sameTarget(job: Job, target: JobTarget): boolean {
 export async function retryJob(
   originalJobId: number,
   input: CreatePendingJobInput,
+  options?: CreatePendingJobOptions,
 ): Promise<JobDtoBase> {
   assertJobTarget(input.type, input.target);
   assertTypeAndDetail(input);
@@ -265,7 +266,7 @@ export async function retryJob(
     if (!sameTarget(original, input.target)) {
       throw new ServiceError("JOB_RETRY_TARGET_MISMATCH", "Retry job target must match", 400);
     }
-    return createInTransaction(tx, input, original.id);
+    return createInTransaction(tx, input, original.id, options);
   });
 
   return toJobDtoBase(retried);
