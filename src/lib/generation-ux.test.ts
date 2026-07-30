@@ -17,7 +17,6 @@ function item(
     verdict: "pass",
     verdictComment: null,
     revision: null,
-    selectedRevision: null,
     ...overrides,
   };
 }
@@ -27,14 +26,13 @@ describe("generation review UX state", () => {
     const failed = item({ verdict: "fail" });
     const applied = item({
       verdict: "fail",
-      selectedRevision: {
-        id: 91,
+      revision: {
         status: "SUCCEEDED",
         engine: "CLAUDE",
         verdict: "pass",
         comment: "수정했습니다",
         proposedQuestion: { type: "mcq" },
-        selectedAt: "2026-07-30T00:03:00.000Z",
+        appliedQuestion: { type: "mcq" },
         errorMessage: null,
       },
     });
@@ -50,38 +48,25 @@ describe("generation review UX state", () => {
         index: 1,
         verdict: "fail",
         revision: {
-          id: 92,
-          status: "PENDING",
+          status: "RUNNING",
           engine: "CLAUDE",
           verdict: null,
           comment: null,
           proposedQuestion: null,
-          selectedAt: null,
+          appliedQuestion: null,
           errorMessage: null,
         },
-        selectedRevision: null,
       }),
       item({
         index: 2,
         verdict: "fail",
         revision: {
-          id: 93,
           status: "SUCCEEDED",
           engine: "CLAUDE",
           verdict: "pass",
           comment: null,
           proposedQuestion: { type: "mcq" },
-          selectedAt: "2026-07-30T00:04:00.000Z",
-          errorMessage: null,
-        },
-        selectedRevision: {
-          id: 93,
-          status: "SUCCEEDED",
-          engine: "CLAUDE",
-          verdict: "pass",
-          comment: null,
-          proposedQuestion: { type: "mcq" },
-          selectedAt: "2026-07-30T00:04:00.000Z",
+          appliedQuestion: { type: "mcq" },
           errorMessage: null,
         },
       }),
@@ -89,8 +74,7 @@ describe("generation review UX state", () => {
     ];
     const job = {
       status: "SUCCEEDED",
-      type: "QUESTION_GENERATION",
-      stage: "SUCCEEDED",
+      kind: "QUESTION",
       items,
     } as unknown as GenerationJobDto;
 

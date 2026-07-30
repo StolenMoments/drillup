@@ -4,20 +4,7 @@ import { useState } from "react";
 import { api } from "@/lib/api-client";
 import type { GenerationRunLogDto, GenerationRunStageDto } from "@/lib/api-types";
 
-const stageLabels: Record<GenerationRunStageDto, string> = {
-  BLUEPRINT: "Blueprint",
-  BLUEPRINT_REPAIR: "Blueprint repair",
-  GENERATION: "Generation",
-  VERIFY: "Verify",
-  ITEM_REPAIR: "Item repair",
-  REPAIR_VERIFY: "Repair verify",
-  MANUAL_ITEM_REVISION: "Manual revision",
-  KEYWORD_TAG: "Keyword tag",
-  CHOICE_HARDENING: "선택지 강화",
-  NOTE_TIDY: "노트 정리",
-  ANSWER_EXPLANATION: "정답 해설",
-  LEGACY_OUTPUT: "기존 출력",
-};
+const stageLabels: Record<GenerationRunStageDto, string> = { BLUEPRINT: "Blueprint", BLUEPRINT_REPAIR: "Blueprint repair", GENERATION: "Generation", VERIFY: "Verify", ITEM_REPAIR: "Item repair", REPAIR_VERIFY: "Repair verify", MANUAL_ITEM_REVISION: "Manual revision", KEYWORD_TAG: "Keyword tag" };
 
 export default function GenerationDiagnostics({ jobId }: { jobId: number }) {
   const [runs, setRuns] = useState<GenerationRunLogDto[] | null>(null);

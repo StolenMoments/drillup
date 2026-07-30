@@ -245,7 +245,6 @@ export const api = {
       choiceCount: ChoiceCountDto;
       referenceFiles: string[];
       sourceQuestionIds?: number[];
-      retryOfJobId?: number;
     }) =>
       request<{ job: GenerationJobDto }>("/api/generate", {
         method: "POST",

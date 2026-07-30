@@ -8,13 +8,13 @@ type SuccessfulGenerationItem = Extract<GenerationItemDto, { ok: true }>;
 export function isQuestionItemSaveable(item: GenerationItemDto): boolean {
   return (
     item.ok &&
-    (item.verdict !== "fail" || Boolean(item.selectedRevision?.proposedQuestion))
+    (item.verdict !== "fail" || Boolean(item.revision?.appliedQuestion))
   );
 }
 
 export function selectValidItemIndices(job: GenerationJobDto): Set<number> {
   if (job.status !== "SUCCEEDED") return new Set<number>();
-  if (job.type === "KEYWORD_TAGGING") {
+  if (job.kind === "KEYWORD_TAG") {
     return new Set((job.keywordItems ?? []).map((item) => item.id));
   }
   return new Set(
@@ -31,11 +31,8 @@ export function getRevisionCounts(items: GenerationItemDto[] | null): {
   return (items ?? []).reduce(
     (counts, item) => {
       if (!item.ok) return counts;
-      if (
-        item.revision?.status === "PENDING" ||
-        item.revision?.status === "RUNNING"
-      ) counts.running += 1;
-      if (item.selectedRevision?.proposedQuestion) counts.applied += 1;
+      if (item.revision?.status === "RUNNING") counts.running += 1;
+      if (item.revision?.appliedQuestion) counts.applied += 1;
       return counts;
     },
     { applied: 0, running: 0 },
@@ -45,7 +42,7 @@ export function getRevisionCounts(items: GenerationItemDto[] | null): {
 export function hasAppliedRevision(
   item: SuccessfulGenerationItem,
 ): boolean {
-  return Boolean(item.selectedRevision?.proposedQuestion);
+  return Boolean(item.revision?.appliedQuestion);
 }
 
 export function getSavedFlashMessage(value: string | null): string | null {

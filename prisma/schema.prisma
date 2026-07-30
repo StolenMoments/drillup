@@ -85,55 +85,6 @@ enum AnswerExplanationJobStatus {
   FAILED
 }
 
-enum JobType {
-  QUESTION_GENERATION
-  KEYWORD_TAGGING
-  GENERATION_ITEM_REVISION
-  CHOICE_HARDENING
-  NOTE_TIDY
-  ANSWER_EXPLANATION
-}
-
-enum JobStatus {
-  PENDING
-  RUNNING
-  SUCCEEDED
-  FAILED
-}
-
-enum QuestionGenerationStage {
-  RUNNING
-  VERIFYING
-  SUCCEEDED
-  FAILED
-}
-
-enum JobRevisionVerdict {
-  PASS
-  FAIL
-}
-
-enum JobRunStage {
-  BLUEPRINT
-  BLUEPRINT_REPAIR
-  GENERATION
-  VERIFY
-  ITEM_REPAIR
-  REPAIR_VERIFY
-  MANUAL_ITEM_REVISION
-  KEYWORD_TAG
-  CHOICE_HARDENING
-  NOTE_TIDY
-  ANSWER_EXPLANATION
-  LEGACY_OUTPUT
-}
-
-enum JobRunStatus {
-  RUNNING
-  SUCCEEDED
-  FAILED
-}
-
 model Topic {
   id             Int             @id @default(autoincrement())
   name           String          @unique @db.VarChar(100)
@@ -142,7 +93,6 @@ model Topic {
   createdAt      DateTime        @default(now()) @map("created_at")
   questions      Question[]
   generationJobs GenerationJob[]
-  jobs           Job[]
   note           TopicNote?
   noteTidyJobs   NoteTidyJob[]
 
@@ -165,7 +115,6 @@ model Question {
   keywords              QuestionKeyword[]
   choiceHardeningJobs   ChoiceHardeningJob[]
   answerExplanationJobs AnswerExplanationJob[]
-  jobs                  Job[]
 
   @@map("question")
 }
@@ -374,145 +323,4 @@ model NoteTidyJob {
 
   @@index([topicId, createdAt])
   @@map("note_tidy_job")
-}
-
-model Job {
-  id                            Int                            @id @default(autoincrement())
-  type                          JobType
-  status                        JobStatus                      @default(PENDING)
-  engine                        GenerationEngine
-  topicId                       Int?                           @map("topic_id")
-  questionId                    Int?                           @map("question_id")
-  parentJobId                   Int?                           @map("parent_job_id")
-  retryOfJobId                  Int?                           @map("retry_of_job_id")
-  runToken                      String?                        @map("run_token") @db.Char(36)
-  errorMessage                  String?                        @map("error_message") @db.Text
-  createdAt                     DateTime                       @default(now()) @map("created_at")
-  startedAt                     DateTime?                      @map("started_at")
-  heartbeatAt                   DateTime?                      @map("heartbeat_at")
-  finishedAt                    DateTime?                      @map("finished_at")
-  topic                         Topic?                         @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  question                      Question?                      @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  parentJob                     Job?                           @relation("JobParent", fields: [parentJobId], references: [id], onDelete: Cascade)
-  childJobs                     Job[]                          @relation("JobParent")
-  retryOfJob                    Job?                           @relation("JobRetry", fields: [retryOfJobId], references: [id], onDelete: Cascade)
-  retryJobs                     Job[]                          @relation("JobRetry")
-  questionGenerationData        QuestionGenerationJobData?
-  keywordTaggingData            KeywordTaggingJobData?
-  generationItemRevisionData    GenerationItemRevisionJobData?
-  choiceHardeningData           ChoiceHardeningJobData?
-  noteTidyData                  NoteTidyJobData?
-  answerExplanationData         AnswerExplanationJobData?
-  runLogs                       JobRunLog[]
-
-  @@index([status, heartbeatAt])
-  @@index([topicId, type, status])
-  @@index([questionId, type, status])
-  @@index([parentJobId])
-  @@index([retryOfJobId])
-  @@map("job")
-}
-
-model QuestionGenerationJobData {
-  jobId              Int                     @id @map("job_id")
-  verifyEngine        GenerationEngine        @map("verify_engine")
-  instructions        String                  @db.Text
-  referenceFiles      Json?                   @map("reference_files")
-  correctAnswerCount  Int?                    @map("correct_answer_count")
-  choiceCount         Int?                    @map("choice_count")
-  sourceQuestionIds   Json?                   @map("source_question_ids")
-  stage               QuestionGenerationStage @default(RUNNING)
-  items               Json?
-  verifyWarning       String?                 @map("verify_warning") @db.Text
-  approvedAt          DateTime?               @map("approved_at")
-  savedCount          Int                     @default(0) @map("saved_count")
-  job                 Job                     @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@map("question_generation_job_data")
-}
-
-model KeywordTaggingJobData {
-  jobId       Int       @id @map("job_id")
-  targets     Json?
-  items       Json?
-  approvedAt  DateTime? @map("approved_at")
-  savedCount  Int       @default(0) @map("saved_count")
-  job         Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@map("keyword_tagging_job_data")
-}
-
-model GenerationItemRevisionJobData {
-  jobId             Int                 @id @map("job_id")
-  itemIndex         Int                 @map("item_index")
-  instructions      String              @db.Text
-  verdict           JobRevisionVerdict?
-  comment           String?             @db.Text
-  proposedQuestion  Json?               @map("proposed_question")
-  selectedAt        DateTime?           @map("selected_at")
-  job               Job                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@map("generation_item_revision_job_data")
-}
-
-model ChoiceHardeningJobData {
-  jobId          Int              @id @map("job_id")
-  sourceHash     String           @map("source_hash") @db.Char(64)
-  sourcePayload  Json             @map("source_payload")
-  verifyEngine   GenerationEngine @map("verify_engine")
-  preview        Json?
-  appliedAt      DateTime?        @map("applied_at")
-  autoApplied    Boolean          @default(false) @map("auto_applied")
-  dismissedAt    DateTime?        @map("dismissed_at")
-  job            Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@map("choice_hardening_job_data")
-}
-
-model NoteTidyJobData {
-  jobId       Int       @id @map("job_id")
-  sourceHash  String    @map("source_hash") @db.Char(64)
-  preview     String?   @db.MediumText
-  appliedAt   DateTime? @map("applied_at")
-  dismissedAt DateTime? @map("dismissed_at")
-  job         Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@map("note_tidy_job_data")
-}
-
-model AnswerExplanationJobData {
-  jobId               Int       @id @map("job_id")
-  sourceHash          String    @map("source_hash") @db.Char(64)
-  content             String?   @db.Text
-  choiceExplanations  Json?     @map("choice_explanations")
-  factualConcern      String?   @map("factual_concern") @db.Text
-  invalidatedAt       DateTime? @map("invalidated_at")
-  job                 Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@map("answer_explanation_job_data")
-}
-
-model JobRunLog {
-  id            Int          @id @default(autoincrement())
-  jobId         Int          @map("job_id")
-  stage         JobRunStage
-  itemIndex     Int?         @map("item_index")
-  attempt       Int          @default(1)
-  engine        GenerationEngine
-  model         String?      @db.VarChar(100)
-  status        JobRunStatus @default(RUNNING)
-  prompt        String       @db.MediumText
-  response      String?      @db.MediumText
-  stdoutTail    String?      @map("stdout_tail") @db.Text
-  stderrTail    String?      @map("stderr_tail") @db.Text
-  errorMessage  String?      @map("error_message") @db.Text
-  exitCode      Int?         @map("exit_code")
-  timedOut      Boolean      @default(false) @map("timed_out")
-  startedAt     DateTime     @default(now()) @map("started_at")
-  finishedAt    DateTime?    @map("finished_at")
-  durationMs    Int?         @map("duration_ms")
-  job           Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@index([jobId, startedAt])
-  @@map("job_run_log")
 }

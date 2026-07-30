@@ -1,8 +1,6 @@
 import { z } from "zod";
-import { after } from "next/server";
 import {
   createItemRevision,
-  runGenerationItemRevisionJob,
   setItemRevisionUsage,
 } from "@/server/generation/generation-service";
 import { handleApiError, jsonOk, parseBody, parseIdParam } from "@/server/http";
@@ -28,15 +26,7 @@ export async function POST(req: Request, ctx: Ctx) {
   try {
     const { id, index } = await ctx.params;
     const input = await parseBody(req, createSchema);
-    const created = await createItemRevision({ jobId: parseIdParam(id), itemIndex: parseIndex(index), ...input });
-    after(async () => {
-      try {
-        await runGenerationItemRevisionJob(created.revisionJobId);
-      } catch (error) {
-        console.error(`generation item revision ${created.revisionJobId} runner failed`, error);
-      }
-    });
-    return jsonOk({ job: created.job }, 202);
+    return jsonOk({ job: await createItemRevision({ jobId: parseIdParam(id), itemIndex: parseIndex(index), ...input }) }, 202);
   } catch (error) {
     return handleApiError(error);
   }

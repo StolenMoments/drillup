@@ -1,7 +1,7 @@
-import type { GenerationJobTypeDto } from "@/lib/api-types";
+import type { GenerationJobKindDto } from "@/lib/api-types";
 
 interface GenerationActionDockProps {
-  type: GenerationJobTypeDto;
+  kind: GenerationJobKindDto;
   selectedCount: number;
   appliedRevisionCount: number;
   runningRevisionCount: number;
@@ -11,17 +11,17 @@ interface GenerationActionDockProps {
 }
 
 function saveButtonLabel(
-  type: GenerationJobTypeDto,
+  kind: GenerationJobKindDto,
   selectedCount: number,
   saving: boolean,
 ): string {
-  if (saving) return type === "KEYWORD_TAGGING" ? "키워드 적용 중…" : "저장 중…";
-  if (type === "KEYWORD_TAGGING") return `선택한 ${selectedCount}개 문제에 적용`;
+  if (saving) return kind === "KEYWORD_TAG" ? "키워드 적용 중…" : "저장 중…";
+  if (kind === "KEYWORD_TAG") return `선택한 ${selectedCount}개 문제에 적용`;
   return `선택한 ${selectedCount}개 문제 저장`;
 }
 
 export default function GenerationActionDock({
-  type,
+  kind,
   selectedCount,
   appliedRevisionCount,
   runningRevisionCount,
@@ -47,7 +47,7 @@ export default function GenerationActionDock({
             <span>
               선택한 <strong>{selectedCount}</strong>개
             </span>
-            {type === "QUESTION_GENERATION" && (
+            {kind === "QUESTION" && (
               <span className="generation-action-dock-revision-count">
                 수정본 적용 <strong>{appliedRevisionCount}</strong>개
               </span>
@@ -55,7 +55,7 @@ export default function GenerationActionDock({
           </div>
           <p className="generation-action-dock-message" aria-live="polite">
             {statusMessage ||
-              (type === "QUESTION_GENERATION"
+              (kind === "QUESTION"
                 ? "저장할 문항을 확인한 뒤 마지막에 한 번에 저장하세요."
                 : "적용할 문제를 선택한 뒤 마지막에 한 번에 반영하세요.")}
           </p>
@@ -66,7 +66,7 @@ export default function GenerationActionDock({
           disabled={disabled}
           className="btn btn-success generation-action-dock-button"
         >
-          {saveButtonLabel(type, selectedCount, saving)}
+          {saveButtonLabel(kind, selectedCount, saving)}
         </button>
       </div>
     </section>

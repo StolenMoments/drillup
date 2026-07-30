@@ -109,7 +109,7 @@ function GenerationNewForm() {
       if (retryResult.value === null) return;
 
       const loaded = retryResult.value.job;
-      if (loaded.type !== "QUESTION_GENERATION") {
+      if (loaded.kind !== "QUESTION") {
         setMessage("❌ 키워드 부여 작업은 문제 생성 재시도로 복원할 수 없습니다.");
         return;
       }
@@ -246,7 +246,6 @@ function GenerationNewForm() {
         referenceFiles: selectedTopic?.referenceDir ? [...selectedFiles] : [],
         sourceQuestionIds:
           sourceIds.length > 0 ? sourceIds : undefined,
-        retryOfJobId: retryJob?.id,
       });
       router.push("/generate");
     } catch (error) {
