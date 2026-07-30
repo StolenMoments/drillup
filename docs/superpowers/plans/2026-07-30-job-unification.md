@@ -26,8 +26,6 @@
 | --- | --- | --- |
 | Schema/data | prisma/schema.prisma; migrations/20260730090000_add_common_job_schema/migration.sql; migrations/20260730091000_backfill_common_jobs/migration.sql; scripts/verify-common-job-backfill.sql | Parallel schema, deterministic copy, integrity proof |
 | Lifecycle | src/server/job-dto.ts; src/server/job-service.ts; src/server/job-service.test.ts; src/server/job-runner.ts; src/server/job-runner.test.ts | target validation, claim/fence/heartbeat/terminal/retry/log |
-| Generation | src/server/generation/generation-service.ts; tracked-run.ts; generation-diagnostics-service.ts and their tests; generate routes/pages/components | Move the legacy generation family without URL change |
-| Other jobs | choice/note/explanation services/runners/routes/components named in Tasks 5-7 | Global IDs and common lifecycle |
 | Production integration | scripts/jobs-it-prod.ts; scripts/jobs-it-prod.test.ts; scripts/jobs-it-cleanup.ts; package.json; .gitignore | safe opt-in end-to-end test and exact cleanup |
 
 ---
@@ -44,18 +42,18 @@
 
 **Produces:** Prisma Job, six JobData models, JobRunLog, JobType, JobStatus, target CHECK constraints and indexes from the design.
 
-- [ ] Step 1: Write failing contract tests that read schema/migration text and require all six types, PENDING status, topic/question/parent targets, retryOfJobId/runToken/heartbeatAt, six jobId primary-key details, JobRunLog cascade and type-target CHECK. Add fixtures for preserved generation ID, deterministic other legacy IDs, legacy RUNNING closure and legacy explanation cache.
+- [ ] Step 1: Write failing contract tests that read schema/migration text and require all six types, PENDING status, topic/question/parent targets, retryOfJobId/runToken/heartbeatAt, six jobId primary-key details, JobRunLog cascade and type-target CHECK. Require the fixed prefix-sum range allocator: Generation IDs unchanged, then ChoiceHardeningJob, NoteTidyJob, AnswerExplanationJob and GenerationItemRevision ranges computed from prior upper bound plus source max(id); require signed Int overflow SIGNAL, no overlap, and source-ID reverse mapping. Add fixtures for preserved generation ID, collision-prone Choice ID 2/Note ID 1, exactly four legacy GenerationRunLog RUNNING rows, and exactly 63 legacy AnswerExplanation rows.
 - [ ] Step 2: Run npx vitest run scripts/job-migration-contract.test.ts. Expected: common Job schema contract is absent.
 - [ ] Step 3: Add only additive Prisma models and Topic/Question reverse relations. Index status+heartbeat, topic+type+status, question+type+status, parent, retry and job-log start time. Do not remove a legacy model/enum.
 - [ ] Step 4: Write the extension migration. Add enum/table/FK/CHECK/index objects only. Set Job AUTO_INCREMENT after calculating an upper bound for deterministic mapped IDs.
-- [ ] Step 5: Write idempotent backfill SQL. Preserve GenerationJob IDs; map choice/note/explanation/revision IDs from fixed table ordinals; copy details and GenerationRunLog; store non-null rawOutput in LEGACY_OUTPUT logs; terminate old RUNNING records/logs with a reason; create hash-bearing SUCCEEDED explanation detail for each legacy AnswerExplanation.
-- [ ] Step 6: Write validation SQL. Each query returns zero bad rows for per-type count mismatch, missing/multiple detail, invalid target, dangling FK, generation-ID mismatch, terminal timestamp inconsistency, RUNNING log below terminal Job, unclosed legacy RUNNING, and cache without valid hash/detail.
+- [ ] Step 5: Write idempotent backfill SQL. Preserve GenerationJob IDs; allocate the four non-generation source ranges with previousUpperBound + legacyId; assert revisionUpper is at most 2,147,483,647; copy details and GenerationRunLog; store non-null rawOutput in LEGACY_OUTPUT logs. An assertion procedure must fail the migration unless source GenerationRunLog RUNNING count is exactly 4 and source AnswerExplanation count is exactly 63. Close those four copied RUNNING logs as FAILED with stale-run reason. Materialize all 63 caches as hash-bearing SUCCEEDED Job/details and fail if the inserted count is not 63.
+- [ ] Step 6: Write validation SQL. Each query returns zero bad rows for per-type count mismatch, missing/multiple detail, invalid target, dangling FK, generation-ID mismatch, range collision/reverse-mapping mismatch, terminal timestamp inconsistency, RUNNING log below terminal Job, and cache without valid hash/detail. Add expected-count assertions that fail unless source RUNNING log count is 4, exactly 4 corresponding common logs are FAILED, source cache count is 63, and exactly 63 matching valid explanation Job/details exist.
 - [ ] Step 7: Verify and commit.
 
     npx vitest run scripts/job-migration-contract.test.ts
     npx prisma validate
     npx prisma generate
-    git add prisma/schema.prisma prisma/migrations/20260730090000_add_common_job_schema prisma/migrations/20260730091000_backfill_common_jobs scripts/job-migration-contract.test.ts scripts/verify-common-job-backfill.sql
+    git add prisma/schema.prisma prisma/migrations/20260730090000_add_common_job_schema/migration.sql prisma/migrations/20260730091000_backfill_common_jobs/migration.sql scripts/job-migration-contract.test.ts scripts/verify-common-job-backfill.sql
     git commit -m "feat: 공통 Job 스키마와 이관 기반 추가"
 
 ### Task 3: Implement shared lifecycle, fencing and logging
@@ -112,7 +110,7 @@
 
     npx vitest run src/server/generation/generation-service.test.ts src/server/generation/tracked-run.test.ts src/lib/generation-ux.test.ts src/lib/generation-retry.test.ts
     npx tsc --noEmit
-    git add src/server/generation src/app/api/generate src/lib/api-types.ts src/lib/api-client.ts src/lib/generation-ux.ts src/lib/generation-ux.test.ts src/lib/generation-retry.ts src/lib/generation-retry.test.ts src/app/generate src/components/GenerationActionDock.tsx src/components/GenerationDiagnostics.tsx
+    git add src/server/generation/generation-service.ts src/server/generation/generation-service.test.ts src/server/generation/tracked-run.ts src/server/generation/tracked-run.test.ts src/server/generation/generation-diagnostics-service.ts src/app/api/generate/route.ts src/app/api/generate/[id]/route.ts src/app/api/generate/[id]/approve/route.ts src/app/api/generate/[id]/diagnostics/route.ts src/app/api/generate/[id]/items/[index]/revision/route.ts src/app/api/generate/keyword-tag/route.ts src/lib/api-types.ts src/lib/api-client.ts src/lib/generation-ux.ts src/lib/generation-ux.test.ts src/lib/generation-retry.ts src/lib/generation-retry.test.ts src/app/generate/page.tsx src/app/generate/new/page.tsx src/app/generate/[id]/page.tsx src/components/GenerationActionDock.tsx src/components/GenerationDiagnostics.tsx
     git commit -m "refactor: 생성 작업을 공통 Job 구조로 전환"
 
 ### Task 5: Convert choice hardening
@@ -125,7 +123,7 @@
 - Modify: src/app/api/questions/[id]/harden-choices/[jobId]/apply/route.ts and route.test.ts
 - Modify: src/app/api/questions/[id]/harden-choices/[jobId]/dismiss/route.ts and route.test.ts
 - Modify: src/app/api/harden-jobs/route.ts, route.test.ts, pending-count/route.ts
-- Modify: src/lib/api-types.ts, src/lib/api-client.ts, src/components/ResultPanel.tsx, ResultPanel.test.tsx, HardeningJobList.tsx, HardeningPendingCard.tsx, src/app/hardening/page.tsx, page.test.tsx, src/app/hardening/[status]/HardeningStatusPage.tsx, HardeningStatusPage.test.tsx, page.tsx, page.test.tsx
+- Modify: src/lib/api-types.ts, src/lib/api-client.ts, src/components/ResultPanel.tsx, src/components/ResultPanel.test.tsx, src/components/HardeningJobList.tsx, src/components/HardeningPendingCard.tsx, src/app/hardening/page.tsx, src/app/hardening/page.test.tsx, src/app/hardening/[status]/HardeningStatusPage.tsx, src/app/hardening/[status]/HardeningStatusPage.test.tsx, src/app/hardening/[status]/page.tsx, src/app/hardening/[status]/page.test.tsx
 
 - [ ] Step 1: Write failing tests for Question lock, active Job reuse, force/new retry IDs, no public attempt, automatic/manual apply, dismiss idempotency and explanation invalidation rather than deletion.
 - [ ] Step 2: Convert service/runner to common claim/token/heartbeat/log APIs. Store source hash/preview in ChoiceHardeningJobData; never reset a completed row.
@@ -133,7 +131,7 @@
 - [ ] Step 4: Verify and commit.
 
     npx vitest run src/server/choice-hardening-service.test.ts src/server/choice-hardening-runner.test.ts src/app/api/harden-jobs/route.test.ts src/app/api/questions/[id]/harden-choices/route.test.ts src/app/api/questions/[id]/harden-choices/[jobId]/route.test.ts src/app/api/questions/[id]/harden-choices/[jobId]/apply/route.test.ts src/app/api/questions/[id]/harden-choices/[jobId]/dismiss/route.test.ts src/components/ResultPanel.test.tsx src/app/hardening/page.test.tsx src/app/hardening/[status]/HardeningStatusPage.test.tsx src/app/hardening/[status]/page.test.tsx
-    git add src/server/choice-hardening-service.ts src/server/choice-hardening-service.test.ts src/server/choice-hardening-runner.ts src/server/choice-hardening-runner.test.ts src/app/api/questions/[id]/harden-choices src/app/api/harden-jobs src/lib/api-types.ts src/lib/api-client.ts src/components/ResultPanel.tsx src/components/ResultPanel.test.tsx src/components/HardeningJobList.tsx src/components/HardeningPendingCard.tsx src/app/hardening
+    git add src/server/choice-hardening-service.ts src/server/choice-hardening-service.test.ts src/server/choice-hardening-runner.ts src/server/choice-hardening-runner.test.ts src/app/api/questions/[id]/harden-choices/route.ts src/app/api/questions/[id]/harden-choices/route.test.ts src/app/api/questions/[id]/harden-choices/[jobId]/route.ts src/app/api/questions/[id]/harden-choices/[jobId]/route.test.ts src/app/api/questions/[id]/harden-choices/[jobId]/apply/route.ts src/app/api/questions/[id]/harden-choices/[jobId]/apply/route.test.ts src/app/api/questions/[id]/harden-choices/[jobId]/dismiss/route.ts src/app/api/questions/[id]/harden-choices/[jobId]/dismiss/route.test.ts src/app/api/harden-jobs/route.ts src/app/api/harden-jobs/route.test.ts src/app/api/harden-jobs/pending-count/route.ts src/lib/api-types.ts src/lib/api-client.ts src/components/ResultPanel.tsx src/components/ResultPanel.test.tsx src/components/HardeningJobList.tsx src/components/HardeningPendingCard.tsx src/app/hardening/page.tsx src/app/hardening/page.test.tsx src/app/hardening/[status]/HardeningStatusPage.tsx src/app/hardening/[status]/HardeningStatusPage.test.tsx src/app/hardening/[status]/page.tsx src/app/hardening/[status]/page.test.tsx
     git commit -m "refactor: 선지 강화 작업을 공통 Job 구조로 전환"
 
 ### Task 6: Convert note tidy
@@ -143,7 +141,7 @@
 - Modify: src/server/note-service.ts, note-service.test.ts, note-tidy-runner.ts, note-tidy-runner.test.ts
 - Modify: src/app/api/topics/[id]/note/route.ts, src/app/api/topics/[id]/note/tidy/route.ts
 - Modify: src/app/api/note-tidy-jobs/[id]/route.ts, apply/route.ts, dismiss/route.ts
-- Modify: src/lib/api-types.ts, src/lib/api-client.ts, src/components/NotePanel.tsx, NotePanel.test.tsx
+- Modify: src/lib/api-types.ts, src/lib/api-client.ts, src/components/NotePanel.tsx, src/components/NotePanel.test.tsx
 
 - [ ] Step 1: Add failing tests for source hash at start/apply, active draft reuse, new retry lineage, apply/dismiss rules and panel re-entry polling of global Job ID.
 - [ ] Step 2: Implement common Job/detail reads and writes. Lock Topic/TopicNote for creation/apply; preserve source hash/preview; schedule only new PENDING Jobs.
@@ -151,7 +149,7 @@
 - [ ] Step 4: Verify and commit.
 
     npx vitest run src/server/note-service.test.ts src/server/note-tidy-runner.test.ts src/components/NotePanel.test.tsx
-    git add src/server/note-service.ts src/server/note-service.test.ts src/server/note-tidy-runner.ts src/server/note-tidy-runner.test.ts src/app/api/topics/[id]/note src/app/api/note-tidy-jobs src/lib/api-types.ts src/lib/api-client.ts src/components/NotePanel.tsx src/components/NotePanel.test.tsx
+    git add src/server/note-service.ts src/server/note-service.test.ts src/server/note-tidy-runner.ts src/server/note-tidy-runner.test.ts src/app/api/topics/[id]/note/route.ts src/app/api/topics/[id]/note/tidy/route.ts src/app/api/note-tidy-jobs/[id]/route.ts src/app/api/note-tidy-jobs/[id]/apply/route.ts src/app/api/note-tidy-jobs/[id]/dismiss/route.ts src/lib/api-types.ts src/lib/api-client.ts src/components/NotePanel.tsx src/components/NotePanel.test.tsx
     git commit -m "refactor: 노트 정리 작업을 공통 Job 구조로 전환"
 
 ### Task 7: Convert answer explanation and cache invalidation
@@ -161,7 +159,7 @@
 - Modify: src/server/explanation-job-service.ts, explanation-job-service.test.ts, explanation-job-runner.ts, explanation-job-runner.test.ts, explanation-service.ts
 - Modify: src/server/question-service.ts
 - Modify: src/app/api/questions/[id]/route.ts, src/app/api/questions/[id]/explain/route.ts, src/app/api/questions/[id]/explain/[jobId]/route.ts
-- Modify: src/lib/api-types.ts, src/lib/api-client.ts, src/components/ResultPanel.tsx, ResultPanel.test.tsx
+- Modify: src/lib/api-types.ts, src/lib/api-client.ts, src/components/ResultPanel.tsx, src/components/ResultPanel.test.tsx
 
 - [ ] Step 1: Add failing tests for valid source-hash cache hit returning a real SUCCEEDED Job, invalidated cache creating a retry Job, no id: 0, active reuse, token fencing, and Question PATCH/choice apply recording invalidatedAt rather than deleting rows.
 - [ ] Step 2: Persist cache/result/source hash/invalidation on AnswerExplanationJobData and use common Job logs and terminal transaction rules.
@@ -170,7 +168,7 @@
 - [ ] Step 5: Verify and commit.
 
     npx vitest run src/server/explanation-job-service.test.ts src/server/explanation-job-runner.test.ts src/components/ResultPanel.test.tsx src/app/api/questions/[id]/harden-choices/[jobId]/apply/route.test.ts
-    git add src/server/explanation-job-service.ts src/server/explanation-job-service.test.ts src/server/explanation-job-runner.ts src/server/explanation-job-runner.test.ts src/server/explanation-service.ts src/server/question-service.ts src/app/api/questions/[id]/route.ts src/app/api/questions/[id]/explain src/lib/api-types.ts src/lib/api-client.ts src/components/ResultPanel.tsx src/components/ResultPanel.test.tsx
+    git add src/server/explanation-job-service.ts src/server/explanation-job-service.test.ts src/server/explanation-job-runner.ts src/server/explanation-job-runner.test.ts src/server/explanation-service.ts src/server/question-service.ts src/app/api/questions/[id]/route.ts src/app/api/questions/[id]/explain/route.ts src/app/api/questions/[id]/explain/[jobId]/route.ts src/lib/api-types.ts src/lib/api-client.ts src/components/ResultPanel.tsx src/components/ResultPanel.test.tsx
     git commit -m "refactor: 해설 생성과 캐시를 공통 Job 구조로 전환"
 
 ### Task 8: Add production DB integration-test harness
@@ -202,28 +200,32 @@
 
 **Files:**
 
-- Modify: prisma/schema.prisma, src/lib/api-types.ts, src/lib/api-client.ts
-- Modify: src/server/generation/generation-service.ts, tracked-run.ts, generation-diagnostics-service.ts
-- Modify: src/server/choice-hardening-service.ts, choice-hardening-runner.ts
-- Modify: src/server/note-service.ts, note-tidy-runner.ts
-- Modify: src/server/explanation-job-service.ts, explanation-job-runner.ts, explanation-service.ts
-- Modify: all existing Job routes, components, pages and tests from Tasks 4-7
+- Modify: prisma/schema.prisma, scripts/verify-common-job-backfill.sql, src/lib/api-types.ts, src/lib/api-client.ts
+- Modify: src/server/generation/generation-service.ts, src/server/generation/generation-service.test.ts, src/server/generation/tracked-run.ts, src/server/generation/tracked-run.test.ts, src/server/generation/generation-diagnostics-service.ts
+- Modify: src/server/choice-hardening-service.ts, src/server/choice-hardening-service.test.ts, src/server/choice-hardening-runner.ts, src/server/choice-hardening-runner.test.ts
+- Modify: src/server/note-service.ts, src/server/note-service.test.ts, src/server/note-tidy-runner.ts, src/server/note-tidy-runner.test.ts
+- Modify: src/server/explanation-job-service.ts, src/server/explanation-job-service.test.ts, src/server/explanation-job-runner.ts, src/server/explanation-job-runner.test.ts, src/server/explanation-service.ts, src/server/question-service.ts
+- Modify: src/app/api/generate/route.ts, src/app/api/generate/[id]/route.ts, src/app/api/generate/[id]/approve/route.ts, src/app/api/generate/[id]/diagnostics/route.ts, src/app/api/generate/[id]/items/[index]/revision/route.ts, src/app/api/generate/keyword-tag/route.ts
+- Modify: src/app/api/harden-jobs/route.ts, src/app/api/harden-jobs/route.test.ts, src/app/api/harden-jobs/pending-count/route.ts, src/app/api/questions/[id]/harden-choices/route.ts, src/app/api/questions/[id]/harden-choices/route.test.ts, src/app/api/questions/[id]/harden-choices/[jobId]/route.ts, src/app/api/questions/[id]/harden-choices/[jobId]/route.test.ts, src/app/api/questions/[id]/harden-choices/[jobId]/apply/route.ts, src/app/api/questions/[id]/harden-choices/[jobId]/apply/route.test.ts, src/app/api/questions/[id]/harden-choices/[jobId]/dismiss/route.ts, src/app/api/questions/[id]/harden-choices/[jobId]/dismiss/route.test.ts
+- Modify: src/app/api/topics/[id]/note/route.ts, src/app/api/topics/[id]/note/tidy/route.ts, src/app/api/note-tidy-jobs/[id]/route.ts, src/app/api/note-tidy-jobs/[id]/apply/route.ts, src/app/api/note-tidy-jobs/[id]/dismiss/route.ts, src/app/api/questions/[id]/route.ts, src/app/api/questions/[id]/explain/route.ts, src/app/api/questions/[id]/explain/[jobId]/route.ts
+- Modify: src/app/generate/page.tsx, src/app/generate/new/page.tsx, src/app/generate/[id]/page.tsx, src/app/hardening/page.tsx, src/app/hardening/page.test.tsx, src/app/hardening/[status]/HardeningStatusPage.tsx, src/app/hardening/[status]/HardeningStatusPage.test.tsx, src/app/hardening/[status]/page.tsx, src/app/hardening/[status]/page.test.tsx
+- Modify: src/components/GenerationActionDock.tsx, src/components/GenerationDiagnostics.tsx, src/components/HardeningJobList.tsx, src/components/HardeningPendingCard.tsx, src/components/NotePanel.tsx, src/components/NotePanel.test.tsx, src/components/ResultPanel.tsx, src/components/ResultPanel.test.tsx, src/lib/generation-ux.ts, src/lib/generation-ux.test.ts, src/lib/generation-retry.ts, src/lib/generation-retry.test.ts
 - Create: prisma/migrations/20260730170000_remove_legacy_job_schema/migration.sql
-- Modify: scripts/verify-common-job-backfill.sql
 
 - [ ] Step 1: Search src, scripts and prisma for GenerationJob, GenerationRunLog, GenerationItemRevision, ChoiceHardeningJob, NoteTidyJob, AnswerExplanationJob, AnswerExplanation and all former dedicated status/stage enums. Replace production references with common names before removal.
 - [ ] Step 2: Run backfill verification SQL on rehearsal DB after migration deploy. It must return zero bad rows before a drop migration is applied.
 - [ ] Step 3: Drop legacy FKs/tables/enums only after proof. Keep Topic, Question, TopicNote, Keyword, QuestionKeyword, ReviewLog and all common Job tables. Standardize outputs at generation_output/jobs/{jobId}.
-- [ ] Step 4: Regenerate Prisma, rerun search and require zero legacy production references.
+- [ ] Step 4: Regenerate Prisma, rerun search and require zero legacy production references. Run the Task 4, 5, 6 and 7 test lists plus the migration contract test before the complete suite.
 - [ ] Step 5: Verify and commit.
 
     npx prisma validate
     npx prisma generate
+    npx vitest run scripts/job-migration-contract.test.ts src/server/job-service.test.ts src/server/job-runner.test.ts src/server/generation/generation-service.test.ts src/server/generation/tracked-run.test.ts src/lib/generation-ux.test.ts src/lib/generation-retry.test.ts src/server/choice-hardening-service.test.ts src/server/choice-hardening-runner.test.ts src/app/api/harden-jobs/route.test.ts src/app/api/questions/[id]/harden-choices/route.test.ts src/app/api/questions/[id]/harden-choices/[jobId]/route.test.ts src/app/api/questions/[id]/harden-choices/[jobId]/apply/route.test.ts src/app/api/questions/[id]/harden-choices/[jobId]/dismiss/route.test.ts src/components/ResultPanel.test.tsx src/app/hardening/page.test.tsx src/app/hardening/[status]/HardeningStatusPage.test.tsx src/app/hardening/[status]/page.test.tsx src/server/note-service.test.ts src/server/note-tidy-runner.test.ts src/components/NotePanel.test.tsx src/server/explanation-job-service.test.ts src/server/explanation-job-runner.test.ts
     npm test
     npx tsc --noEmit
     npm run lint
     npm run build
-    git add prisma/schema.prisma prisma/migrations/20260730170000_remove_legacy_job_schema scripts/verify-common-job-backfill.sql src scripts package.json
+    git add prisma/schema.prisma prisma/migrations/20260730170000_remove_legacy_job_schema/migration.sql scripts/verify-common-job-backfill.sql src/lib/api-types.ts src/lib/api-client.ts src/lib/generation-ux.ts src/lib/generation-ux.test.ts src/lib/generation-retry.ts src/lib/generation-retry.test.ts src/server/generation/generation-service.ts src/server/generation/generation-service.test.ts src/server/generation/tracked-run.ts src/server/generation/tracked-run.test.ts src/server/generation/generation-diagnostics-service.ts src/server/choice-hardening-service.ts src/server/choice-hardening-service.test.ts src/server/choice-hardening-runner.ts src/server/choice-hardening-runner.test.ts src/server/note-service.ts src/server/note-service.test.ts src/server/note-tidy-runner.ts src/server/note-tidy-runner.test.ts src/server/explanation-job-service.ts src/server/explanation-job-service.test.ts src/server/explanation-job-runner.ts src/server/explanation-job-runner.test.ts src/server/explanation-service.ts src/server/question-service.ts src/app/api/generate/route.ts src/app/api/generate/[id]/route.ts src/app/api/generate/[id]/approve/route.ts src/app/api/generate/[id]/diagnostics/route.ts src/app/api/generate/[id]/items/[index]/revision/route.ts src/app/api/generate/keyword-tag/route.ts src/app/api/harden-jobs/route.ts src/app/api/harden-jobs/route.test.ts src/app/api/harden-jobs/pending-count/route.ts src/app/api/questions/[id]/harden-choices/route.ts src/app/api/questions/[id]/harden-choices/route.test.ts src/app/api/questions/[id]/harden-choices/[jobId]/route.ts src/app/api/questions/[id]/harden-choices/[jobId]/route.test.ts src/app/api/questions/[id]/harden-choices/[jobId]/apply/route.ts src/app/api/questions/[id]/harden-choices/[jobId]/apply/route.test.ts src/app/api/questions/[id]/harden-choices/[jobId]/dismiss/route.ts src/app/api/questions/[id]/harden-choices/[jobId]/dismiss/route.test.ts src/app/api/topics/[id]/note/route.ts src/app/api/topics/[id]/note/tidy/route.ts src/app/api/note-tidy-jobs/[id]/route.ts src/app/api/note-tidy-jobs/[id]/apply/route.ts src/app/api/note-tidy-jobs/[id]/dismiss/route.ts src/app/api/questions/[id]/route.ts src/app/api/questions/[id]/explain/route.ts src/app/api/questions/[id]/explain/[jobId]/route.ts src/app/generate/page.tsx src/app/generate/new/page.tsx src/app/generate/[id]/page.tsx src/app/hardening/page.tsx src/app/hardening/page.test.tsx src/app/hardening/[status]/HardeningStatusPage.tsx src/app/hardening/[status]/HardeningStatusPage.test.tsx src/app/hardening/[status]/page.tsx src/app/hardening/[status]/page.test.tsx src/components/GenerationActionDock.tsx src/components/GenerationDiagnostics.tsx src/components/HardeningJobList.tsx src/components/HardeningPendingCard.tsx src/components/NotePanel.tsx src/components/NotePanel.test.tsx src/components/ResultPanel.tsx src/components/ResultPanel.test.tsx
     git commit -m "chore: 구 Job 스키마 제거와 이관 검증 완료"
 
 ## Deployment gate

@@ -43,10 +43,24 @@ Job은 전역 auto-increment id를 갖고 아래 필드를 가진다.
 JobStatus는 PENDING, RUNNING, SUCCEEDED, FAILED만 사용한다. 생성의 설계표, 검증,
 수선 진행도는 Job status가 아니라 QuestionGenerationJobData.stage에 둔다.
 
-GenerationJob ID는 새 Job ID로 그대로 보존한다. 그 밖의 레거시 Job은 migration이
-읽은 maxGenerationId에 table ordinal과 legacy id를 더한 결정적 ID로 옮긴다.
-새 auto-increment는 이관된 모든 ID보다 크게 설정한다. 따라서 기존
-/api/generate/{id} 링크가 유지되고, 같은 migration을 재검증해도 ID가 변하지 않는다.
+GenerationJob ID는 새 Job ID로 그대로 보존한다. 그 밖의 레거시 Job은 table ordinal을
+더하는 방식이 아니라, migration이 읽은 각 source table의 최대 legacy ID로 만든
+서로 겹치지 않는 연속 range에 배정한다. range는 아래 순서로 고정한다.
+
+    GenerationJob:                 [1, maxGenerationId] (id 그대로)
+    ChoiceHardeningJob:            (maxGenerationId, choiceUpper]
+    NoteTidyJob:                   (choiceUpper, noteUpper]
+    AnswerExplanationJob:          (noteUpper, explanationUpper]
+    GenerationItemRevision:        (explanationUpper, revisionUpper]
+
+각 non-generation 행의 새 ID는 previousUpperBound + legacyId이고, 다음 upper bound는
+previousUpperBound + 해당 source table의 max(id)다. 예를 들어 ChoiceHardeningJob
+legacy ID 2와 NoteTidyJob legacy ID 1은 서로 다른 range에 있으므로 충돌하지 않는다.
+migration은 revisionUpper가 signed Int 최대값 2,147,483,647을 넘으면 SIGNAL로 중단하고,
+Job AUTO_INCREMENT를 revisionUpper보다 크게 설정한다. contract test와 verification
+SQL은 source별 range, 새 ID 중복 0건, source ID에서의 역산 일치, GenerationJob ID
+보존을 모두 확인한다. 따라서 기존 /api/generate/{id} 링크가 유지되고 같은 migration을
+재검증해도 ID가 변하지 않는다.
 
 MariaDB CHECK와 서비스의 assertJobTarget(type, target)은 다음 대상 조합을 함께
 강제한다.
@@ -166,11 +180,17 @@ after()는 새 PENDING Job ID를 runner에 전달할 뿐 claim을 대체하지 �
 1. 확장 migration은 새 enum/table/FK/CHECK/index만 추가하고 legacy는 유지한다.
 2. backfill은 Job과 한 상세를 transaction으로 만든다. GenerationJob은 ID를 보존하고
    GenerationRunLog를 옮긴다. rawOutput은 LEGACY_OUTPUT JobRunLog.response로
-   보존한다. legacy RUNNING과 미완료 log는 사유가 있는 FAILED로 닫는다.
-   AnswerExplanation cache는 hash-bearing SUCCEEDED Job/detail로 materialize한다.
+   보존한다. source baseline의 GenerationRunLog RUNNING 행은 정확히 4건이어야 하며,
+   migration assertion procedure는 4가 아니면 SIGNAL로 중단한다. 이 네 행은 모두
+   FAILED와 stale-run 사유로 닫혀야 한다. AnswerExplanation cache는 hash-bearing
+   SUCCEEDED Job/detail로 materialize한다. source baseline cache는 정확히 63건이어야
+   하며, 63이 아니거나 63개 모두가 유효한 Job/detail로 materialize되지 않으면
+   migration을 실패시킨다.
 3. scripts/verify-common-job-backfill.sql은 type별 count, Job-detail 1:1, target
-   truth table, 고아 FK, generation ID, 종료 시각, terminal 아래 RUNNING log,
-   legacy RUNNING 처리, explanation cache hash를 0 bad rows로 증명한다.
+   truth table, 고아 FK, generation ID, range-ID 중복/역산, 종료 시각, terminal 아래
+   RUNNING log, legacy RUNNING 처리, explanation cache hash를 0 bad rows로 증명한다.
+   검증은 정확히 4개의 source RUNNING log가 FAILED로 끝났고 정확히 63개의 source
+   AnswerExplanation cache가 materialized Job/detail에 1:1 대응하는지도 assertion한다.
 4. 새 코드가 새 schema만 write한 뒤 모든 legacy code reference가 0일 때 제거한다.
 
 코드 결함은 forward fix한다. 스키마/데이터 손상은 앱을 재개하지 않고 managed DB
