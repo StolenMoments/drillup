@@ -92,6 +92,7 @@ const QUESTION_JOB_TYPES = new Set<JobType>([
   "CHOICE_HARDENING",
   "ANSWER_EXPLANATION",
 ]);
+const TARGET_KEYS = ["topicId", "questionId", "parentJobId"] as const;
 
 function isPositiveId(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
@@ -107,15 +108,13 @@ export function assertJobTarget(
 ): asserts target is JobTarget {
   if (typeof target !== "object" || target === null) invalidTarget();
   const value = target as JobTarget;
-  const hasTopic = isPositiveId(value.topicId);
-  const hasQuestion = isPositiveId(value.questionId);
-  const hasParent = isPositiveId(value.parentJobId);
-  const presentCount = Number(hasTopic) + Number(hasQuestion) + Number(hasParent);
-  if (presentCount !== 1) invalidTarget();
+  const definedKeys = TARGET_KEYS.filter((key) => value[key] != null);
+  if (definedKeys.length !== 1) invalidTarget();
+  if (!isPositiveId(value[definedKeys[0]])) invalidTarget();
 
-  if (TOPIC_JOB_TYPES.has(type as JobType) && hasTopic) return;
-  if (QUESTION_JOB_TYPES.has(type as JobType) && hasQuestion) return;
-  if (type === "GENERATION_ITEM_REVISION" && hasParent) return;
+  if (TOPIC_JOB_TYPES.has(type as JobType) && definedKeys[0] === "topicId") return;
+  if (QUESTION_JOB_TYPES.has(type as JobType) && definedKeys[0] === "questionId") return;
+  if (type === "GENERATION_ITEM_REVISION" && definedKeys[0] === "parentJobId") return;
   invalidTarget();
 }
 
@@ -203,17 +202,36 @@ async function createInTransaction(
   tx: Prisma.TransactionClient,
   input: CreatePendingJobInput,
   retryOfJobId: number | null,
+  options?: CreatePendingJobOptions,
 ): Promise<Job> {
   await lockTarget(tx, input.type, input.target);
+  const existing = await options?.resolveExisting?.(tx);
+  if (existing) {
+    if (existing.type !== input.type || !sameTarget(existing, input.target)) {
+      throw new ServiceError(
+        "INVALID_JOB_POLICY_RESULT",
+        "Active job policy returned a job with a mismatched type or target",
+        500,
+      );
+    }
+    return existing;
+  }
   return tx.job.create({ data: jobCreateData(input, retryOfJobId) });
+}
+
+export interface CreatePendingJobOptions {
+  resolveExisting?: (tx: Prisma.TransactionClient) => Promise<Job | null>;
 }
 
 export async function createPendingJob(
   input: CreatePendingJobInput,
+  options?: CreatePendingJobOptions,
 ): Promise<JobDtoBase> {
   assertJobTarget(input.type, input.target);
   assertTypeAndDetail(input);
-  const job = await prisma.$transaction((tx) => createInTransaction(tx, input, null));
+  const job = await prisma.$transaction((tx) =>
+    createInTransaction(tx, input, null, options),
+  );
   return toJobDtoBase(job);
 }
 
