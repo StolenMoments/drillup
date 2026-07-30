@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { reviewFactualConcern } from "@/server/factual-review-service";
+import { after } from "next/server";
+import { runFactualReviewJob } from "@/server/factual-review-job-runner";
+import { startFactualReviewJob } from "@/server/factual-review-job-service";
 import { handleApiError, jsonOk, parseBody, parseIdParam } from "@/server/http";
 
 const bodySchema = z.object({
@@ -13,7 +15,15 @@ export async function POST(req: Request, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
     const { engine, concern } = await parseBody(req, bodySchema);
-    return jsonOk(await reviewFactualConcern(parseIdParam(id), engine, concern));
+    const job = await startFactualReviewJob(parseIdParam(id), engine, concern);
+    after(async () => {
+      try {
+        await runFactualReviewJob(job.id);
+      } catch (error) {
+        console.error("factual review runner failed", error);
+      }
+    });
+    return jsonOk({ job }, 202);
   } catch (e) {
     return handleApiError(e);
   }

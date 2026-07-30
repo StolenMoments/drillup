@@ -6,7 +6,7 @@ import type {
   ChoiceHardeningListStatusDto,
   ChoiceCountDto,
   CorrectAnswerCountDto,
-  FactualReviewDto,
+  FactualReviewJobDto,
   GenerationEngineDto,
   GenerationJobDto,
   GenerationJobSummaryDto,
@@ -165,10 +165,14 @@ export const api = {
         { method: "POST" },
       ),
     reviewFact: (id: number, engine: GenerationEngineDto, concern: string) =>
-      request<FactualReviewDto>(`/api/questions/${id}/review-fact`, {
+      request<{ job: FactualReviewJobDto }>(`/api/questions/${id}/review-fact`, {
         method: "POST",
         body: JSON.stringify({ engine, concern }),
       }),
+    getFactualReviewJob: (id: number, jobId: number) =>
+      request<{ job: FactualReviewJobDto }>(
+        `/api/questions/${id}/review-fact/${jobId}`,
+      ),
     addKeyword: (id: number, name: string) =>
       request<KeywordRefDto>(`/api/questions/${id}/keywords`, {
         method: "POST",

@@ -115,6 +115,7 @@ model Question {
   keywords              QuestionKeyword[]
   choiceHardeningJobs   ChoiceHardeningJob[]
   answerExplanationJobs AnswerExplanationJob[]
+  factualReviewJobs     FactualReviewJob[]
 
   @@map("question")
 }
@@ -162,6 +163,32 @@ model AnswerExplanationJob {
   @@unique([questionId, engine], map: "ae_job_question_engine_key")
   @@index([status, startedAt])
   @@map("answer_explanation_job")
+}
+
+enum FactualReviewJobStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+model FactualReviewJob {
+  id           Int                    @id @default(autoincrement())
+  questionId   Int                    @map("question_id")
+  engine       GenerationEngine
+  concern      String                 @db.Text
+  status       FactualReviewJobStatus @default(RUNNING)
+  verdict      String?
+  comment      String?                @db.Text
+  evidenceUrl  String?                @map("evidence_url")
+  payload      Json?
+  errorMessage String?                @map("error_message") @db.Text
+  createdAt    DateTime               @default(now()) @map("created_at")
+  startedAt    DateTime?              @map("started_at")
+  finishedAt   DateTime?              @map("finished_at")
+  question     Question               @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([status, startedAt])
+  @@map("factual_review_job")
 }
 
 model SrsState {

@@ -174,12 +174,26 @@ export interface HardenPreviewDto {
 
 export type FactualReviewVerdictDto = "confirmed" | "rejected" | "unverifiable";
 
-export interface FactualReviewDto {
-  engine: GenerationEngineDto;
+export interface FactualReviewResultDto {
   verdict: FactualReviewVerdictDto;
   comment: string;
   evidenceUrl: string | null;
   payload: HardenedMcqPayloadDto | null;
+}
+
+export type FactualReviewJobStatusDto = "RUNNING" | "SUCCEEDED" | "FAILED";
+
+export interface FactualReviewJobDto {
+  id: number;
+  questionId: number;
+  engine: GenerationEngineDto;
+  concern: string;
+  status: FactualReviewJobStatusDto;
+  result: FactualReviewResultDto | null;
+  errorMessage: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
 }
 
 export type ChoiceHardeningJobStatusDto = "RUNNING" | "SUCCEEDED" | "FAILED";

@@ -11,6 +11,7 @@ const apiMock = vi.hoisted(() => ({
   explain: vi.fn(),
   getExplanationJob: vi.fn(),
   reviewFact: vi.fn(),
+  getFactualReviewJob: vi.fn(),
   update: vi.fn(),
 }));
 
@@ -248,11 +249,37 @@ describe("ResultPanel choice hardening polling", () => {
       },
     });
     apiMock.reviewFact.mockResolvedValue({
-      engine: "CLAUDE",
-      verdict: "confirmed",
-      comment: "교정이 필요합니다",
-      evidenceUrl: "https://example.com/evidence",
-      payload: corrected,
+      job: {
+        id: 31,
+        questionId: 7,
+        engine: "CLAUDE",
+        concern: "정답이 최신 문서와 다릅니다",
+        status: "RUNNING",
+        result: null,
+        errorMessage: null,
+        createdAt: "2026-07-15T00:00:00.000Z",
+        startedAt: null,
+        finishedAt: null,
+      },
+    });
+    apiMock.getFactualReviewJob.mockResolvedValue({
+      job: {
+        id: 31,
+        questionId: 7,
+        engine: "CLAUDE",
+        concern: "정답이 최신 문서와 다릅니다",
+        status: "SUCCEEDED",
+        result: {
+          verdict: "confirmed",
+          comment: "교정이 필요합니다",
+          evidenceUrl: "https://example.com/evidence",
+          payload: corrected,
+        },
+        errorMessage: null,
+        createdAt: "2026-07-15T00:00:00.000Z",
+        startedAt: "2026-07-15T00:00:00.000Z",
+        finishedAt: "2026-07-15T00:01:00.000Z",
+      },
     });
     apiMock.update.mockResolvedValue({});
     render(<ResultPanel question={question} result={result} onNext={vi.fn()} isLast={false} />);
@@ -262,6 +289,9 @@ describe("ResultPanel choice hardening polling", () => {
     });
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "🔍 사실 확인 요청" }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
     });
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "✅ 적용하기" }));

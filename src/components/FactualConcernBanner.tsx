@@ -1,17 +1,30 @@
 "use client";
 
-import { useState } from "react";
-import { api } from "@/lib/api-client";
+import { useCallback, useEffect, useState } from "react";
+import { ApiError, api } from "@/lib/api-client";
 import { engineLabel } from "@/lib/engine-label";
-import type { FactualReviewDto, GenerationEngineDto } from "@/lib/api-types";
+import type { FactualReviewJobDto, FactualReviewResultDto, GenerationEngineDto } from "@/lib/api-types";
 
 const ENGINES: GenerationEngineDto[] = ["CLAUDE", "CODEX", "ANTIGRAVITY"];
 
 type FactualReviewState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "result"; result: FactualReviewDto; applying: boolean }
+  | { status: "tracking"; jobId: number; pollError: string | null }
+  | { status: "result"; result: FactualReviewResultDto; applying: boolean }
   | { status: "error"; message: string };
+
+function userFacingError(error: unknown, fallback: string): string {
+  if (error instanceof ApiError && error.code === "NETWORK_ERROR") return "연결이 끊겼습니다. 앱으로 돌아오면 진행 상태를 다시 확인할 수 있습니다.";
+  return error instanceof Error ? error.message : fallback;
+}
+
+function stateForJob(job: FactualReviewJobDto): FactualReviewState {
+  if (job.status === "FAILED") return { status: "error", message: job.errorMessage ?? "요청 실패" };
+  if (job.status === "SUCCEEDED" && job.result) return { status: "result", result: job.result, applying: false };
+  if (job.status === "SUCCEEDED") return { status: "error", message: "결과를 불러오지 못했습니다" };
+  return { status: "tracking", jobId: job.id, pollError: null };
+}
 
 export interface FactualConcernOriginal {
   question: string;
@@ -37,8 +50,8 @@ export default function FactualConcernBanner({
   async function requestReview() {
     setState({ status: "loading" });
     try {
-      const result = await api.questions.reviewFact(questionId, engine, concern);
-      setState({ status: "result", result, applying: false });
+      const { job } = await api.questions.reviewFact(questionId, engine, concern);
+      setState(stateForJob(job));
     } catch (err) {
       setState({
         status: "error",
@@ -46,6 +59,36 @@ export default function FactualConcernBanner({
       });
     }
   }
+
+  const pollJob = useCallback(async (jobId: number) => {
+    try {
+      const { job } = await api.questions.getFactualReviewJob(questionId, jobId);
+      setState((current) => {
+        if (current.status !== "tracking" || current.jobId !== jobId) return current;
+        return stateForJob(job);
+      });
+    } catch (error) {
+      setState((current) => {
+        if (current.status !== "tracking" || current.jobId !== jobId) return current;
+        if (error instanceof ApiError && error.code === "NETWORK_ERROR") {
+          return { ...current, pollError: userFacingError(error, "진행 상태 확인 실패") };
+        }
+        return { status: "error", message: userFacingError(error, "진행 상태 확인 실패") };
+      });
+    }
+  }, [questionId]);
+
+  const trackedJobId = state.status === "tracking" ? state.jobId : null;
+  useEffect(() => {
+    if (trackedJobId === null) return;
+    const refresh = () => void pollJob(trackedJobId);
+    const interval = window.setInterval(refresh, 5_000);
+    const onVisibilityChange = () => { if (document.visibilityState === "visible") refresh(); };
+    const onPageShow = () => refresh();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pageshow", onPageShow);
+    return () => { window.clearInterval(interval); document.removeEventListener("visibilitychange", onVisibilityChange); window.removeEventListener("pageshow", onPageShow); };
+  }, [pollJob, trackedJobId]);
 
   async function applyReview() {
     if (state.status !== "result" || state.applying || !state.result.payload) return;
@@ -62,7 +105,7 @@ export default function FactualConcernBanner({
     }
   }
 
-  const busy = state.status === "loading" || (state.status === "result" && state.applying);
+  const busy = state.status === "loading" || state.status === "tracking" || (state.status === "result" && state.applying);
 
   return (
     <div className="space-y-2">
@@ -79,9 +122,16 @@ export default function FactualConcernBanner({
           {ENGINES.map((value) => <option key={value} value={value}>{engineLabel(value)}</option>)}
         </select>
         <button onClick={requestReview} disabled={busy} className="btn btn-secondary text-sm">
-          {state.status === "loading" ? "확인 중..." : "🔍 사실 확인 요청"}
+          {state.status === "loading" || state.status === "tracking" ? "확인 중..." : "🔍 사실 확인 요청"}
         </button>
       </div>
+      {state.status === "tracking" && (
+        <div className="rounded-[10px] border border-[color:var(--brand)] bg-[color:var(--brand-soft)] px-3 py-2 text-sm" role="status" aria-live="polite">
+          <p className="font-semibold">확인 중 — 완료되면 여기에 표시됩니다</p>
+          <p className="mt-1 text-[color:var(--muted)]">페이지를 떠나도 작업은 서버에서 계속 진행돼요.</p>
+          {state.pollError && <p className="mt-2 rounded-[10px] bg-[color:var(--warning-soft)] px-3 py-2" role="alert">⚠️ {state.pollError} 자동 확인은 계속됩니다.</p>}
+        </div>
+      )}
       {state.status === "error" && <p className="text-[color:var(--danger)]">❌ {state.message}</p>}
       {state.status === "result" && state.result.verdict === "rejected" && (
         <div className="surface surface-pad space-y-1">
