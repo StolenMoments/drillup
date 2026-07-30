@@ -32,6 +32,7 @@ const database = vi.hoisted(() => ({
   jobs: [] as StoredJob[],
   logs: [] as StoredLog[],
   detailPreview: null as string | null,
+  generationStage: null as string | null,
   failLogCreate: false,
 }));
 
@@ -57,6 +58,7 @@ import {
   heartbeatJob,
   recoverStaleJobs,
   runClaimedJob,
+  updateJobProgress,
   writeJobRunLog,
 } from "./job-runner";
 
@@ -130,6 +132,12 @@ function transactionClient() {
         database.detailPreview = data.preview;
       }),
     },
+    questionGenerationJobData: {
+      updateMany: vi.fn(async ({ data }: { data: { stage: string } }) => {
+        database.generationStage = data.stage;
+        return { count: 1 };
+      }),
+    },
   };
 }
 
@@ -159,12 +167,14 @@ function installDatabaseDouble() {
       const jobsBefore = database.jobs.map((job) => ({ ...job }));
       const logsBefore = database.logs.map((log) => ({ ...log }));
       const detailBefore = database.detailPreview;
+      const generationStageBefore = database.generationStage;
       try {
         return await callback(transactionClient());
       } catch (error) {
         database.jobs = jobsBefore;
         database.logs = logsBefore;
         database.detailPreview = detailBefore;
+        database.generationStage = generationStageBefore;
         throw error;
       }
     },
@@ -178,6 +188,7 @@ describe("common job runner", () => {
     database.jobs = [makeJob()];
     database.logs = [];
     database.detailPreview = null;
+    database.generationStage = null;
     database.failLogCreate = false;
     installDatabaseDouble();
   });
@@ -291,6 +302,30 @@ describe("common job runner", () => {
     });
   });
 
+  it("stops as FENCED without persisting progress after the run token is lost", async () => {
+    const outcome = await runClaimedJob(1, {
+      execute: async (claim) => {
+        await failJob(1, claim.runToken, "stale recovery won");
+        await updateJobProgress(1, claim.runToken, async (tx) => {
+          await tx.noteTidyJobData.update({
+            where: { jobId: 1 },
+            data: { preview: "must not save" },
+          });
+        });
+        return "unreachable";
+      },
+      persistResult: async () => undefined,
+    });
+
+    expect(outcome).toBe("FENCED");
+    expect(database.detailPreview).toBeNull();
+    expect(database.jobs[0]).toMatchObject({
+      status: "FAILED",
+      runToken: null,
+      errorMessage: "stale recovery won",
+    });
+  });
+
   it("recovers stale jobs, closes RUNNING child logs, and fences the late runner", async () => {
     const staleToken = "11111111-1111-4111-8111-111111111111";
     database.jobs = [
@@ -332,6 +367,28 @@ describe("common job runner", () => {
     });
     await expect(heartbeatJob(1, staleToken)).resolves.toBe(false);
     await expect(completeJob(1, staleToken, async () => undefined)).resolves.toBe(false);
+  });
+
+  it("recovers a stale question generation job and closes its detail stage atomically", async () => {
+    database.jobs = [makeJob({
+      type: "QUESTION_GENERATION",
+      status: "RUNNING",
+      runToken: "11111111-1111-4111-8111-111111111111",
+      startedAt: new Date("2026-07-30T00:00:00.000Z"),
+      heartbeatAt: new Date("2026-07-30T00:01:00.000Z"),
+    })];
+    database.generationStage = "VERIFYING";
+    const previousTimeout = process.env.GENERATION_TIMEOUT_MS;
+    process.env.GENERATION_TIMEOUT_MS = "1000";
+    try {
+      await recoverStaleJobs(new Date("2026-07-30T00:03:01.001Z"));
+    } finally {
+      if (previousTimeout === undefined) delete process.env.GENERATION_TIMEOUT_MS;
+      else process.env.GENERATION_TIMEOUT_MS = previousTimeout;
+    }
+
+    expect(database.jobs[0].status).toBe("FAILED");
+    expect(database.generationStage).toBe("FAILED");
   });
 
   it("treats run log persistence as best effort and tails diagnostics", async () => {

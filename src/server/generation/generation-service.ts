@@ -38,7 +38,7 @@ import { prisma } from "../db";
 import { ServiceError } from "../errors";
 import type { ImportQuestionInput } from "../import-service";
 import { toJobDtoBase } from "../job-dto";
-import { recoverStaleJobs, runClaimedJob } from "../job-runner";
+import { recoverStaleJobs, runClaimedJob, updateJobProgress } from "../job-runner";
 import { createPendingJob, retryJob } from "../job-service";
 import { attachKeywords } from "../keyword-service";
 import { requiredReferenceFiles, resolveReferenceFiles } from "./reference";
@@ -102,6 +102,28 @@ function revisionsForIndex(job: GenerationJobRecord, itemIndex: number): Revisio
   );
 }
 
+function isUsableSelectedRevision(revision: RevisionJobRecord): boolean {
+  const detail = revision.generationItemRevisionData;
+  return revision.status === "SUCCEEDED"
+    && detail?.selectedAt != null
+    && detail.proposedQuestion != null;
+}
+
+function compareSelectionRecency(a: RevisionJobRecord, b: RevisionJobRecord): number {
+  const aSelectedAt = a.generationItemRevisionData?.selectedAt?.getTime() ?? 0;
+  const bSelectedAt = b.generationItemRevisionData?.selectedAt?.getTime() ?? 0;
+  if (aSelectedAt !== bSelectedAt) return aSelectedAt - bSelectedAt;
+  return a.id - b.id;
+}
+
+function latestSelectedRevision(revisions: RevisionJobRecord[]): RevisionJobRecord | null {
+  return revisions.reduce<RevisionJobRecord | null>((latest, revision) => {
+    if (!isUsableSelectedRevision(revision)) return latest;
+    if (!latest || compareSelectionRecency(revision, latest) > 0) return revision;
+    return latest;
+  }, null);
+}
+
 function toDto(job: GenerationJobRecord): GenerationJobDto {
   if (!job.topicId || (job.type !== "QUESTION_GENERATION" && job.type !== "KEYWORD_TAGGING")) {
     throw new Error("Invalid generation job target or type");
@@ -122,12 +144,12 @@ function toDto(job: GenerationJobRecord): GenerationJobDto {
     referenceFiles: normalizeStringArray(questionData?.referenceFiles ?? null),
     correctAnswerCount: questionData?.correctAnswerCount as CorrectAnswerCountDto | null ?? null,
     choiceCount: questionData?.choiceCount as ChoiceCountDto | null ?? null,
-    stage: questionData?.stage ?? null,
+    stage: job.type === "QUESTION_GENERATION" && job.status === "FAILED"
+      ? "FAILED"
+      : questionData?.stage ?? null,
     items: storedItems?.map((item) => {
       const revisions = revisionsForIndex(job, item.index);
-      const selected = revisions
-        .filter((revision) => revision.status === "SUCCEEDED" && revision.generationItemRevisionData?.selectedAt)
-        .at(-1) ?? null;
+      const selected = latestSelectedRevision(revisions);
       return {
         ...item,
         revision: revisions.length ? toRevisionDto(revisions.at(-1) as RevisionJobRecord) : null,
@@ -504,6 +526,7 @@ type QuestionExecutionResult = {
 
 async function executeQuestionJob(
   job: GenerationExecutionJob,
+  runToken: string,
 ): Promise<QuestionExecutionResult> {
   const detail = job.questionGenerationData;
   if (!job.topic || !detail) {
@@ -584,22 +607,26 @@ async function executeQuestionJob(
   else await failTrackedRun(run.runLogId, `${invalidItems.length}개 문항이 유효성 검사를 통과하지 못했습니다: ${invalidItems.map((item) => `#${item.index + 1} ${item.errors[0] ?? "알 수 없는 검증 오류"}`).join("; ")}`);
 
   if (validCount === 0) {
-    await prisma.questionGenerationJobData.update({
-      where: { jobId: job.id },
-      data: {
-        stage: "FAILED",
-        items: attachTestedDistinctions(unverifiedItems, blueprints) as unknown as Prisma.InputJsonValue,
-      },
+    await updateJobProgress(job.id, runToken, async (tx) => {
+      await tx.questionGenerationJobData.update({
+        where: { jobId: job.id },
+        data: {
+          stage: "FAILED",
+          items: attachTestedDistinctions(unverifiedItems, blueprints) as unknown as Prisma.InputJsonValue,
+        },
+      });
     });
     throw new Error(failureMessage ?? "생성된 문항이 없습니다");
   }
 
-  await prisma.questionGenerationJobData.update({
-    where: { jobId: job.id },
-    data: {
-      stage: "VERIFYING",
-      items: attachTestedDistinctions(unverifiedItems, blueprints) as unknown as Prisma.InputJsonValue,
-    },
+  await updateJobProgress(job.id, runToken, async (tx) => {
+    await tx.questionGenerationJobData.update({
+      where: { jobId: job.id },
+      data: {
+        stage: "VERIFYING",
+        items: attachTestedDistinctions(unverifiedItems, blueprints) as unknown as Prisma.InputJsonValue,
+      },
+    });
   });
 
   const verifyResultPath = path.join(dir, "verify-result.json");
@@ -714,7 +741,7 @@ type GenerationExecutionResult =
 
 export async function runGenerationJob(jobId: number): Promise<void> {
   const outcome = await runClaimedJob<GenerationExecutionResult>(jobId, {
-    execute: async () => {
+    execute: async (claim) => {
       const job = await prisma.job.findUnique({
         where: { id: jobId },
         include: {
@@ -724,7 +751,7 @@ export async function runGenerationJob(jobId: number): Promise<void> {
         },
       });
       if (!job) throw new Error("Generation job not found after claim");
-      if (job.type === "QUESTION_GENERATION") return executeQuestionJob(job);
+      if (job.type === "QUESTION_GENERATION") return executeQuestionJob(job, claim.runToken);
       if (job.type === "KEYWORD_TAGGING") return executeKeywordTagJob(job);
       throw new Error("Unsupported generation job type");
     },
@@ -853,14 +880,12 @@ async function executeItemRevisionJob(jobId: number): Promise<ItemRevisionExecut
   const item = ((parent.questionGenerationData.items as unknown as GenerationItemDto[] | null) ?? [])
     .find((candidate) => candidate.index === detail.itemIndex);
   if (!item?.ok) throw new Error("Revision source item is missing");
-  const selected = parent.childJobs
-    .filter((candidate) =>
+  const selected = latestSelectedRevision(
+    parent.childJobs.filter((candidate) =>
       candidate.id !== revision.id &&
-      candidate.status === "SUCCEEDED" &&
-      candidate.generationItemRevisionData?.itemIndex === detail.itemIndex &&
-      candidate.generationItemRevisionData.selectedAt,
-    )
-    .at(-1);
+      candidate.generationItemRevisionData?.itemIndex === detail.itemIndex,
+    ),
+  );
   const question = (selected?.generationItemRevisionData?.proposedQuestion ?? item.question) as ImportQuestion;
   const referenceFiles = await resolveReferenceFiles(
     parent.topic.referenceDir,
@@ -1073,13 +1098,24 @@ export async function approveJob(
         generationItemRevisionData: { is: { selectedAt: { not: null } } },
       },
       include: { generationItemRevisionData: true },
-      orderBy: { id: "asc" },
+      orderBy: [
+        { generationItemRevisionData: { selectedAt: "desc" } },
+        { id: "desc" },
+      ],
     });
-    const selectedByIndex = new Map<number, Prisma.JsonValue>();
+    const revisionsByIndex = new Map<number, RevisionJobRecord[]>();
     for (const revision of revisions) {
       const detail = revision.generationItemRevisionData;
-      if (detail?.proposedQuestion) {
-        selectedByIndex.set(detail.itemIndex, detail.proposedQuestion);
+      if (!detail) continue;
+      const candidates = revisionsByIndex.get(detail.itemIndex) ?? [];
+      candidates.push(revision);
+      revisionsByIndex.set(detail.itemIndex, candidates);
+    }
+    const selectedByIndex = new Map<number, Prisma.JsonValue>();
+    for (const [itemIndex, candidates] of revisionsByIndex) {
+      const selected = latestSelectedRevision(candidates);
+      if (selected?.generationItemRevisionData?.proposedQuestion) {
+        selectedByIndex.set(itemIndex, selected.generationItemRevisionData.proposedQuestion);
       }
     }
     const questions: ImportQuestionInput[] = [];

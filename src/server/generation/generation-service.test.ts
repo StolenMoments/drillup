@@ -53,6 +53,7 @@ const commonJobServiceMock = vi.hoisted(() => ({
 const commonJobRunnerMock = vi.hoisted(() => ({
   runClaimedJob: vi.fn(),
   recoverStaleJobs: vi.fn(),
+  updateJobProgress: vi.fn(),
 }));
 const importQuestionsMock = vi.hoisted(() => vi.fn());
 const trackedRunMock = vi.hoisted(() => ({
@@ -75,6 +76,7 @@ import {
   getJob,
   repairGateFailures,
   runGenerationJob,
+  runGenerationItemRevisionJob,
 } from "./generation-service";
 
 const originalQuestion = {
@@ -380,6 +382,45 @@ describe("approveJob", () => {
     });
   });
 
+  it("approves the successful revision with the newest selectedAt instead of the highest Job id", async () => {
+    const newerSelection = revisionJob(
+      81,
+      { ...revisedQuestion, question: "최근 선택 수정본" },
+      new Date("2026-07-30T00:02:00.000Z"),
+    );
+    const higherIdOlderSelection = revisionJob(
+      92,
+      { ...revisedQuestion, question: "예전 선택 수정본" },
+      new Date("2026-07-30T00:01:00.000Z"),
+    );
+    transactionClientMock.job.findFirst
+      .mockResolvedValueOnce(commonSucceededJob({
+        childJobs: [newerSelection, higherIdOlderSelection],
+      }))
+      .mockResolvedValueOnce(null);
+    transactionClientMock.job.findMany.mockResolvedValue([
+      newerSelection,
+      higherIdOlderSelection,
+    ]);
+    prismaMock.job.findFirst.mockResolvedValue(commonSucceededJob({
+      childJobs: [newerSelection, higherIdOlderSelection],
+      questionGenerationData: {
+        ...commonSucceededJob().questionGenerationData,
+        approvedAt: new Date("2026-07-30T00:03:00.000Z"),
+        savedCount: 1,
+      },
+    }));
+
+    await approveJob(1, [0]);
+
+    expect(transactionClientMock.question.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        payload: expect.objectContaining({ question: "최근 선택 수정본" }),
+      }),
+      select: { id: true },
+    });
+  });
+
   it("still rejects an original question whose verification verdict failed", async () => {
     transactionClientMock.job.findFirst
       .mockResolvedValueOnce(commonSucceededJob())
@@ -432,6 +473,110 @@ describe("getJob", () => {
       referenceFiles: ["common/a.md", "common/b.md"],
     });
     expect(commonJobRunnerMock.recoverStaleJobs).toHaveBeenCalledOnce();
+  });
+
+  it("renders a stale-recovered FAILED job with FAILED detail stage", async () => {
+    const job = commonSucceededJob({
+      status: "FAILED",
+      errorMessage: "stale job recovered after heartbeat timeout",
+      finishedAt: new Date("2026-07-30T00:03:01.001Z"),
+    });
+    job.questionGenerationData.stage = "VERIFYING";
+    prismaMock.job.findFirst.mockResolvedValue(job);
+
+    await expect(getJob(1)).resolves.toMatchObject({
+      status: "FAILED",
+      stage: "FAILED",
+      items: null,
+    });
+  });
+
+  it("displays the selected revision with the newest selectedAt instead of the highest Job id", async () => {
+    const newerSelection = revisionJob(
+      81,
+      { ...revisedQuestion, question: "최근 선택 수정본" },
+      new Date("2026-07-30T00:02:00.000Z"),
+    );
+    const higherIdOlderSelection = revisionJob(
+      92,
+      { ...revisedQuestion, question: "예전 선택 수정본" },
+      new Date("2026-07-30T00:01:00.000Z"),
+    );
+    prismaMock.job.findFirst.mockResolvedValue(commonSucceededJob({
+      childJobs: [newerSelection, higherIdOlderSelection],
+    }));
+
+    await expect(getJob(1)).resolves.toMatchObject({
+      items: [{
+        index: 0,
+        selectedRevision: {
+          id: 81,
+          proposedQuestion: expect.objectContaining({ question: "최근 선택 수정본" }),
+        },
+      }],
+    });
+  });
+});
+
+describe("runGenerationItemRevisionJob", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("uses the successful revision with the newest selectedAt as its source", async () => {
+    const newerSelection = revisionJob(
+      81,
+      { ...revisedQuestion, question: "최근 선택 수정본" },
+      new Date("2026-07-30T00:02:00.000Z"),
+    );
+    const higherIdOlderSelection = revisionJob(
+      92,
+      { ...revisedQuestion, question: "예전 선택 수정본" },
+      new Date("2026-07-30T00:01:00.000Z"),
+    );
+    const parent = commonSucceededJob({
+      topic: { id: 2, name: "AWS", referenceDir: null },
+      childJobs: [newerSelection, higherIdOlderSelection],
+    });
+    const currentRevision = {
+      ...revisionJob(103, null, null),
+      status: "RUNNING",
+      parentJob: parent,
+    };
+    prismaMock.job.findFirst.mockResolvedValue(currentRevision);
+    let prompt = "";
+    trackedRunMock.runTrackedEngine.mockImplementation(async (input: { prompt: string }) => {
+      prompt = input.prompt;
+      return {
+        ok: true as const,
+        resultText: JSON.stringify({
+          verdict: "pass",
+          comment: "수정 완료",
+          revised_question: {
+            type: "mcq",
+            question: "검증 가능한 수정 결과",
+            choices: ["A", "B", "C", "D"],
+            answer_indices: [0],
+            choice_explanations: ["근거", "근거", "근거", "근거"],
+          },
+        }),
+        runLogId: 5,
+        stdoutTail: "",
+        stderrTail: "",
+        exitCode: 0,
+        timedOut: false,
+        durationMs: 0,
+      };
+    });
+    commonJobRunnerMock.runClaimedJob.mockImplementation(async (_jobId, options) => {
+      await options.execute({ job: pendingCommonJob(103), runToken: "run-token" });
+      return "SUCCEEDED";
+    });
+
+    await runGenerationItemRevisionJob(103);
+
+    expect(prompt).toContain("최근 선택 수정본");
+    expect(prompt).not.toContain("예전 선택 수정본");
   });
 });
 
@@ -559,6 +704,69 @@ describe("자동 ITEM_REPAIR", () => {
     choice_explanations: ["근거", "근거", "근거", "근거"],
     explanation: "해설",
   };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    commonJobRunnerMock.updateJobProgress.mockImplementation(
+      async (_jobId, _runToken, persist) => {
+        await persist({ questionGenerationJobData: { update: vi.fn() } });
+      },
+    );
+  });
+
+  it("중간 상세 저장의 fence를 잃으면 VERIFY를 실행하지 않고 즉시 멈춘다", async () => {
+    const blueprint = passingBlueprint();
+    const stages: string[] = [];
+    const pending = pendingCommonJob(1);
+    const executionJob = commonSucceededJob({
+      status: "RUNNING",
+      finishedAt: null,
+      topic: { id: 2, name: "AWS", referenceDir: null },
+    });
+    executionJob.questionGenerationData.stage = "RUNNING";
+    executionJob.questionGenerationData.items = null;
+    prismaMock.job.findUnique.mockResolvedValue(executionJob);
+    prismaMock.question.count.mockResolvedValue(0);
+    prismaMock.question.findMany.mockResolvedValue([]);
+    prismaMock.keyword.findMany.mockResolvedValue([]);
+    prismaMock.questionGenerationJobData.update.mockResolvedValue({});
+    commonJobRunnerMock.updateJobProgress.mockRejectedValue(new Error("fence lost"));
+    commonJobRunnerMock.runClaimedJob.mockImplementation(async (_jobId, options) => {
+      try {
+        await options.execute({ job: pending, runToken: "stale-token" });
+        return "SUCCEEDED";
+      } catch {
+        return "FENCED";
+      }
+    });
+    trackedRunMock.runTrackedEngine.mockImplementation(async (input: { stage: string }) => {
+      stages.push(input.stage);
+      const results: Record<string, unknown> = {
+        BLUEPRINT: { blueprints: [blueprint] },
+        GENERATION: { questions: [generatedQuestion] },
+        VERIFY: { verdicts: [{ index: 0, verdict: "pass", comment: "" }] },
+      };
+      return {
+        ok: true as const,
+        resultText: JSON.stringify(results[input.stage]),
+        runLogId: stages.length,
+        stdoutTail: "",
+        stderrTail: "",
+        exitCode: 0,
+        timedOut: false,
+        durationMs: 0,
+      };
+    });
+
+    await runGenerationJob(1);
+
+    expect(commonJobRunnerMock.updateJobProgress).toHaveBeenCalledWith(
+      1,
+      "stale-token",
+      expect.any(Function),
+    );
+    expect(stages).toEqual(["BLUEPRINT", "GENERATION"]);
+  });
 
   it("수선 프롬프트에는 원본 문제 대신 블루프린트와 실패 사유를 전달한다", async () => {
     const blueprint = passingBlueprint();

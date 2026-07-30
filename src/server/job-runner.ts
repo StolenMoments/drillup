@@ -73,6 +73,21 @@ export async function heartbeatJob(jobId: number, runToken: string): Promise<boo
   return result.count === 1;
 }
 
+export async function updateJobProgress(
+  jobId: number,
+  runToken: string,
+  persist: (tx: Prisma.TransactionClient) => Promise<void>,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const owned = await tx.job.updateMany({
+      where: { id: jobId, status: "RUNNING", runToken },
+      data: { heartbeatAt: new Date() },
+    });
+    if (owned.count !== 1) throw new JobFenceLostError();
+    await persist(tx);
+  });
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -169,6 +184,12 @@ export async function recoverStaleJobs(now = new Date()): Promise<number> {
           finishedAt: now,
         },
       });
+      if (current.type === "QUESTION_GENERATION") {
+        await tx.questionGenerationJobData.updateMany({
+          where: { jobId: current.id },
+          data: { stage: "FAILED" },
+        });
+      }
       const closed = await tx.job.updateMany({
         where: {
           id: current.id,
@@ -258,6 +279,7 @@ export async function runClaimedJob<Result>(
     );
     return completed ? "SUCCEEDED" : "FENCED";
   } catch (error) {
+    if (error instanceof JobFenceLostError) return "FENCED";
     await failJob(jobId, claim.runToken, errorMessage(error)).catch(() => false);
     return "FAILED";
   } finally {

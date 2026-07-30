@@ -277,7 +277,19 @@ export type QuestionGenerationStageDto =
 export type GenerationVerdictDto = "pass" | "fail" | "unverified";
 export type GenerationJobTypeDto = "QUESTION_GENERATION" | "KEYWORD_TAGGING";
 export type GenerationItemRevisionStatusDto = JobStatusDto;
-export type GenerationRunStageDto = "BLUEPRINT" | "BLUEPRINT_REPAIR" | "GENERATION" | "VERIFY" | "ITEM_REPAIR" | "REPAIR_VERIFY" | "MANUAL_ITEM_REVISION" | "KEYWORD_TAG";
+export type GenerationRunStageDto =
+  | "BLUEPRINT"
+  | "BLUEPRINT_REPAIR"
+  | "GENERATION"
+  | "VERIFY"
+  | "ITEM_REPAIR"
+  | "REPAIR_VERIFY"
+  | "MANUAL_ITEM_REVISION"
+  | "KEYWORD_TAG"
+  | "CHOICE_HARDENING"
+  | "NOTE_TIDY"
+  | "ANSWER_EXPLANATION"
+  | "LEGACY_OUTPUT";
 export type GenerationRunStatusDto = "RUNNING" | "SUCCEEDED" | "FAILED";
 
 export interface GenerationRunLogDto {

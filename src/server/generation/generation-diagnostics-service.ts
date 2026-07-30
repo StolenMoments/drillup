@@ -1,10 +1,10 @@
 import type { JobRunLog } from "@prisma/client";
-import type { GenerationRunLogDto, GenerationRunStageDto } from "@/lib/api-types";
+import type { GenerationRunLogDto } from "@/lib/api-types";
 import { prisma } from "../db";
 import { ServiceError } from "../errors";
 
 function toDto(run: JobRunLog): GenerationRunLogDto {
-  return { id: run.id, stage: run.stage as GenerationRunStageDto, itemIndex: run.itemIndex, attempt: run.attempt, engine: run.engine, model: run.model, status: run.status, prompt: run.prompt, response: run.response, stdoutTail: run.stdoutTail, stderrTail: run.stderrTail, errorMessage: run.errorMessage, exitCode: run.exitCode, timedOut: run.timedOut, startedAt: run.startedAt.toISOString(), finishedAt: run.finishedAt?.toISOString() ?? null, durationMs: run.durationMs };
+  return { id: run.id, stage: run.stage, itemIndex: run.itemIndex, attempt: run.attempt, engine: run.engine, model: run.model, status: run.status, prompt: run.prompt, response: run.response, stdoutTail: run.stdoutTail, stderrTail: run.stderrTail, errorMessage: run.errorMessage, exitCode: run.exitCode, timedOut: run.timedOut, startedAt: run.startedAt.toISOString(), finishedAt: run.finishedAt?.toISOString() ?? null, durationMs: run.durationMs };
 }
 
 export async function getJobDiagnostics(jobId: number): Promise<GenerationRunLogDto[]> {
