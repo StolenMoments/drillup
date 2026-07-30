@@ -42,6 +42,10 @@ function createTable(name: string): string {
   return extension.match(new RegExp("CREATE\\s+TABLE\\s+`" + name + "`\\s*\\(([\\s\\S]*?)\\)\\s*DEFAULT", "i"))?.[1] ?? "";
 }
 
+function validationSection(name: string): string {
+  return compact(verification.match(new RegExp(`--\\s*validation:\\s*${name}([\\s\\S]*?)(?=--\\s*validation:|$)`, "i"))?.[1] ?? "");
+}
+
 describe("common Job Prisma schema contract", () => {
   test("missing Job enums cannot silently omit a lifecycle state or supported type", () => {
     expect(enumValues("JobStatus")).toEqual(["PENDING", "RUNNING", "SUCCEEDED", "FAILED"]);
@@ -149,7 +153,10 @@ describe("deterministic legacy ID allocator", () => {
   });
 
   test("signed Int overflow aborts and validation proves ranges and reverse mapping", () => {
-    expect(normalized).toMatch(/IF\(@revisionUpper > 2147483647, 'CALL fail_common_job_backfill/i);
+    expect(normalized).toMatch(/IF\(@revisionUpper >= 2147483647, 'CALL fail_common_job_backfill/i);
+    expect(normalized).toMatch(/IF\(@cacheUpper >= 2147483647, 'CALL fail_common_job_backfill/i);
+    expect(normalized).toMatch(/SET @nextCommonJobId ?:= ?@cacheUpper ?\+ ?1/i);
+    expect(normalized).toMatch(/COALESCE\(MAX\(cache\.id\), 0\).*sourceJob\.id IS NULL/i);
     expect(normalized).toMatch(/CREATE PROCEDURE fail_common_job_backfill.*SIGNAL SQLSTATE '45000'/i);
     for (const token of ["generation_id_mismatch", "range_overlap", "choice_reverse_mapping", "note_reverse_mapping", "explanation_reverse_mapping", "revision_reverse_mapping"]) {
       expect(verification, token).toMatch(new RegExp(`validation:\\s*${token}`, "i"));
@@ -186,6 +193,50 @@ describe("legacy data preservation and verification", () => {
     expect(compact(verification)).toMatch(/COUNT\(\*\) FROM answer_explanation AS cache LEFT JOIN answer_explanation_job AS sourceJob.*WHERE sourceJob\.id IS NULL/i);
   });
 
+  test("a legacy SUCCEEDED explanation Job without cache becomes FAILED and cannot be a cache hit", () => {
+    const legacyJobInsert = normalized.match(/SELECT @noteUpper \+ legacy\.id, 'ANSWER_EXPLANATION'[\s\S]*?FROM answer_explanation_job AS legacy[\s\S]*?;/i)?.[0] ?? "";
+    expect(legacyJobInsert).toMatch(/CASE WHEN cache\.id IS NOT NULL THEN 'SUCCEEDED' ELSE 'FAILED' END/i);
+    expect(legacyJobInsert).toMatch(/cache\.id IS NULL AND legacy\.status = 'SUCCEEDED'.*cache.*missing|cache\.id IS NULL AND legacy\.status = 'SUCCEEDED'.*캐시/is);
+    const validSuccess = validationSection("successful_explanation_without_valid_cache");
+    expect(validSuccess).toMatch(/candidate\.type = 'ANSWER_EXPLANATION'.*candidate\.status = 'SUCCEEDED'/i);
+    expect(validSuccess).toMatch(/detail\.content IS NULL|cache\.id IS NULL/i);
+    expect(validSuccess).toMatch(/detail\.source_hash <> SHA2\(/i);
+  });
+
+  test("revision backfill rejects a non-generation parent or missing parent item", () => {
+    expect(normalized).toMatch(/SET @invalidRevisionTargetCount ?:= ?\( SELECT COUNT\(\*\).*FROM generation_item_revision AS legacy/i);
+    expect(normalized).toMatch(/parent\.kind <> 'QUESTION'/i);
+    expect(normalized).toMatch(/JSON_TYPE\(parent\.result\) <> 'ARRAY'/i);
+    expect(normalized).toMatch(/legacy\.item_index < 0.*legacy\.item_index >= JSON_LENGTH\(parent\.result\)/i);
+    expect(normalized).toMatch(/JSON_CONTAINS_PATH\(parent\.result, 'one', CONCAT\('\$\[', legacy\.item_index, '\]'\)\) <> 1/i);
+    expect(normalized).toMatch(/IF\(@invalidRevisionTargetCount <> 0, 'CALL fail_common_job_backfill/i);
+    const revisionValidation = validationSection("invalid_revision_parent_or_item");
+    expect(revisionValidation).toMatch(/parent\.type <> 'QUESTION_GENERATION'/i);
+    expect(revisionValidation).toMatch(/detail\.item_index >= JSON_LENGTH\(parentData\.items\)/i);
+    expect(revisionValidation).toMatch(/JSON_CONTAINS_PATH\(parentData\.items, 'one'/i);
+  });
+
+  test("every manual revision log maps exactly once to its deterministic child Job", () => {
+    expect(normalized).toMatch(/SET @invalidManualRevisionLogCount ?:= ?\( SELECT COUNT\(\*\).*legacy\.stage = 'MANUAL_ITEM_REVISION'/i);
+    expect(normalized).toMatch(/SELECT legacy\.id, @explanationUpper \+ revision\.id, legacy\.stage/i);
+    expect(normalized).toMatch(/FROM generation_run_log AS legacy JOIN generation_item_revision AS revision/i);
+    expect(normalized).not.toMatch(/MANUAL_ITEM_REVISION'.*ELSE legacy\.generation_job_id/is);
+    expect(normalized).toMatch(/IF\(@invalidManualRevisionLogCount <> 0, 'CALL fail_common_job_backfill/i);
+    const manualValidation = validationSection("manual_revision_log_mapping_mismatch");
+    expect(manualValidation).toMatch(/copied\.job_id <> @explanationUpper \+ revision\.id/i);
+    expect(manualValidation).toMatch(/revision\.id IS NULL|match_count <> 1/i);
+  });
+
+  test("dangling verification covers every detail table owner", () => {
+    const dangling = validationSection("dangling_foreign_key");
+    for (const detail of [
+      "question_generation_job_data", "keyword_tagging_job_data", "generation_item_revision_job_data",
+      "choice_hardening_job_data", "note_tidy_job_data", "answer_explanation_job_data",
+    ]) {
+      expect(dangling, detail).toMatch(new RegExp(`FROM ${detail} AS detail LEFT JOIN job AS owner ON owner\\.id = detail\\.job_id WHERE owner\\.id IS NULL`, "i"));
+    }
+  });
+
   test("legacy logs, manual revision ownership, and non-null raw output are preserved", () => {
     expect(normalized).toMatch(/INSERT IGNORE INTO job_run_log/i);
     expect(normalized).toMatch(/MANUAL_ITEM_REVISION.*generation_item_revision/is);
@@ -199,8 +250,7 @@ describe("legacy data preservation and verification", () => {
       "generation_id_mismatch", "range_overlap", "terminal_timestamp_inconsistency",
       "running_log_below_terminal_job", "cache_without_valid_hash_detail",
     ]) {
-      const section = verification.match(new RegExp(`--\\s*validation:\\s*${token}([\\s\\S]*?)(?=--\\s*validation:|$)`, "i"))?.[1] ?? "";
-      expect(compact(section), token).toMatch(/SELECT .* AS bad_rows/i);
+      expect(validationSection(token), token).toMatch(/SELECT .* AS bad_rows/i);
     }
   });
 });

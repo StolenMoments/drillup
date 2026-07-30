@@ -4,10 +4,18 @@ SET @maxChoiceId := (SELECT COALESCE(MAX(id), 0) FROM `choice_hardening_job`);
 SET @maxNoteId := (SELECT COALESCE(MAX(id), 0) FROM `note_tidy_job`);
 SET @maxExplanationJobId := (SELECT COALESCE(MAX(id), 0) FROM `answer_explanation_job`);
 SET @maxRevisionId := (SELECT COALESCE(MAX(id), 0) FROM `generation_item_revision`);
+SET @maxExplanationCacheId := (
+    SELECT COALESCE(MAX(cache.id), 0)
+    FROM `answer_explanation` AS cache
+    LEFT JOIN `answer_explanation_job` AS sourceJob
+      ON sourceJob.question_id = cache.question_id AND sourceJob.engine = cache.engine
+    WHERE sourceJob.id IS NULL
+);
 SET @choiceUpper := @maxGenerationId + @maxChoiceId;
 SET @noteUpper := @choiceUpper + @maxNoteId;
 SET @explanationUpper := @noteUpper + @maxExplanationJobId;
 SET @revisionUpper := @explanationUpper + @maxRevisionId;
+SET @cacheUpper := @revisionUpper + @maxExplanationCacheId;
 
 -- validation: per_type_count_mismatch
 SELECT SUM(mismatch) AS bad_rows
@@ -67,6 +75,18 @@ FROM (
     SELECT COUNT(*) FROM `job` AS child LEFT JOIN `job` AS original ON original.id = child.retry_of_job_id WHERE child.retry_of_job_id IS NOT NULL AND original.id IS NULL
     UNION ALL
     SELECT COUNT(*) FROM `job_run_log` AS log LEFT JOIN `job` AS owner ON owner.id = log.job_id WHERE owner.id IS NULL
+    UNION ALL
+    SELECT COUNT(*) FROM `question_generation_job_data` AS detail LEFT JOIN `job` AS owner ON owner.id = detail.job_id WHERE owner.id IS NULL
+    UNION ALL
+    SELECT COUNT(*) FROM `keyword_tagging_job_data` AS detail LEFT JOIN `job` AS owner ON owner.id = detail.job_id WHERE owner.id IS NULL
+    UNION ALL
+    SELECT COUNT(*) FROM `generation_item_revision_job_data` AS detail LEFT JOIN `job` AS owner ON owner.id = detail.job_id WHERE owner.id IS NULL
+    UNION ALL
+    SELECT COUNT(*) FROM `choice_hardening_job_data` AS detail LEFT JOIN `job` AS owner ON owner.id = detail.job_id WHERE owner.id IS NULL
+    UNION ALL
+    SELECT COUNT(*) FROM `note_tidy_job_data` AS detail LEFT JOIN `job` AS owner ON owner.id = detail.job_id WHERE owner.id IS NULL
+    UNION ALL
+    SELECT COUNT(*) FROM `answer_explanation_job_data` AS detail LEFT JOIN `job` AS owner ON owner.id = detail.job_id WHERE owner.id IS NULL
 ) AS dangling;
 
 -- validation: generation_id_mismatch
@@ -84,6 +104,12 @@ FROM (
         UNION ALL SELECT @choiceUpper + id FROM `note_tidy_job`
         UNION ALL SELECT @noteUpper + id FROM `answer_explanation_job`
         UNION ALL SELECT @explanationUpper + id FROM `generation_item_revision`
+        UNION ALL
+        SELECT @revisionUpper + cache.id
+        FROM `answer_explanation` AS cache
+        LEFT JOIN `answer_explanation_job` AS sourceJob
+          ON sourceJob.question_id = cache.question_id AND sourceJob.engine = cache.engine
+        WHERE sourceJob.id IS NULL
     ) AS allocated
     GROUP BY mapped_id
     HAVING COUNT(*) > 1
@@ -145,6 +171,65 @@ WHERE materialized.id IS NULL
    OR detail.source_hash <> SHA2(JSON_NORMALIZE(question.payload), 256)
    OR detail.content <> legacy.content
    OR detail.invalidated_at IS NOT NULL;
+
+-- validation: successful_explanation_without_valid_cache
+SELECT COUNT(*) AS bad_rows
+FROM `job` AS candidate
+LEFT JOIN `answer_explanation_job_data` AS detail ON detail.job_id = candidate.id
+LEFT JOIN `question` AS question ON question.id = candidate.question_id
+LEFT JOIN `answer_explanation` AS cache
+  ON cache.question_id = candidate.question_id AND cache.engine = candidate.engine
+WHERE candidate.type = 'ANSWER_EXPLANATION'
+  AND candidate.status = 'SUCCEEDED'
+  AND (
+      detail.job_id IS NULL
+      OR detail.content IS NULL
+      OR cache.id IS NULL
+      OR detail.content <> cache.content
+      OR detail.source_hash IS NULL
+      OR CHAR_LENGTH(detail.source_hash) <> 64
+      OR detail.source_hash <> SHA2(JSON_NORMALIZE(question.payload), 256)
+      OR detail.invalidated_at IS NOT NULL
+  );
+
+-- validation: invalid_revision_parent_or_item
+SELECT COUNT(*) AS bad_rows
+FROM `job` AS candidate
+LEFT JOIN `generation_item_revision_job_data` AS detail ON detail.job_id = candidate.id
+LEFT JOIN `job` AS parent ON parent.id = candidate.parent_job_id
+LEFT JOIN `question_generation_job_data` AS parentData ON parentData.job_id = parent.id
+WHERE candidate.type = 'GENERATION_ITEM_REVISION'
+  AND (
+      parent.id IS NULL
+      OR parent.type <> 'QUESTION_GENERATION'
+      OR detail.job_id IS NULL
+      OR parentData.job_id IS NULL
+      OR parentData.items IS NULL
+      OR JSON_TYPE(parentData.items) <> 'ARRAY'
+      OR detail.item_index < 0
+      OR detail.item_index >= JSON_LENGTH(parentData.items)
+      OR JSON_CONTAINS_PATH(parentData.items, 'one', CONCAT('$[', detail.item_index, ']')) <> 1
+  );
+
+-- validation: manual_revision_log_mapping_mismatch
+SELECT COUNT(*) AS bad_rows
+FROM `generation_run_log` AS legacy
+LEFT JOIN `generation_item_revision` AS revision
+  ON revision.generation_job_id = legacy.generation_job_id
+ AND revision.item_index = legacy.item_index
+LEFT JOIN `job_run_log` AS copied ON copied.id = legacy.id
+WHERE legacy.stage = 'MANUAL_ITEM_REVISION'
+  AND (
+      revision.id IS NULL
+      OR copied.id IS NULL
+      OR copied.job_id <> @explanationUpper + revision.id
+      OR (
+          SELECT COUNT(*)
+          FROM `generation_item_revision` AS matches
+          WHERE matches.generation_job_id = legacy.generation_job_id
+            AND matches.item_index = legacy.item_index
+      ) <> 1
+  );
 
 -- validation: invalid_parent_or_retry
 SELECT COUNT(*) AS bad_rows

@@ -4,7 +4,13 @@ SET @maxChoiceId := (SELECT COALESCE(MAX(id), 0) FROM `choice_hardening_job`);
 SET @maxNoteId := (SELECT COALESCE(MAX(id), 0) FROM `note_tidy_job`);
 SET @maxExplanationJobId := (SELECT COALESCE(MAX(id), 0) FROM `answer_explanation_job`);
 SET @maxRevisionId := (SELECT COALESCE(MAX(id), 0) FROM `generation_item_revision`);
-SET @maxExplanationCacheId := (SELECT COALESCE(MAX(id), 0) FROM `answer_explanation`);
+SET @maxExplanationCacheId := (
+    SELECT COALESCE(MAX(cache.id), 0)
+    FROM `answer_explanation` AS cache
+    LEFT JOIN `answer_explanation_job` AS sourceJob
+      ON sourceJob.question_id = cache.question_id AND sourceJob.engine = cache.engine
+    WHERE sourceJob.id IS NULL
+);
 
 SET @choiceUpper := @maxGenerationId + @maxChoiceId;
 SET @noteUpper := @choiceUpper + @maxNoteId;
@@ -16,18 +22,41 @@ SET @legacyRunningLogCount := (
     SELECT COUNT(*) FROM `generation_run_log` WHERE `status` = 'RUNNING'
 );
 SET @legacyExplanationCount := (SELECT COUNT(*) FROM `answer_explanation`);
+SET @invalidRevisionTargetCount := (
+    SELECT COUNT(*)
+    FROM `generation_item_revision` AS legacy
+    LEFT JOIN `generation_job` AS parent ON parent.id = legacy.generation_job_id
+    WHERE parent.id IS NULL
+       OR parent.kind <> 'QUESTION'
+       OR parent.result IS NULL
+       OR JSON_TYPE(parent.result) <> 'ARRAY'
+       OR legacy.item_index < 0
+       OR legacy.item_index >= JSON_LENGTH(parent.result)
+       OR JSON_CONTAINS_PATH(parent.result, 'one', CONCAT('$[', legacy.item_index, ']')) <> 1
+);
+SET @invalidManualRevisionLogCount := (
+    SELECT COUNT(*)
+    FROM `generation_run_log` AS legacy
+    WHERE legacy.stage = 'MANUAL_ITEM_REVISION'
+      AND (
+          SELECT COUNT(*)
+          FROM `generation_item_revision` AS revision
+          WHERE revision.generation_job_id = legacy.generation_job_id
+            AND revision.item_index = legacy.item_index
+      ) <> 1
+);
 
 DROP PROCEDURE IF EXISTS `fail_common_job_backfill`;
 CREATE PROCEDURE `fail_common_job_backfill`(IN assertionMessage VARCHAR(255))
 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = assertionMessage;
 
-SET @assertionSql := IF(@revisionUpper > 2147483647,
+SET @assertionSql := IF(@revisionUpper >= 2147483647,
     'CALL fail_common_job_backfill(''common Job deterministic ID range exceeds signed Int'')', 'DO 0');
 PREPARE common_job_assertion FROM @assertionSql;
 EXECUTE common_job_assertion;
 DEALLOCATE PREPARE common_job_assertion;
 
-SET @assertionSql := IF(@cacheUpper > 2147483647,
+SET @assertionSql := IF(@cacheUpper >= 2147483647,
     'CALL fail_common_job_backfill(''materialized explanation Job ID range exceeds signed Int'')', 'DO 0');
 PREPARE common_job_assertion FROM @assertionSql;
 EXECUTE common_job_assertion;
@@ -41,6 +70,18 @@ DEALLOCATE PREPARE common_job_assertion;
 
 SET @assertionSql := IF(@legacyExplanationCount <> 63,
     'CALL fail_common_job_backfill(''expected exactly 63 legacy AnswerExplanation rows'')', 'DO 0');
+PREPARE common_job_assertion FROM @assertionSql;
+EXECUTE common_job_assertion;
+DEALLOCATE PREPARE common_job_assertion;
+
+SET @assertionSql := IF(@invalidRevisionTargetCount <> 0,
+    'CALL fail_common_job_backfill(''legacy revision parent/type/item validation failed'')', 'DO 0');
+PREPARE common_job_assertion FROM @assertionSql;
+EXECUTE common_job_assertion;
+DEALLOCATE PREPARE common_job_assertion;
+
+SET @assertionSql := IF(@invalidManualRevisionLogCount <> 0,
+    'CALL fail_common_job_backfill(''manual revision log did not resolve to exactly one revision'')', 'DO 0');
 PREPARE common_job_assertion FROM @assertionSql;
 EXECUTE common_job_assertion;
 DEALLOCATE PREPARE common_job_assertion;
@@ -112,9 +153,14 @@ FROM `note_tidy_job` AS legacy;
 INSERT IGNORE INTO `job`
     (`id`, `type`, `status`, `engine`, `question_id`, `error_message`, `created_at`, `started_at`, `finished_at`)
 SELECT @noteUpper + legacy.id, 'ANSWER_EXPLANATION',
-       CASE WHEN cache.id IS NOT NULL OR legacy.status = 'SUCCEEDED' THEN 'SUCCEEDED' ELSE 'FAILED' END,
+       CASE WHEN cache.id IS NOT NULL THEN 'SUCCEEDED' ELSE 'FAILED' END,
        legacy.engine, legacy.question_id,
-       CASE WHEN cache.id IS NOT NULL THEN NULL WHEN legacy.status = 'RUNNING' THEN COALESCE(legacy.error_message, '레거시 실행이 배포 시점에 중단되어 FAILED로 이관되었습니다') ELSE legacy.error_message END,
+       CASE
+           WHEN cache.id IS NOT NULL THEN NULL
+           WHEN cache.id IS NULL AND legacy.status = 'SUCCEEDED' THEN '레거시 SUCCEEDED 해설 작업의 유효한 캐시가 없어 FAILED로 이관되었습니다'
+           WHEN legacy.status = 'RUNNING' THEN COALESCE(legacy.error_message, '레거시 실행이 배포 시점에 중단되어 FAILED로 이관되었습니다')
+           ELSE legacy.error_message
+       END,
        legacy.created_at, COALESCE(legacy.started_at, cache.created_at),
        CASE WHEN cache.id IS NOT NULL THEN cache.created_at WHEN legacy.status = 'RUNNING' THEN COALESCE(legacy.finished_at, CURRENT_TIMESTAMP(3)) ELSE COALESCE(legacy.finished_at, legacy.created_at) END
 FROM `answer_explanation_job` AS legacy
@@ -170,15 +216,10 @@ LEFT JOIN `answer_explanation_job` AS sourceJob
   ON sourceJob.question_id = legacy.question_id AND sourceJob.engine = legacy.engine
 WHERE sourceJob.id IS NULL;
 
--- Preserve old execution diagnostics. Manual revision runs belong to their child Job.
+-- Preserve non-manual diagnostics on their generation Job.
 INSERT IGNORE INTO `job_run_log`
     (`id`, `job_id`, `stage`, `item_index`, `attempt`, `engine`, `model`, `status`, `prompt`, `response`, `stdout_tail`, `stderr_tail`, `error_message`, `exit_code`, `timed_out`, `started_at`, `finished_at`, `duration_ms`)
-SELECT legacy.id,
-       CASE
-           WHEN legacy.stage = 'MANUAL_ITEM_REVISION' AND revision.id IS NOT NULL
-               THEN @explanationUpper + revision.id
-           ELSE legacy.generation_job_id
-       END,
+SELECT legacy.id, legacy.generation_job_id,
        legacy.stage, legacy.item_index, legacy.attempt, legacy.engine, legacy.model,
        CASE WHEN legacy.status = 'RUNNING' THEN 'FAILED' ELSE legacy.status END,
        legacy.prompt, legacy.response, legacy.stdout_tail, legacy.stderr_tail,
@@ -187,10 +228,24 @@ SELECT legacy.id,
        CASE WHEN legacy.status = 'RUNNING' THEN COALESCE(legacy.finished_at, CURRENT_TIMESTAMP(3)) ELSE legacy.finished_at END,
        legacy.duration_ms
 FROM `generation_run_log` AS legacy
-LEFT JOIN `generation_item_revision` AS revision
-  ON legacy.stage = 'MANUAL_ITEM_REVISION'
- AND revision.generation_job_id = legacy.generation_job_id
- AND revision.item_index = legacy.item_index;
+WHERE legacy.stage <> 'MANUAL_ITEM_REVISION';
+
+-- A manual revision diagnostic must belong to its one deterministic child Job.
+INSERT IGNORE INTO `job_run_log`
+    (`id`, `job_id`, `stage`, `item_index`, `attempt`, `engine`, `model`, `status`, `prompt`, `response`, `stdout_tail`, `stderr_tail`, `error_message`, `exit_code`, `timed_out`, `started_at`, `finished_at`, `duration_ms`)
+SELECT legacy.id, @explanationUpper + revision.id, legacy.stage,
+       legacy.item_index, legacy.attempt, legacy.engine, legacy.model,
+       CASE WHEN legacy.status = 'RUNNING' THEN 'FAILED' ELSE legacy.status END,
+       legacy.prompt, legacy.response, legacy.stdout_tail, legacy.stderr_tail,
+       CASE WHEN legacy.status = 'RUNNING' THEN COALESCE(legacy.error_message, 'stale legacy RUNNING log closed during common Job backfill') ELSE legacy.error_message END,
+       legacy.exit_code, legacy.timed_out, legacy.started_at,
+       CASE WHEN legacy.status = 'RUNNING' THEN COALESCE(legacy.finished_at, CURRENT_TIMESTAMP(3)) ELSE legacy.finished_at END,
+       legacy.duration_ms
+FROM `generation_run_log` AS legacy
+JOIN `generation_item_revision` AS revision
+  ON revision.generation_job_id = legacy.generation_job_id
+ AND revision.item_index = legacy.item_index
+WHERE legacy.stage = 'MANUAL_ITEM_REVISION';
 
 INSERT INTO `job_run_log`
     (`job_id`, `stage`, `engine`, `status`, `prompt`, `response`, `started_at`, `finished_at`)
