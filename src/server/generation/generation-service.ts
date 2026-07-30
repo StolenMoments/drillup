@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises";
 import path from "node:path";
-import { Prisma, type GenerationEngine, type GenerationItemRevision, type GenerationJob } from "@prisma/client";
+import { Prisma, type GenerationEngine } from "@prisma/client";
 import { parseImportJson, type ImportQuestion, validateGeneratedQuestions } from "@/core/import-schema";
 import { attachTestedDistinctions, prepareGeneratedItems } from "@/core/generation-result";
 import { extractJsonObject } from "@/core/json-extract";
@@ -27,22 +27,24 @@ import type {
   GenerationEngineDto,
   GenerationItemDto,
   GenerationJobDto,
-  GenerationJobKindDto,
   GenerationJobSummaryDto,
   GenerationItemRevisionDto,
+  JobDtoBase,
   KeywordTagItemDto,
   ChoiceCountDto,
   CorrectAnswerCountDto,
 } from "@/lib/api-types";
 import { prisma } from "../db";
 import { ServiceError } from "../errors";
-import { importQuestions, type ImportQuestionInput } from "../import-service";
+import type { ImportQuestionInput } from "../import-service";
+import { toJobDtoBase } from "../job-dto";
+import { recoverStaleJobs, runClaimedJob } from "../job-runner";
+import { createPendingJob, retryJob } from "../job-service";
 import { attachKeywords } from "../keyword-service";
 import { requiredReferenceFiles, resolveReferenceFiles } from "./reference";
-import { generationTimeoutMs, jobOutputDir } from "./run-engine";
+import { jobOutputDir } from "./run-engine";
 import { completeTrackedRun, failTrackedRun, runTrackedEngine } from "./tracked-run";
 
-const ORPHAN_GRACE_MS = 60_000;
 // 게이트 실패로 잡 전체(설계표+수선 토큰)를 버리는 것보다 소규모 수선 재시도가 싸다.
 const BLUEPRINT_REPAIR_ATTEMPTS = 2;
 const EXISTING_QUESTION_LIMIT = 100;
@@ -55,84 +57,115 @@ function normalizeStringArray(value: Prisma.JsonValue | null): string[] {
   return value.filter((item): item is string => typeof item === "string");
 }
 
-function jobQuestionShape(job: Pick<GenerationJob, "correctAnswerCount" | "choiceCount">): GenerationQuestionShape | undefined {
-  if (!job.correctAnswerCount || !job.choiceCount) return undefined;
+const generationJobInclude = {
+  questionGenerationData: true,
+  keywordTaggingData: true,
+  childJobs: {
+    where: { type: "GENERATION_ITEM_REVISION" as const },
+    include: { generationItemRevisionData: true },
+    orderBy: { id: "asc" as const },
+  },
+} satisfies Prisma.JobInclude;
+
+type GenerationJobRecord = Prisma.JobGetPayload<{
+  include: typeof generationJobInclude;
+}>;
+type RevisionJobRecord = GenerationJobRecord["childJobs"][number];
+
+function jobQuestionShape(job: Pick<GenerationJobRecord, "questionGenerationData">): GenerationQuestionShape | undefined {
+  const detail = job.questionGenerationData;
+  if (!detail?.correctAnswerCount || !detail.choiceCount) return undefined;
   return {
-    correctAnswerCount: job.correctAnswerCount as CorrectAnswerCountDto,
-    choiceCount: job.choiceCount as ChoiceCountDto,
+    correctAnswerCount: detail.correctAnswerCount as CorrectAnswerCountDto,
+    choiceCount: detail.choiceCount as ChoiceCountDto,
   };
 }
 
-function toRevisionDto(revision: GenerationItemRevision): GenerationItemRevisionDto {
+function toRevisionDto(revision: RevisionJobRecord): GenerationItemRevisionDto {
+  const detail = revision.generationItemRevisionData;
+  if (!detail) throw new Error("Generation item revision detail is missing");
   return {
+    id: revision.id,
     status: revision.status,
     engine: revision.engine,
-    verdict: revision.verdict === "PASS" ? "pass" : revision.verdict === "FAIL" ? "fail" : null,
-    comment: revision.comment,
-    proposedQuestion: revision.proposedQuestion,
-    appliedQuestion: revision.appliedQuestion,
+    verdict: detail.verdict === "PASS" ? "pass" : detail.verdict === "FAIL" ? "fail" : null,
+    comment: detail.comment,
+    proposedQuestion: detail.proposedQuestion,
+    selectedAt: detail.selectedAt?.toISOString() ?? null,
     errorMessage: revision.errorMessage,
   };
 }
 
-function toDto(job: GenerationJob, revisions: GenerationItemRevision[] = []): GenerationJobDto {
-  const revisionByIndex = new Map(revisions.map((revision) => [revision.itemIndex, revision]));
-  const storedItems = job.kind === "QUESTION" && job.status === "SUCCEEDED"
-    ? (job.result as unknown as Array<Exclude<GenerationItemDto, { index: number; ok: false; errors: string[] }>> | null)
+function revisionsForIndex(job: GenerationJobRecord, itemIndex: number): RevisionJobRecord[] {
+  return job.childJobs.filter(
+    (revision) => revision.generationItemRevisionData?.itemIndex === itemIndex,
+  );
+}
+
+function toDto(job: GenerationJobRecord): GenerationJobDto {
+  if (!job.topicId || (job.type !== "QUESTION_GENERATION" && job.type !== "KEYWORD_TAGGING")) {
+    throw new Error("Invalid generation job target or type");
+  }
+  const questionData = job.questionGenerationData;
+  const keywordData = job.keywordTaggingData;
+  const storedItems = job.type === "QUESTION_GENERATION" && job.status === "SUCCEEDED"
+    ? (questionData?.items as unknown as Array<Exclude<GenerationItemDto, { index: number; ok: false; errors: string[] }>> | null)
     : null;
   return {
-    id: job.id,
+    ...toJobDtoBase(job),
+    type: job.type,
     topicId: job.topicId,
-    engine: job.engine,
-    verifyEngine: job.verifyEngine,
-    instructions: typeof job.instructions === "string" ? job.instructions : "",
-    referenceFiles: normalizeStringArray(job.referenceFiles),
-    correctAnswerCount: job.correctAnswerCount as CorrectAnswerCountDto | null,
-    choiceCount: job.choiceCount as ChoiceCountDto | null,
-    status: job.status,
-    kind: job.kind as GenerationJobKindDto,
-    items: storedItems?.map((item) => ({
-      ...item,
-      revision: revisionByIndex.has(item.index)
-        ? toRevisionDto(revisionByIndex.get(item.index) as GenerationItemRevision)
-        : null,
-    })) ?? null,
+    questionId: null,
+    parentJobId: null,
+    verifyEngine: questionData?.verifyEngine ?? job.engine,
+    instructions: questionData?.instructions ?? "",
+    referenceFiles: normalizeStringArray(questionData?.referenceFiles ?? null),
+    correctAnswerCount: questionData?.correctAnswerCount as CorrectAnswerCountDto | null ?? null,
+    choiceCount: questionData?.choiceCount as ChoiceCountDto | null ?? null,
+    stage: questionData?.stage ?? null,
+    items: storedItems?.map((item) => {
+      const revisions = revisionsForIndex(job, item.index);
+      const selected = revisions
+        .filter((revision) => revision.status === "SUCCEEDED" && revision.generationItemRevisionData?.selectedAt)
+        .at(-1) ?? null;
+      return {
+        ...item,
+        revision: revisions.length ? toRevisionDto(revisions.at(-1) as RevisionJobRecord) : null,
+        selectedRevision: selected ? toRevisionDto(selected) : null,
+      };
+    }) ?? null,
     keywordItems:
-      job.kind === "KEYWORD_TAG" && job.status === "SUCCEEDED"
-        ? (job.result as unknown as KeywordTagItemDto[])
+      job.type === "KEYWORD_TAGGING" && job.status === "SUCCEEDED"
+        ? (keywordData?.items as unknown as KeywordTagItemDto[] | null) ?? []
         : null,
-    errorMessage: job.errorMessage,
-    verifyWarning: job.verifyWarning,
-    createdAt: job.createdAt.toISOString(),
-    finishedAt: job.finishedAt?.toISOString() ?? null,
-    approvedAt: job.approvedAt?.toISOString() ?? null,
-    savedCount: job.savedCount,
-    sourceQuestionIds: (job.sourceQuestionIds as unknown as number[] | null) ?? null,
+    verifyWarning: questionData?.verifyWarning ?? null,
+    approvedAt: (questionData?.approvedAt ?? keywordData?.approvedAt)?.toISOString() ?? null,
+    savedCount: questionData?.savedCount ?? keywordData?.savedCount ?? 0,
+    sourceQuestionIds: (questionData?.sourceQuestionIds as unknown as number[] | null) ?? null,
   };
 }
 
 function toSummaryDto(
-  job: GenerationJob & { topic: { name: string } },
+  job: GenerationJobRecord & { topic: { name: string } | null },
 ): GenerationJobSummaryDto {
+  const dto = toDto(job);
+  if (!job.topic) throw new Error("Generation job topic is missing");
   return {
-    id: job.id,
-    topicId: job.topicId,
+    ...toJobDtoBase(job),
+    type: dto.type,
+    topicId: dto.topicId,
+    questionId: null,
+    parentJobId: null,
     topicName: job.topic.name,
-    engine: job.engine,
-    verifyEngine: job.verifyEngine,
-    correctAnswerCount: job.correctAnswerCount as CorrectAnswerCountDto | null,
-    choiceCount: job.choiceCount as ChoiceCountDto | null,
-    status: job.status,
-    kind: job.kind as GenerationJobKindDto,
-    itemCount:
-      job.status === "SUCCEEDED" && Array.isArray(job.result)
-        ? (job.result as unknown[]).length
-        : null,
-    savedCount: job.savedCount,
-    approvedAt: job.approvedAt?.toISOString() ?? null,
-    errorMessage: job.errorMessage,
-    createdAt: job.createdAt.toISOString(),
-    finishedAt: job.finishedAt?.toISOString() ?? null,
+    verifyEngine: dto.verifyEngine,
+    correctAnswerCount: dto.correctAnswerCount,
+    choiceCount: dto.choiceCount,
+    stage: dto.stage,
+    itemCount: dto.type === "QUESTION_GENERATION"
+      ? dto.items?.length ?? null
+      : dto.keywordItems?.length ?? null,
+    savedCount: dto.savedCount,
+    approvedAt: dto.approvedAt,
   };
 }
 
@@ -169,7 +202,7 @@ async function loadExistingKeywords(topicId: number): Promise<string[]> {
   return keywords.map((keyword) => keyword.name);
 }
 
-export async function createJob(input: {
+type CreateQuestionGenerationInput = {
   topicId: number;
   engine: GenerationEngineDto;
   verifyEngine: GenerationEngineDto;
@@ -178,30 +211,70 @@ export async function createJob(input: {
   choiceCount: ChoiceCountDto;
   referenceFiles: string[];
   sourceQuestionIds?: number[];
-}): Promise<GenerationJobDto> {
-  const topic = await prisma.topic.findUnique({ where: { id: input.topicId } });
-  if (!topic) {
-    throw new ServiceError("TOPIC_NOT_FOUND", "주제를 찾을 수 없습니다", 404);
-  }
+  retryOfJobId?: number;
+};
 
-  const running = await prisma.generationJob.findFirst({
-    where: { topicId: input.topicId, status: { in: ["RUNNING", "VERIFYING"] } },
+async function rejectActiveGenerationJob(
+  tx: Prisma.TransactionClient,
+  topicId: number,
+): Promise<null> {
+  const active = await tx.job.findFirst({
+    where: {
+      topicId,
+      type: { in: ["QUESTION_GENERATION", "KEYWORD_TAGGING"] },
+      status: { in: ["PENDING", "RUNNING"] },
+    },
   });
-  if (running) {
+  if (active) {
     throw new ServiceError(
       "JOB_ALREADY_RUNNING",
       "이미 생성 중인 작업이 있습니다",
       409,
     );
   }
+  return null;
+}
 
-  const referenceAbsPaths = await resolveReferenceFiles(
+function pendingQuestionDto(
+  job: JobDtoBase,
+  input: CreateQuestionGenerationInput,
+  referenceFiles: string[],
+  sourceQuestionIds: number[] | undefined,
+): GenerationJobDto {
+  return {
+    ...job,
+    type: "QUESTION_GENERATION",
+    topicId: input.topicId,
+    questionId: null,
+    parentJobId: null,
+    verifyEngine: input.verifyEngine,
+    instructions: input.instructions,
+    referenceFiles,
+    correctAnswerCount: input.correctAnswerCount,
+    choiceCount: input.choiceCount,
+    stage: "RUNNING",
+    items: null,
+    keywordItems: null,
+    verifyWarning: null,
+    approvedAt: null,
+    savedCount: 0,
+    sourceQuestionIds: sourceQuestionIds ?? null,
+  };
+}
+
+export async function createJob(
+  input: CreateQuestionGenerationInput,
+): Promise<GenerationJobDto> {
+  const topic = await prisma.topic.findUnique({ where: { id: input.topicId } });
+  if (!topic) {
+    throw new ServiceError("TOPIC_NOT_FOUND", "주제를 찾을 수 없습니다", 404);
+  }
+
+  await resolveReferenceFiles(
     topic.referenceDir,
     input.referenceFiles,
   );
-  const existing = await loadExistingQuestions(input.topicId);
 
-  let variantSources: VariantSource[] = [];
   const sourceQuestionIds = input.sourceQuestionIds?.slice(0, VARIANT_SOURCE_LIMIT);
   if (sourceQuestionIds && sourceQuestionIds.length > 0) {
     const sourceQuestions = await prisma.question.findMany({
@@ -210,44 +283,41 @@ export async function createJob(input: {
     if (sourceQuestions.length !== new Set(sourceQuestionIds).size) {
       throw new ServiceError("NOT_FOUND", "원본 문제를 찾을 수 없습니다", 404);
     }
-    variantSources = sourceQuestions.map((question) => ({
-      question: JSON.stringify({
-        type: question.type === "MCQ" ? "mcq" : "cloze",
-        ...(question.payload as Record<string, unknown>),
-        ...(question.explanation ? { explanation: question.explanation } : {}),
-      }),
-    }));
   }
-  const existingKeywords = await loadExistingKeywords(input.topicId);
 
-  const job = await prisma.generationJob.create({
-    data: {
-      topicId: input.topicId,
-      engine: input.engine,
-      verifyEngine: input.verifyEngine,
-      instructions: input.instructions,
-      correctAnswerCount: input.correctAnswerCount,
-      choiceCount: input.choiceCount,
-      referenceFiles: [...new Set([...requiredReferenceFiles(topic.referenceDir), ...input.referenceFiles])],
-      sourceQuestionIds:
-        sourceQuestionIds && sourceQuestionIds.length > 0 ? sourceQuestionIds : undefined,
+  const storedReferenceFiles = [
+    ...new Set([
+      ...requiredReferenceFiles(topic.referenceDir),
+      ...input.referenceFiles,
+    ]),
+  ];
+  const pendingInput = {
+    type: "QUESTION_GENERATION" as const,
+    engine: input.engine,
+    target: { topicId: input.topicId },
+    detail: {
+      type: "QUESTION_GENERATION" as const,
+      data: {
+        verifyEngine: input.verifyEngine,
+        instructions: input.instructions,
+        correctAnswerCount: input.correctAnswerCount,
+        choiceCount: input.choiceCount,
+        referenceFiles: storedReferenceFiles,
+        sourceQuestionIds: sourceQuestionIds?.length
+          ? sourceQuestionIds
+          : undefined,
+      },
     },
-  });
+  };
+  const job = input.retryOfJobId
+    ? await retryJob(input.retryOfJobId, pendingInput, {
+        resolveExisting: (tx) => rejectActiveGenerationJob(tx, input.topicId),
+      })
+    : await createPendingJob(pendingInput, {
+        resolveExisting: (tx) => rejectActiveGenerationJob(tx, input.topicId),
+      });
 
-  void runJob(
-    job.id,
-    topic.name,
-    input.instructions,
-    { correctAnswerCount: input.correctAnswerCount, choiceCount: input.choiceCount },
-    existing,
-    referenceAbsPaths,
-    existingKeywords,
-    variantSources,
-  ).catch((e) => {
-    console.error(`generation job ${job.id} failed unexpectedly`, e);
-  });
-
-  return toDto(job);
+  return pendingQuestionDto(job, input, storedReferenceFiles, sourceQuestionIds);
 }
 
 export async function createKeywordTagJob(input: {
@@ -257,17 +327,6 @@ export async function createKeywordTagJob(input: {
   const topic = await prisma.topic.findUnique({ where: { id: input.topicId } });
   if (!topic) {
     throw new ServiceError("TOPIC_NOT_FOUND", "주제를 찾을 수 없습니다", 404);
-  }
-
-  const running = await prisma.generationJob.findFirst({
-    where: { topicId: input.topicId, status: { in: ["RUNNING", "VERIFYING"] } },
-  });
-  if (running) {
-    throw new ServiceError(
-      "JOB_ALREADY_RUNNING",
-      "이미 생성 중인 작업이 있습니다",
-      409,
-    );
   }
 
   const untagged = await prisma.question.findMany({
@@ -290,60 +349,79 @@ export async function createKeywordTagJob(input: {
     );
   }
 
-  const existingKeywords = await loadExistingKeywords(input.topicId);
-
-  const job = await prisma.generationJob.create({
-    data: {
-      topicId: input.topicId,
+  const job = await createPendingJob(
+    {
+      type: "KEYWORD_TAGGING",
       engine: input.engine,
-      verifyEngine: input.engine,
-      instructions: "",
-      kind: "KEYWORD_TAG",
+      target: { topicId: input.topicId },
+      detail: {
+        type: "KEYWORD_TAGGING",
+        data: { targets: targets as unknown as Prisma.InputJsonValue },
+      },
     },
-  });
-
-  void runKeywordTagJob(job.id, topic.name, targets, existingKeywords).catch(
-    (e) => {
-      console.error(`keyword tag job ${job.id} failed unexpectedly`, e);
-    },
+    { resolveExisting: (tx) => rejectActiveGenerationJob(tx, input.topicId) },
   );
 
-  return toDto(job);
+  return {
+    ...job,
+    type: "KEYWORD_TAGGING",
+    topicId: input.topicId,
+    questionId: null,
+    parentJobId: null,
+    verifyEngine: input.engine,
+    instructions: "",
+    referenceFiles: [],
+    correctAnswerCount: null,
+    choiceCount: null,
+    stage: null,
+    items: null,
+    keywordItems: null,
+    verifyWarning: null,
+    approvedAt: null,
+    savedCount: 0,
+    sourceQuestionIds: null,
+  };
 }
 
-async function runKeywordTagJob(
-  jobId: number,
-  topicName: string,
-  targets: Array<{ id: number; summary: string }>,
-  existingKeywords: string[],
-): Promise<void> {
-  const dir = jobOutputDir(jobId);
+type GenerationExecutionJob = Prisma.JobGetPayload<{
+  include: {
+    topic: true;
+    questionGenerationData: true;
+    keywordTaggingData: true;
+  };
+}>;
+
+async function executeKeywordTagJob(
+  job: GenerationExecutionJob,
+): Promise<{ type: "KEYWORD_TAGGING"; items: KeywordTagItemDto[] }> {
+  if (!job.topic || !job.keywordTaggingData) {
+    throw new Error("Keyword tagging job data is missing");
+  }
+  const targets = (job.keywordTaggingData.targets as unknown as Array<{
+    id: number;
+    summary: string;
+  }> | null) ?? [];
+  const existingKeywords = await loadExistingKeywords(job.topic.id);
+  const dir = jobOutputDir(job.id);
   const resultPath = path.join(dir, "result.json");
   const prompt = buildCliKeywordTagPrompt(
-    topicName,
+    job.topic.name,
     targets,
     existingKeywords,
     resultPath,
   );
 
-  const job = await prisma.generationJob.findUnique({ where: { id: jobId } });
-  if (!job || job.status !== "RUNNING") return;
-
-  const run = await runTrackedEngine({ generationJobId: jobId, stage: "KEYWORD_TAG", engine: job.engine, prompt, dir });
+  const run = await runTrackedEngine({ jobId: job.id, stage: "KEYWORD_TAG", engine: job.engine, prompt, dir });
   if (!run.ok) {
-    await failJob(jobId, run.failureReason, null);
-    return;
+    throw new Error(run.failureReason);
   }
 
   const parsed = parseKeywordTagJson(extractJsonObject(run.resultText));
   if (!parsed.ok) {
     await failTrackedRun(run.runLogId, parsed.fatal);
-    await failJob(
-      jobId,
+    throw new Error(
       `${parsed.fatal}; 원문 앞 300자: ${run.resultText.slice(0, 300)}`,
-      run.resultText,
     );
-    return;
   }
   await completeTrackedRun(run.runLogId);
 
@@ -357,15 +435,7 @@ async function runKeywordTagJob(
       keywords: assignment.keywords,
     }));
 
-  await prisma.generationJob.update({
-    where: { id: jobId },
-    data: {
-      status: "SUCCEEDED",
-      result: items as unknown as Prisma.InputJsonValue,
-      rawOutput: run.resultText,
-      finishedAt: new Date(),
-    },
-  });
+  return { type: "KEYWORD_TAGGING", items };
 }
 
 type BlueprintAssessment = { blueprint: QuestionBlueprint; assessment: DifficultyAssessment };
@@ -377,7 +447,7 @@ function summarizeGateViolations(items: BlueprintAssessment[]): string {
 // 난이도 게이트에 걸린 설계표만 골라 최대 BLUEPRINT_REPAIR_ATTEMPTS회 수선한다.
 // 위반 코드·메시지·선택지 id를 그대로 전달해야 수선 모델이 무엇을 고칠지 알 수 있다 (job #50 재발 방지).
 export async function repairGateFailures(input: {
-  generationJobId: number;
+  jobId: number;
   engine: GenerationEngine;
   dir: string;
   shape?: GenerationQuestionShape;
@@ -396,7 +466,7 @@ export async function repairGateFailures(input: {
     if (!failed.length) break;
     const repairPath = path.join(input.dir, `blueprint-repair-${attempt}-result.json`);
     const prompt = buildCliQuestionBlueprintRepairPrompt(failed.map((item) => item.blueprint), summarizeGateViolations(failed), repairPath, input.shape);
-    const repairRun = await runTrackedEngine({ generationJobId: input.generationJobId, stage: "BLUEPRINT_REPAIR", attempt, engine: input.engine, prompt, dir: input.dir, filePrefix: `blueprint-repair-${attempt}-` });
+    const repairRun = await runTrackedEngine({ jobId: input.jobId, stage: "BLUEPRINT_REPAIR", attempt, engine: input.engine, prompt, dir: input.dir, filePrefix: `blueprint-repair-${attempt}-` });
     // 엔진 실행 자체가 실패하면(타임아웃 등) 같은 조건 재시도의 기대 효용이 낮아 중단한다.
     if (!repairRun.ok) break;
     const repaired = parseQuestionBlueprintJson(extractJsonObject(repairRun.resultText));
@@ -426,66 +496,79 @@ export async function repairGateFailures(input: {
   };
 }
 
-async function runJob(
-  jobId: number,
-  topicName: string,
-  instructions: string,
-  shape: GenerationQuestionShape,
-  existing: ExistingQuestions,
-  referenceAbsPaths: string[],
-  existingKeywords: string[],
-  variantSources: VariantSource[],
-): Promise<void> {
-  const dir = jobOutputDir(jobId);
-  const job = await prisma.generationJob.findUnique({ where: { id: jobId } });
-  if (!job || job.status !== "RUNNING") return;
+type QuestionExecutionResult = {
+  type: "QUESTION_GENERATION";
+  items: GenerationItemDto[];
+  verifyWarning: string | null;
+};
+
+async function executeQuestionJob(
+  job: GenerationExecutionJob,
+): Promise<QuestionExecutionResult> {
+  const detail = job.questionGenerationData;
+  if (!job.topic || !detail) {
+    throw new Error("Question generation job data is missing");
+  }
+  const shape = jobQuestionShape(job);
+  if (!shape) throw new Error("Question generation shape is missing");
+  const sourceQuestionIds = (detail.sourceQuestionIds as unknown as number[] | null) ?? [];
+  const sourceQuestions = sourceQuestionIds.length
+    ? await prisma.question.findMany({ where: { id: { in: sourceQuestionIds } } })
+    : [];
+  const variantSources: VariantSource[] = sourceQuestions.map((question) => ({
+    question: JSON.stringify({
+      type: question.type === "MCQ" ? "mcq" : "cloze",
+      ...(question.payload as Record<string, unknown>),
+      ...(question.explanation ? { explanation: question.explanation } : {}),
+    }),
+  }));
+  const topicName = job.topic.name;
+  const existing = await loadExistingQuestions(job.topic.id);
+  const referenceAbsPaths = await resolveReferenceFiles(
+    job.topic.referenceDir,
+    normalizeStringArray(detail.referenceFiles),
+  );
+  const existingKeywords = await loadExistingKeywords(job.topic.id);
+  const dir = jobOutputDir(job.id);
 
   const blueprintPath = path.join(dir, "blueprint-result.json");
-  const blueprintPrompt = buildCliQuestionBlueprintPrompt(topicName, instructions, blueprintPath, existing, referenceAbsPaths, existingKeywords, variantSources, shape);
-  const blueprintRun = await runTrackedEngine({ generationJobId: jobId, stage: "BLUEPRINT", engine: job.engine, prompt: blueprintPrompt, dir, filePrefix: "blueprint-" });
+  const blueprintPrompt = buildCliQuestionBlueprintPrompt(topicName, detail.instructions, blueprintPath, existing, referenceAbsPaths, existingKeywords, variantSources, shape);
+  const blueprintRun = await runTrackedEngine({ jobId: job.id, stage: "BLUEPRINT", engine: job.engine, prompt: blueprintPrompt, dir, filePrefix: "blueprint-" });
   if (!blueprintRun.ok) {
-    await failJob(jobId, blueprintRun.failureReason, null);
-    return;
+    throw new Error(blueprintRun.failureReason);
   }
   const blueprintParsed = parseQuestionBlueprintJson(extractJsonObject(blueprintRun.resultText));
   if (!blueprintParsed.ok) {
     await failTrackedRun(blueprintRun.runLogId, blueprintParsed.fatal);
-    await failJob(jobId, blueprintParsed.fatal, blueprintRun.resultText);
-    return;
+    throw new Error(blueprintParsed.fatal);
   }
-  const gate = await repairGateFailures({ generationJobId: jobId, engine: job.engine, dir, shape, blueprints: blueprintParsed.blueprints, blueprintRunLogId: blueprintRun.runLogId });
+  const gate = await repairGateFailures({ jobId: job.id, engine: job.engine, dir, shape, blueprints: blueprintParsed.blueprints, blueprintRunLogId: blueprintRun.runLogId });
   const blueprints = gate.passed;
   if (!blueprints.length) {
-    await failJob(jobId, `난이도 게이트를 통과한 설계표가 없습니다 (수선 ${BLUEPRINT_REPAIR_ATTEMPTS}회 시도).\n${gate.violationSummary}`, blueprintRun.resultText);
-    return;
+    throw new Error(`난이도 게이트를 통과한 설계표가 없습니다 (수선 ${BLUEPRINT_REPAIR_ATTEMPTS}회 시도).\n${gate.violationSummary}`);
   }
   const blueprintWarning = gate.excludedCount ? `${gate.excludedCount} blueprint(s) were excluded after ${BLUEPRINT_REPAIR_ATTEMPTS} repair attempts.` : null;
   const resultPath = path.join(dir, "result.json");
   const prompt = buildCliGenerationFromBlueprintPrompt(topicName, blueprints, resultPath, referenceAbsPaths, shape);
 
-  const run = await runTrackedEngine({ generationJobId: jobId, stage: "GENERATION", engine: job.engine, prompt, dir });
+  const run = await runTrackedEngine({ jobId: job.id, stage: "GENERATION", engine: job.engine, prompt, dir });
   if (!run.ok) {
-    await failJob(jobId, run.failureReason, null);
-    return;
+    throw new Error(run.failureReason);
   }
 
   const parsed = parseImportJson(extractJsonObject(run.resultText));
   if (!parsed.ok) {
     await failTrackedRun(run.runLogId, parsed.fatal);
-    await failJob(
-      jobId,
+    throw new Error(
       `${parsed.fatal}; 원문 앞 300자: ${run.resultText.slice(0, 300)}`,
-      run.resultText,
     );
-    return;
   }
 
   // 이 시점의 verdict는 전부 unverified — 검증이 끝나면 덮어쓴다.
   if (parsed.items.length !== blueprints.length) {
     const countMismatch = `Generated question count (${parsed.items.length}) does not match blueprint count (${blueprints.length}).`;
     await failTrackedRun(run.runLogId, countMismatch);
-    await failJob(jobId, countMismatch, run.resultText);
-    return;
+    throw new Error(countMismatch);
   }
   const shapeValidatedItems = parsed.items.map((item) => {
     if (!item.ok) return item;
@@ -501,25 +584,21 @@ async function runJob(
   else await failTrackedRun(run.runLogId, `${invalidItems.length}개 문항이 유효성 검사를 통과하지 못했습니다: ${invalidItems.map((item) => `#${item.index + 1} ${item.errors[0] ?? "알 수 없는 검증 오류"}`).join("; ")}`);
 
   if (validCount === 0) {
-    await prisma.generationJob.update({
-      where: { id: jobId },
+    await prisma.questionGenerationJobData.update({
+      where: { jobId: job.id },
       data: {
-        status: "FAILED",
-        result: attachTestedDistinctions(unverifiedItems, blueprints) as unknown as Prisma.InputJsonValue,
-        errorMessage: failureMessage,
-        rawOutput: run.resultText,
-        finishedAt: new Date(),
+        stage: "FAILED",
+        items: attachTestedDistinctions(unverifiedItems, blueprints) as unknown as Prisma.InputJsonValue,
       },
     });
-    return;
+    throw new Error(failureMessage ?? "생성된 문항이 없습니다");
   }
 
-  await prisma.generationJob.update({
-    where: { id: jobId },
+  await prisma.questionGenerationJobData.update({
+    where: { jobId: job.id },
     data: {
-      status: "VERIFYING",
-      result: attachTestedDistinctions(unverifiedItems, blueprints) as unknown as Prisma.InputJsonValue,
-      rawOutput: run.resultText,
+      stage: "VERIFYING",
+      items: attachTestedDistinctions(unverifiedItems, blueprints) as unknown as Prisma.InputJsonValue,
     },
   });
 
@@ -535,7 +614,7 @@ async function runJob(
   let finalItems = unverifiedItems;
   let verifyWarning: string | null = null;
 
-  const verifyRun = await runTrackedEngine({ generationJobId: jobId, stage: "VERIFY", engine: job.verifyEngine, prompt: verifyPrompt, dir, filePrefix: "verify-" });
+  const verifyRun = await runTrackedEngine({ jobId: job.id, stage: "VERIFY", engine: detail.verifyEngine, prompt: verifyPrompt, dir, filePrefix: "verify-" });
   if (!verifyRun.ok) {
     verifyWarning = verifyRun.failureReason;
   } else {
@@ -567,7 +646,7 @@ async function runJob(
         referenceAbsPaths,
         shape,
       );
-      const repairRun = await runTrackedEngine({ generationJobId: jobId, stage: "ITEM_REPAIR", itemIndex: item.index, engine: job.engine, prompt: repairPrompt, dir, filePrefix: `repair-${item.index}-` });
+      const repairRun = await runTrackedEngine({ jobId: job.id, stage: "ITEM_REPAIR", itemIndex: item.index, engine: job.engine, prompt: repairPrompt, dir, filePrefix: `repair-${item.index}-` });
       if (!repairRun.ok) continue;
       const revision = parseRevisionJson(extractJsonObject(repairRun.resultText));
       if (!revision.ok) {
@@ -591,7 +670,7 @@ async function runJob(
     if (repaired.length > 0) {
       const repairVerifyPath = path.join(dir, "repair-verify-result.json");
       const repairVerifyPrompt = buildCliVerifyPrompt(topicName, repaired.map((item) => ({ ...item, blueprint: blueprints[item.index] })), repairVerifyPath, referenceAbsPaths, shape);
-      const repairVerifyRun = await runTrackedEngine({ generationJobId: jobId, stage: "REPAIR_VERIFY", engine: job.verifyEngine, prompt: repairVerifyPrompt, dir, filePrefix: "repair-verify-" });
+      const repairVerifyRun = await runTrackedEngine({ jobId: job.id, stage: "REPAIR_VERIFY", engine: detail.verifyEngine, prompt: repairVerifyPrompt, dir, filePrefix: "repair-verify-" });
       if (repairVerifyRun.ok) {
         const repairVerdicts = parseVerifyJson(extractJsonObject(repairVerifyRun.resultText));
         if (!repairVerdicts.ok) await failTrackedRun(repairVerifyRun.runLogId, repairVerdicts.fatal);
@@ -617,40 +696,67 @@ async function runJob(
     }
   }
 
-  await prisma.generationJob.update({
-    where: { id: jobId },
-    data: {
-      status: "SUCCEEDED",
-      result: attachTestedDistinctions(
+  return {
+    type: "QUESTION_GENERATION",
+    items: attachTestedDistinctions(
         finalItems.map((item) => item.ok && item.question.type === "mcq"
           ? { ...item, question: shuffleMcqChoices(item.question) as ImportQuestion }
           : item),
         blueprints,
-      ) as unknown as Prisma.InputJsonValue,
-      verifyWarning: [blueprintWarning, verifyWarning].filter(Boolean).join(" ") || null,
-      finishedAt: new Date(),
-    },
-  });
+      ) as GenerationItemDto[],
+    verifyWarning: [blueprintWarning, verifyWarning].filter(Boolean).join(" ") || null,
+  };
 }
 
-async function failJob(
-  jobId: number,
-  message: string,
-  rawOutput: string | null,
-): Promise<void> {
-  await prisma.generationJob.update({
-    where: { id: jobId },
-    data: {
-      status: "FAILED",
-      errorMessage: message,
-      rawOutput,
-      finishedAt: new Date(),
+type GenerationExecutionResult =
+  | QuestionExecutionResult
+  | { type: "KEYWORD_TAGGING"; items: KeywordTagItemDto[] };
+
+export async function runGenerationJob(jobId: number): Promise<void> {
+  const outcome = await runClaimedJob<GenerationExecutionResult>(jobId, {
+    execute: async () => {
+      const job = await prisma.job.findUnique({
+        where: { id: jobId },
+        include: {
+          topic: true,
+          questionGenerationData: true,
+          keywordTaggingData: true,
+        },
+      });
+      if (!job) throw new Error("Generation job not found after claim");
+      if (job.type === "QUESTION_GENERATION") return executeQuestionJob(job);
+      if (job.type === "KEYWORD_TAGGING") return executeKeywordTagJob(job);
+      throw new Error("Unsupported generation job type");
+    },
+    persistResult: async (tx, result, identity) => {
+      if (result.type === "QUESTION_GENERATION") {
+        await tx.questionGenerationJobData.update({
+          where: { jobId: identity.id },
+          data: {
+            stage: "SUCCEEDED",
+            items: result.items as unknown as Prisma.InputJsonValue,
+            verifyWarning: result.verifyWarning,
+          },
+        });
+        return;
+      }
+      await tx.keywordTaggingJobData.update({
+        where: { jobId: identity.id },
+        data: { items: result.items as unknown as Prisma.InputJsonValue },
+      });
     },
   });
+
+  if (outcome === "FAILED") {
+    await prisma.questionGenerationJobData.updateMany({
+      where: { jobId, job: { status: "FAILED" } },
+      data: { stage: "FAILED" },
+    });
+  }
 }
 
-function jobItems(job: GenerationJob): GenerationItemDto[] {
-  return (job.result as unknown as GenerationItemDto[] | null) ?? [];
+function jobItems(job: GenerationJobRecord): GenerationItemDto[] {
+  return (job.questionGenerationData?.items as unknown as GenerationItemDto[] | null) ?? [];
 }
 
 export async function createItemRevision(input: {
@@ -658,252 +764,357 @@ export async function createItemRevision(input: {
   itemIndex: number;
   engine: GenerationEngineDto;
   instructions: string;
-}): Promise<GenerationJobDto> {
-  const job = await prisma.generationJob.findUnique({
-    where: { id: input.jobId },
-    include: { topic: true },
+}): Promise<{ job: GenerationJobDto; revisionJobId: number }> {
+  const parent = await prisma.job.findFirst({
+    where: { id: input.jobId, type: "QUESTION_GENERATION" },
+    include: generationJobInclude,
   });
-  if (!job) throw new ServiceError("JOB_NOT_FOUND", "생성 작업을 찾을 수 없습니다", 404);
-  if (job.kind !== "QUESTION" || job.status !== "SUCCEEDED" || job.approvedAt) {
+  if (!parent) throw new ServiceError("JOB_NOT_FOUND", "생성 작업을 찾을 수 없습니다", 404);
+  if (parent.status !== "SUCCEEDED" || parent.questionGenerationData?.approvedAt) {
     throw new ServiceError("JOB_NOT_REVISIONABLE", "저장 전 완료된 문제 생성 작업만 재검증할 수 있습니다", 409);
   }
-  const item = jobItems(job).find((candidate) => candidate.index === input.itemIndex);
+  const item = jobItems(parent).find((candidate) => candidate.index === input.itemIndex);
   if (!item || !item.ok) {
     throw new ServiceError("ITEM_NOT_FOUND", "재검증할 문제를 찾을 수 없습니다", 404);
   }
-  const existing = await prisma.generationItemRevision.findUnique({
-    where: { generationJobId_itemIndex: { generationJobId: job.id, itemIndex: input.itemIndex } },
-  });
-  if (existing?.status === "RUNNING") {
-    throw new ServiceError("REVISION_RUNNING", "이 문제의 AI 재검증이 진행 중입니다", 409);
-  }
-  const sourceQuestion = (existing?.appliedQuestion as unknown as ImportQuestion | null) ?? item.question as ImportQuestion;
-  const revision = await prisma.generationItemRevision.upsert({
-    where: { generationJobId_itemIndex: { generationJobId: job.id, itemIndex: input.itemIndex } },
-    create: { generationJobId: job.id, itemIndex: input.itemIndex, engine: input.engine, instructions: input.instructions },
-    update: {
-      engine: input.engine, instructions: input.instructions, status: "RUNNING", verdict: null,
-      comment: null, proposedQuestion: Prisma.JsonNull, errorMessage: null, rawOutput: null, finishedAt: null,
+  const revision = await createPendingJob(
+    {
+      type: "GENERATION_ITEM_REVISION",
+      engine: input.engine,
+      target: { parentJobId: parent.id },
+      detail: {
+        type: "GENERATION_ITEM_REVISION",
+        data: { itemIndex: input.itemIndex, instructions: input.instructions },
+      },
     },
-  });
-  const references = await resolveReferenceFiles(
-    job.topic.referenceDir,
-    (job.referenceFiles as unknown as string[] | null) ?? [],
+    {
+      resolveExisting: async (tx) => {
+        const lockedParent = await tx.job.findUnique({
+          where: { id: parent.id },
+          include: { questionGenerationData: true },
+        });
+        if (
+          !lockedParent ||
+          lockedParent.status !== "SUCCEEDED" ||
+          lockedParent.questionGenerationData?.approvedAt
+        ) {
+          throw new ServiceError("JOB_NOT_REVISIONABLE", "저장 전 완료된 문제 생성 작업만 재검증할 수 있습니다", 409);
+        }
+        const active = await tx.job.findFirst({
+          where: {
+            parentJobId: parent.id,
+            type: "GENERATION_ITEM_REVISION",
+            status: { in: ["PENDING", "RUNNING"] },
+            generationItemRevisionData: { is: { itemIndex: input.itemIndex } },
+          },
+        });
+        if (active) {
+          throw new ServiceError("REVISION_RUNNING", "이 문제의 AI 재검증이 진행 중입니다", 409);
+        }
+        return null;
+      },
+    },
   );
-  void runItemRevision(revision.id, job.id, job.topic.name, sourceQuestion, references, jobQuestionShape(job), item.verdictComment).catch((error) => {
-    console.error(`generation item revision ${revision.id} failed unexpectedly`, error);
-  });
-  return getJob(job.id);
+  return { job: await getJob(parent.id), revisionJobId: revision.id };
 }
 
-async function runItemRevision(
-  revisionId: number,
-  jobId: number,
-  topicName: string,
-  question: ImportQuestion,
-  referenceFiles: string[],
-  shape?: GenerationQuestionShape,
-  verdictComment?: string | null,
-): Promise<void> {
-  const revision = await prisma.generationItemRevision.findUnique({ where: { id: revisionId } });
-  if (!revision || revision.status !== "RUNNING") return;
-  const dir = path.join(jobOutputDir(jobId), "revisions", String(revision.itemIndex));
+type ItemRevisionExecutionResult = {
+  verdict: "PASS" | "FAIL";
+  comment: string;
+  proposedQuestion: ImportQuestion;
+};
+
+async function executeItemRevisionJob(jobId: number): Promise<ItemRevisionExecutionResult> {
+  const revision = await prisma.job.findFirst({
+    where: { id: jobId, type: "GENERATION_ITEM_REVISION" },
+    include: {
+      generationItemRevisionData: true,
+      parentJob: {
+        include: {
+          topic: true,
+          questionGenerationData: true,
+          childJobs: {
+            where: { type: "GENERATION_ITEM_REVISION" },
+            include: { generationItemRevisionData: true },
+            orderBy: { id: "asc" },
+          },
+        },
+      },
+    },
+  });
+  const detail = revision?.generationItemRevisionData;
+  const parent = revision?.parentJob;
+  if (!revision || !detail || !parent?.topic || !parent.questionGenerationData) {
+    throw new Error("Generation item revision data is missing");
+  }
+  if (parent.questionGenerationData.approvedAt) {
+    throw new Error("Approved generation jobs cannot be revised");
+  }
+  const item = ((parent.questionGenerationData.items as unknown as GenerationItemDto[] | null) ?? [])
+    .find((candidate) => candidate.index === detail.itemIndex);
+  if (!item?.ok) throw new Error("Revision source item is missing");
+  const selected = parent.childJobs
+    .filter((candidate) =>
+      candidate.id !== revision.id &&
+      candidate.status === "SUCCEEDED" &&
+      candidate.generationItemRevisionData?.itemIndex === detail.itemIndex &&
+      candidate.generationItemRevisionData.selectedAt,
+    )
+    .at(-1);
+  const question = (selected?.generationItemRevisionData?.proposedQuestion ?? item.question) as ImportQuestion;
+  const referenceFiles = await resolveReferenceFiles(
+    parent.topic.referenceDir,
+    normalizeStringArray(parent.questionGenerationData.referenceFiles),
+  );
+  const shape = jobQuestionShape(parent);
+  const dir = jobOutputDir(revision.id);
   const resultPath = path.join(dir, "result.json");
   const prompt = buildCliRevisionPrompt(
-    topicName,
+    parent.topic.name,
     question,
-    revision.instructions,
+    detail.instructions,
     resultPath,
     referenceFiles,
     undefined,
     shape,
-    verdictComment,
+    item.verdictComment,
   );
-  const run = await runTrackedEngine({ generationJobId: jobId, stage: "MANUAL_ITEM_REVISION", itemIndex: revision.itemIndex, engine: revision.engine, prompt, dir });
+  const run = await runTrackedEngine({ jobId: revision.id, stage: "MANUAL_ITEM_REVISION", itemIndex: detail.itemIndex, engine: revision.engine, prompt, dir });
   if (!run.ok) {
-    await prisma.generationItemRevision.update({ where: { id: revisionId }, data: { status: "FAILED", errorMessage: run.failureReason, finishedAt: new Date() } });
-    return;
+    throw new Error(run.failureReason);
   }
   const parsed = parseRevisionJson(extractJsonObject(run.resultText));
   if (!parsed.ok) {
     await failTrackedRun(run.runLogId, parsed.fatal);
-    await prisma.generationItemRevision.update({ where: { id: revisionId }, data: { status: "FAILED", errorMessage: parsed.fatal, rawOutput: run.resultText, finishedAt: new Date() } });
-    return;
+    throw new Error(parsed.fatal);
   }
   const validated = shape ? validateGeneratedQuestions([parsed.question], shape)[0] : null;
   if (validated && !validated.ok) {
     await failTrackedRun(run.runLogId, validated.errors.join(" "));
-    await prisma.generationItemRevision.update({
-      where: { id: revisionId },
-      data: { status: "FAILED", errorMessage: validated.errors.join(" "), rawOutput: run.resultText, finishedAt: new Date() },
-    });
-    return;
+    throw new Error(validated.errors.join(" "));
   }
   await completeTrackedRun(run.runLogId);
-  await prisma.generationItemRevision.update({
-    where: { id: revisionId },
-    data: { status: "SUCCEEDED", verdict: parsed.verdict === "pass" ? "PASS" : "FAIL", comment: parsed.comment, proposedQuestion: parsed.question as unknown as Prisma.InputJsonValue, rawOutput: run.resultText, finishedAt: new Date() },
+  return {
+    verdict: parsed.verdict === "pass" ? "PASS" : "FAIL",
+    comment: parsed.comment,
+    proposedQuestion: parsed.question,
+  };
+}
+
+export async function runGenerationItemRevisionJob(jobId: number): Promise<void> {
+  await runClaimedJob(jobId, {
+    execute: async () => executeItemRevisionJob(jobId),
+    persistResult: async (tx, result, identity) => {
+      await tx.generationItemRevisionJobData.update({
+        where: { jobId: identity.id },
+        data: {
+          verdict: result.verdict,
+          comment: result.comment,
+          proposedQuestion: result.proposedQuestion as unknown as Prisma.InputJsonValue,
+        },
+      });
+    },
   });
 }
 
 export async function setItemRevisionUsage(jobId: number, itemIndex: number, useRevision: boolean): Promise<GenerationJobDto> {
-  const job = await prisma.generationJob.findUnique({ where: { id: jobId } });
-  if (!job) throw new ServiceError("JOB_NOT_FOUND", "생성 작업을 찾을 수 없습니다", 404);
-  if (job.approvedAt) throw new ServiceError("JOB_APPROVED", "저장된 작업의 수정본은 바꿀 수 없습니다", 409);
-  const revision = await prisma.generationItemRevision.findUnique({ where: { generationJobId_itemIndex: { generationJobId: jobId, itemIndex } } });
-  if (!revision || revision.status !== "SUCCEEDED" || !revision.proposedQuestion) {
-    throw new ServiceError("REVISION_NOT_READY", "적용할 AI 수정본이 없습니다", 409);
-  }
-  await prisma.generationItemRevision.update({ where: { id: revision.id }, data: { appliedQuestion: useRevision ? revision.proposedQuestion : Prisma.JsonNull } });
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM job WHERE id = ${jobId} FOR UPDATE`;
+    const job = await tx.job.findFirst({
+      where: { id: jobId, type: "QUESTION_GENERATION" },
+      include: { questionGenerationData: true },
+    });
+    if (!job) throw new ServiceError("JOB_NOT_FOUND", "생성 작업을 찾을 수 없습니다", 404);
+    if (job.questionGenerationData?.approvedAt) {
+      throw new ServiceError("JOB_APPROVED", "저장된 작업의 수정본은 바꿀 수 없습니다", 409);
+    }
+    await tx.generationItemRevisionJobData.updateMany({
+      where: {
+        itemIndex,
+        job: { parentJobId: jobId, type: "GENERATION_ITEM_REVISION" },
+      },
+      data: { selectedAt: null },
+    });
+    if (!useRevision) return;
+    const revision = await tx.job.findFirst({
+      where: {
+        parentJobId: jobId,
+        type: "GENERATION_ITEM_REVISION",
+        status: "SUCCEEDED",
+        generationItemRevisionData: {
+          is: { itemIndex, proposedQuestion: { not: Prisma.JsonNull } },
+        },
+      },
+      include: { generationItemRevisionData: true },
+      orderBy: { id: "desc" },
+    });
+    if (!revision?.generationItemRevisionData?.proposedQuestion) {
+      throw new ServiceError("REVISION_NOT_READY", "적용할 AI 수정본이 없습니다", 409);
+    }
+    await tx.generationItemRevisionJobData.update({
+      where: { jobId: revision.id },
+      data: { selectedAt: new Date() },
+    });
+  });
   return getJob(jobId);
 }
 
 export async function getJob(id: number): Promise<GenerationJobDto> {
-  const job = await prisma.generationJob.findUnique({ where: { id }, include: { itemRevisions: true } });
+  await recoverStaleJobs();
+  const job = await prisma.job.findFirst({
+    where: { id, type: { in: ["QUESTION_GENERATION", "KEYWORD_TAGGING"] } },
+    include: generationJobInclude,
+  });
   if (!job) {
     throw new ServiceError("JOB_NOT_FOUND", "생성 작업을 찾을 수 없습니다", 404);
   }
+  return toDto(job);
+}
 
-  // 생성·검증 단계가 각각 타임아웃을 가지므로 고아 판정 기준은 2배 + 유예.
-  const orphanAfterMs = 2 * generationTimeoutMs() + ORPHAN_GRACE_MS;
-  const isStale = Date.now() - job.createdAt.getTime() > orphanAfterMs;
-
-  if (job.status === "RUNNING" && isStale) {
-    await prisma.generationRunLog.updateMany({
-      where: { generationJobId: id, status: "RUNNING" },
-      data: { status: "FAILED", errorMessage: "시간 초과 또는 서버 재시작으로 실행 기록이 중단되었습니다.", finishedAt: new Date() },
-    });
-    const updated = await prisma.generationJob.update({
-      where: { id },
-      data: {
-        status: "FAILED",
-        errorMessage: "시간 초과 또는 서버 재시작으로 중단되었습니다",
-        finishedAt: new Date(),
-      },
-    });
-    return getJob(updated.id);
+function questionPayload(question: ImportQuestion): Prisma.InputJsonValue {
+  if (question.type === "mcq") {
+    return {
+      question: question.question,
+      choices: question.choices,
+      ...(question.answer_indices
+        ? { answer_indices: question.answer_indices }
+        : { answer_index: question.answer_index }),
+      ...(question.choice_explanations
+        ? { choice_explanations: question.choice_explanations }
+        : {}),
+    };
   }
+  return {
+    text: question.text,
+    blanks: question.blanks,
+    distractors: question.distractors,
+  };
+}
 
-  if (job.status === "VERIFYING" && isStale) {
-    await prisma.generationRunLog.updateMany({
-      where: { generationJobId: id, status: "RUNNING" },
-      data: { status: "FAILED", errorMessage: "시간 초과 또는 서버 재시작으로 실행 기록이 중단되었습니다.", finishedAt: new Date() },
-    });
-    // 생성 결과(전 항목 unverified)는 VERIFYING 전환 시점에 이미 저장돼 있다.
-    const updated = await prisma.generationJob.update({
-      where: { id },
+async function importQuestionsInTransaction(
+  tx: Prisma.TransactionClient,
+  topicId: number,
+  items: ImportQuestionInput[],
+): Promise<void> {
+  for (const { question, testedDistinction } of items) {
+    const created = await tx.question.create({
       data: {
-        status: "SUCCEEDED",
-        verifyWarning: "시간 초과 또는 서버 재시작으로 검증이 중단되었습니다",
-        finishedAt: new Date(),
+        topicId,
+        type: question.type === "mcq" ? "MCQ" : "CLOZE",
+        payload: questionPayload(question),
+        explanation: question.explanation?.trim() || null,
+        testedDistinction: testedDistinction?.trim() || null,
       },
+      select: { id: true },
     });
-    return getJob(updated.id);
+    await tx.srsState.create({ data: { questionId: created.id } });
+    if (question.keywords?.length) {
+      await attachKeywords(tx, created.id, question.keywords);
+    }
   }
-
-  return toDto(job, job.itemRevisions);
 }
 
 export async function approveJob(
   id: number,
   indices: number[],
 ): Promise<{ savedCount: number; job: GenerationJobDto }> {
-  const job = await prisma.generationJob.findUnique({ where: { id } });
-  if (!job) {
-    throw new ServiceError("JOB_NOT_FOUND", "생성 작업을 찾을 수 없습니다", 404);
-  }
-  if (job.status !== "SUCCEEDED") {
-    throw new ServiceError(
-      "JOB_NOT_APPROVABLE",
-      "완료된 작업만 저장할 수 있습니다",
-      409,
-    );
-  }
+  const savedCount = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM job WHERE id = ${id} FOR UPDATE`;
+    const job = await tx.job.findFirst({
+      where: { id, type: { in: ["QUESTION_GENERATION", "KEYWORD_TAGGING"] } },
+      include: generationJobInclude,
+    });
+    if (!job) throw new ServiceError("JOB_NOT_FOUND", "생성 작업을 찾을 수 없습니다", 404);
+    if (job.status !== "SUCCEEDED") {
+      throw new ServiceError("JOB_NOT_APPROVABLE", "완료된 작업만 저장할 수 있습니다", 409);
+    }
+    const activeRevision = await tx.job.findFirst({
+      where: {
+        parentJobId: id,
+        type: "GENERATION_ITEM_REVISION",
+        status: { in: ["PENDING", "RUNNING"] },
+      },
+    });
+    if (activeRevision) {
+      throw new ServiceError("REVISION_RUNNING", "AI 재검증이 끝난 뒤 저장해 주세요", 409);
+    }
 
-  if (job.kind === "KEYWORD_TAG") {
-    const items = (job.result as unknown as KeywordTagItemDto[] | null) ?? [];
-    const byId = new Map(items.map((item) => [item.id, item]));
-    const picked: KeywordTagItemDto[] = [];
-    for (const id of indices) {
-      const item = byId.get(id);
-      if (!item) {
-        throw new ServiceError(
-          "INVALID_ITEMS",
-          "저장할 수 없는 항목이 포함되어 있습니다",
-          400,
-        );
+    if (job.type === "KEYWORD_TAGGING") {
+      const items = (job.keywordTaggingData?.items as unknown as KeywordTagItemDto[] | null) ?? [];
+      const byId = new Map(items.map((item) => [item.id, item]));
+      const picked = indices.map((itemId) => byId.get(itemId));
+      if (picked.length === 0 || picked.some((item) => !item)) {
+        throw new ServiceError("INVALID_ITEMS", "저장할 수 없는 항목이 포함되어 있습니다", 400);
       }
-      picked.push(item);
-    }
-    if (picked.length === 0) {
-      throw new ServiceError("INVALID_ITEMS", "저장할 항목이 없습니다", 400);
-    }
-
-    // 잡 실행 후 삭제된 문제는 건너뛴다.
-    const existingIds = new Set(
-      (
-        await prisma.question.findMany({
-          where: { id: { in: picked.map((item) => item.id) } },
-          select: { id: true },
-        })
-      ).map((question) => question.id),
-    );
-    let applied = 0;
-    await prisma.$transaction(async (tx) => {
+      const existingIds = new Set((await tx.question.findMany({
+        where: { id: { in: indices } },
+        select: { id: true },
+      })).map((question) => question.id));
+      let applied = 0;
       for (const item of picked) {
-        if (!existingIds.has(item.id)) continue;
+        if (!item || !existingIds.has(item.id)) continue;
         await attachKeywords(tx, item.id, item.keywords);
         applied += 1;
       }
-    });
-
-    const updated = await prisma.generationJob.update({
-      where: { id },
-      data: { approvedAt: new Date(), savedCount: { increment: applied } },
-    });
-    return { savedCount: applied, job: toDto(updated) };
-  }
-
-  const items = job.result as unknown as GenerationItemDto[] | null;
-  const byIndex = new Map(items?.map((item) => [item.index, item]) ?? []);
-  const revisions = await prisma.generationItemRevision.findMany({
-    where: { generationJobId: id, appliedQuestion: { not: Prisma.JsonNull } },
-  });
-  const appliedByIndex = new Map(revisions.map((revision) => [revision.itemIndex, revision.appliedQuestion]));
-  const questions: ImportQuestionInput[] = [];
-  for (const index of indices) {
-    const item = byIndex.get(index);
-    const appliedQuestion = appliedByIndex.get(index);
-    if (!item || !item.ok || (item.verdict === "fail" && !appliedQuestion)) {
-      throw new ServiceError(
-        "INVALID_ITEMS",
-        "저장할 수 없는 항목이 포함되어 있습니다",
-        400,
-      );
+      await tx.keywordTaggingJobData.update({
+        where: { jobId: id },
+        data: { approvedAt: new Date(), savedCount: { increment: applied } },
+      });
+      return applied;
     }
-    questions.push({
-      question: (appliedQuestion ?? item.question) as unknown as ImportQuestion,
-      testedDistinction: item.testedDistinction ?? null,
-    });
-  }
-  if (questions.length === 0) {
-    throw new ServiceError("INVALID_ITEMS", "저장할 항목이 없습니다", 400);
-  }
 
-  const savedCount = await importQuestions(job.topicId, questions);
-  const updated = await prisma.generationJob.update({
-    where: { id },
-    data: { approvedAt: new Date(), savedCount: { increment: savedCount } },
+    const items = (job.questionGenerationData?.items as unknown as GenerationItemDto[] | null) ?? [];
+    const byIndex = new Map(items.map((item) => [item.index, item]));
+    const revisions = await tx.job.findMany({
+      where: {
+        parentJobId: id,
+        type: "GENERATION_ITEM_REVISION",
+        status: "SUCCEEDED",
+        generationItemRevisionData: { is: { selectedAt: { not: null } } },
+      },
+      include: { generationItemRevisionData: true },
+      orderBy: { id: "asc" },
+    });
+    const selectedByIndex = new Map<number, Prisma.JsonValue>();
+    for (const revision of revisions) {
+      const detail = revision.generationItemRevisionData;
+      if (detail?.proposedQuestion) {
+        selectedByIndex.set(detail.itemIndex, detail.proposedQuestion);
+      }
+    }
+    const questions: ImportQuestionInput[] = [];
+    for (const index of indices) {
+      const item = byIndex.get(index);
+      const selectedQuestion = selectedByIndex.get(index);
+      if (!item?.ok || (item.verdict === "fail" && !selectedQuestion)) {
+        throw new ServiceError("INVALID_ITEMS", "저장할 수 없는 항목이 포함되어 있습니다", 400);
+      }
+      questions.push({
+        question: (selectedQuestion ?? item.question) as unknown as ImportQuestion,
+        testedDistinction: item.testedDistinction ?? null,
+      });
+    }
+    if (questions.length === 0) {
+      throw new ServiceError("INVALID_ITEMS", "저장할 항목이 없습니다", 400);
+    }
+    await importQuestionsInTransaction(tx, job.topicId as number, questions);
+    await tx.questionGenerationJobData.update({
+      where: { jobId: id },
+      data: { approvedAt: new Date(), savedCount: { increment: questions.length } },
+    });
+    return questions.length;
   });
-  return { savedCount, job: toDto(updated) };
+  return { savedCount, job: await getJob(id) };
 }
 
 export async function deleteJob(id: number): Promise<void> {
-  const job = await prisma.generationJob.findUnique({ where: { id } });
+  const job = await prisma.job.findFirst({
+    where: { id, type: { in: ["QUESTION_GENERATION", "KEYWORD_TAGGING"] } },
+  });
   if (!job) {
     throw new ServiceError("JOB_NOT_FOUND", "생성 작업을 찾을 수 없습니다", 404);
   }
-  if (job.status === "RUNNING" || job.status === "VERIFYING") {
+  if (job.status === "PENDING" || job.status === "RUNNING") {
     throw new ServiceError(
       "JOB_RUNNING",
       "진행 중인 작업은 삭제할 수 없습니다",
@@ -911,18 +1122,23 @@ export async function deleteJob(id: number): Promise<void> {
     );
   }
 
-  await prisma.generationJob.delete({ where: { id } });
+  await prisma.job.delete({ where: { id } });
   await rm(jobOutputDir(id), { recursive: true, force: true }).catch(() => {
     // 출력 디렉터리 정리는 best-effort로 처리한다.
   });
 }
 
 export async function listJobs(): Promise<GenerationJobSummaryDto[]> {
-  const jobs = await prisma.generationJob.findMany({
-    where: { approvedAt: null },
+  const jobs = await prisma.job.findMany({
+    where: {
+      OR: [
+        { type: "QUESTION_GENERATION", questionGenerationData: { is: { approvedAt: null } } },
+        { type: "KEYWORD_TAGGING", keywordTaggingData: { is: { approvedAt: null } } },
+      ],
+    },
     orderBy: { createdAt: "desc" },
     take: 50,
-    include: { topic: { select: { name: true } } },
+    include: { ...generationJobInclude, topic: { select: { name: true } } },
   });
   return jobs.map(toSummaryDto);
 }

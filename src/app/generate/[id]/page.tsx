@@ -26,10 +26,12 @@ const ENGINES: Array<{ value: GenerationEngineDto; label: string }> = [
 
 function statusLabel(job: GenerationJobDto, elapsed: number): string {
   switch (job.status) {
+    case "PENDING":
+      return `대기 중... (경과 ${elapsed}초)`;
     case "RUNNING":
-      return `생성 중... (경과 ${elapsed}초)`;
-    case "VERIFYING":
-      return `검증 중... (경과 ${elapsed}초)`;
+      return job.stage === "VERIFYING"
+        ? `검증 중... (경과 ${elapsed}초)`
+        : `생성 중... (경과 ${elapsed}초)`;
     case "SUCCEEDED":
       return "✅ 생성 완료";
     case "FAILED":
@@ -89,8 +91,8 @@ export default function GenerationDetailPage() {
   useEffect(() => {
     if (!job) return;
     const currentJob = job;
-    const hasRunningRevision = currentJob.items?.some((item) => item.ok && item.revision?.status === "RUNNING") ?? false;
-    if (currentJob.status !== "RUNNING" && currentJob.status !== "VERIFYING" && !hasRunningRevision) return;
+    const hasRunningRevision = currentJob.items?.some((item) => item.ok && (item.revision?.status === "PENDING" || item.revision?.status === "RUNNING")) ?? false;
+    if (currentJob.status !== "PENDING" && currentJob.status !== "RUNNING" && !hasRunningRevision) return;
     const startedAt = new Date(currentJob.createdAt).getTime();
     const timer = setInterval(async () => {
       setElapsed(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
@@ -189,7 +191,7 @@ export default function GenerationDetailPage() {
       const result = await api.generate.approve(job.id, [...selected]);
       setJob(result.job);
       setMessage(
-        job.kind === "KEYWORD_TAG"
+        job.type === "KEYWORD_TAGGING"
           ? `✅ ${result.savedCount}개 문제에 키워드를 적용했습니다`
           : `✅ ${result.savedCount}개 문제를 저장했습니다`,
       );
@@ -204,7 +206,7 @@ export default function GenerationDetailPage() {
   const revisionCounts = getRevisionCounts(job?.items ?? null);
   const showActionDock =
     job?.status === "SUCCEEDED" &&
-    (job.kind === "QUESTION" || job.kind === "KEYWORD_TAG");
+    (job.type === "QUESTION_GENERATION" || job.type === "KEYWORD_TAGGING");
 
   return (
     <div
@@ -232,7 +234,7 @@ export default function GenerationDetailPage() {
         <section className="surface surface-pad space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="chip">{statusLabel(job, elapsed)}</span>
-            {job.kind === "KEYWORD_TAG" ? (
+            {job.type === "KEYWORD_TAGGING" ? (
               <span className="chip">🏷️ 키워드 부여 · {job.engine}</span>
             ) : (
               <>
@@ -242,7 +244,7 @@ export default function GenerationDetailPage() {
                 )}
               </>
             )}
-            {job.kind === "QUESTION" && job.sourceQuestionIds && (
+            {job.type === "QUESTION_GENERATION" && job.sourceQuestionIds && (
               <span className="chip">
                 🔀 변형 (원본 #{job.sourceQuestionIds.join(", #")})
               </span>
@@ -267,7 +269,7 @@ export default function GenerationDetailPage() {
           <p className="whitespace-pre-wrap break-all rounded-[12px] border border-[color:var(--danger)] bg-[color:var(--danger-soft)] p-3 text-sm">
             ❌ 생성에 실패했습니다: {job.errorMessage}
           </p>
-          {job.kind === "QUESTION" && (
+          {job.type === "QUESTION_GENERATION" && (
             <Link
               href={`/generate/new?retryJobId=${job.id}`}
               className="btn btn-secondary"
@@ -278,7 +280,7 @@ export default function GenerationDetailPage() {
         </section>
       )}
 
-      {job?.status === "SUCCEEDED" && job.kind === "QUESTION" && job.items && (
+      {job?.status === "SUCCEEDED" && job.type === "QUESTION_GENERATION" && job.items && (
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="section-title">미리보기 및 저장</h2>
@@ -298,12 +300,13 @@ export default function GenerationDetailPage() {
           )}
           {job.items.map((item) => {
             const currentQuestion = item.ok
-              ? (item.revision?.appliedQuestion ?? item.question) as ImportQuestion
+              ? (item.selectedRevision?.proposedQuestion ?? item.question) as ImportQuestion
               : null;
             const revision = item.ok ? item.revision : null;
             const input = revisionInput(item.index);
             const saveable = isQuestionItemSaveable(item);
             const revisionApplied = item.ok && hasAppliedRevision(item);
+            const latestRevisionSelected = item.ok && revision?.id === item.selectedRevision?.id;
             return <div
               key={item.index}
               className={`surface surface-pad ${
@@ -405,7 +408,7 @@ export default function GenerationDetailPage() {
                           <label key={value} className="chip gap-2">
                             <input type="radio" name={`revision-engine-${item.index}`} checked={input.engine === value}
                               onChange={() => updateRevisionInput(item.index, { engine: value })}
-                              disabled={revision?.status === "RUNNING"} />
+                              disabled={revision?.status === "PENDING" || revision?.status === "RUNNING"} />
                             {label}
                           </label>
                         ))}
@@ -413,12 +416,12 @@ export default function GenerationDetailPage() {
                       <textarea value={input.instructions} rows={3} className="textarea text-sm"
                         placeholder="추가로 확인하거나 개선할 사항 (선택)"
                         onChange={(event) => updateRevisionInput(item.index, { instructions: event.target.value })}
-                        disabled={revision?.status === "RUNNING"} />
+                        disabled={revision?.status === "PENDING" || revision?.status === "RUNNING"} />
                       <button type="button" onClick={() => void requestRevision(item.index)}
-                        disabled={revision?.status === "RUNNING"} className="btn btn-secondary text-sm">
-                        {revision?.status === "RUNNING" ? "AI 재검증 중…" : "AI 재검증 및 수정본 받기"}
+                        disabled={revision?.status === "PENDING" || revision?.status === "RUNNING"} className="btn btn-secondary text-sm">
+                        {revision?.status === "PENDING" || revision?.status === "RUNNING" ? "AI 재검증 중…" : "AI 재검증 및 수정본 받기"}
                       </button>
-                      {revision?.status === "RUNNING" && (
+                      {(revision?.status === "PENDING" || revision?.status === "RUNNING") && (
                         <p className="text-sm" role="status" aria-live="polite">
                           ⏳ 이 문항의 수정본을 확인하는 중입니다. 확인이 끝날 때까지 저장할 수 없습니다.
                         </p>
@@ -435,8 +438,8 @@ export default function GenerationDetailPage() {
                             revealed={revealed.has(item.index)}
                           />
                           <div className="flex flex-wrap gap-2">
-                            <button type="button" onClick={() => void setRevisionUsage(item.index, true)} disabled={revisionApplied} className="btn btn-primary text-sm">{revisionApplied ? "수정본 사용 중" : "수정본 적용"}</button>
-                            {Boolean(revision.appliedQuestion) && <button type="button" onClick={() => void setRevisionUsage(item.index, false)} className="btn btn-secondary text-sm">원문으로 되돌리기</button>}
+                            <button type="button" onClick={() => void setRevisionUsage(item.index, true)} disabled={latestRevisionSelected} className="btn btn-primary text-sm">{latestRevisionSelected ? "수정본 사용 중" : "수정본 적용"}</button>
+                            {revisionApplied && <button type="button" onClick={() => void setRevisionUsage(item.index, false)} className="btn btn-secondary text-sm">원문으로 되돌리기</button>}
                           </div>
                         </div>
                       )}
@@ -455,7 +458,7 @@ export default function GenerationDetailPage() {
         </section>
       )}
 
-      {job?.status === "SUCCEEDED" && job.kind === "KEYWORD_TAG" && (
+      {job?.status === "SUCCEEDED" && job.type === "KEYWORD_TAGGING" && (
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="section-title">제안된 키워드 확인 및 적용</h2>
@@ -498,7 +501,7 @@ export default function GenerationDetailPage() {
 
       {showActionDock && job && (
         <GenerationActionDock
-          kind={job.kind}
+          type={job.type}
           selectedCount={selected.size}
           appliedRevisionCount={revisionCounts.applied}
           runningRevisionCount={revisionCounts.running}

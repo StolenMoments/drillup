@@ -17,6 +17,7 @@ function item(
     verdict: "pass",
     verdictComment: null,
     revision: null,
+    selectedRevision: null,
     ...overrides,
   };
 }
@@ -26,13 +27,14 @@ describe("generation review UX state", () => {
     const failed = item({ verdict: "fail" });
     const applied = item({
       verdict: "fail",
-      revision: {
+      selectedRevision: {
+        id: 91,
         status: "SUCCEEDED",
         engine: "CLAUDE",
         verdict: "pass",
         comment: "수정했습니다",
         proposedQuestion: { type: "mcq" },
-        appliedQuestion: { type: "mcq" },
+        selectedAt: "2026-07-30T00:03:00.000Z",
         errorMessage: null,
       },
     });
@@ -48,25 +50,38 @@ describe("generation review UX state", () => {
         index: 1,
         verdict: "fail",
         revision: {
-          status: "RUNNING",
+          id: 92,
+          status: "PENDING",
           engine: "CLAUDE",
           verdict: null,
           comment: null,
           proposedQuestion: null,
-          appliedQuestion: null,
+          selectedAt: null,
           errorMessage: null,
         },
+        selectedRevision: null,
       }),
       item({
         index: 2,
         verdict: "fail",
         revision: {
+          id: 93,
           status: "SUCCEEDED",
           engine: "CLAUDE",
           verdict: "pass",
           comment: null,
           proposedQuestion: { type: "mcq" },
-          appliedQuestion: { type: "mcq" },
+          selectedAt: "2026-07-30T00:04:00.000Z",
+          errorMessage: null,
+        },
+        selectedRevision: {
+          id: 93,
+          status: "SUCCEEDED",
+          engine: "CLAUDE",
+          verdict: "pass",
+          comment: null,
+          proposedQuestion: { type: "mcq" },
+          selectedAt: "2026-07-30T00:04:00.000Z",
           errorMessage: null,
         },
       }),
@@ -74,7 +89,8 @@ describe("generation review UX state", () => {
     ];
     const job = {
       status: "SUCCEEDED",
-      kind: "QUESTION",
+      type: "QUESTION_GENERATION",
+      stage: "SUCCEEDED",
       items,
     } as unknown as GenerationJobDto;
 

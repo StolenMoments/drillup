@@ -1,10 +1,10 @@
-import type { GenerationEngine, GenerationRunStage } from "@prisma/client";
+import type { GenerationEngine, JobRunStage } from "@prisma/client";
 import { prisma } from "../db";
 import { runEngine, type EngineRunResult } from "./run-engine";
 
 type Input = {
-  generationJobId: number;
-  stage: GenerationRunStage;
+  jobId: number;
+  stage: JobRunStage;
   itemIndex?: number;
   attempt?: number;
   engine: GenerationEngine;
@@ -18,11 +18,11 @@ function persistenceFailure(error: unknown): void { console.error("generation ru
 
 async function update(runLogId: number | null, data: Record<string, unknown>): Promise<void> {
   if (runLogId === null) return;
-  await prisma.generationRunLog.update({ where: { id: runLogId }, data }).catch(persistenceFailure);
+  await prisma.jobRunLog.update({ where: { id: runLogId }, data }).catch(persistenceFailure);
 }
 
 export async function runTrackedEngine(input: Input): Promise<EngineRunResult & { runLogId: number | null }> {
-  const runLogId = await prisma.generationRunLog.create({ data: { generationJobId: input.generationJobId, stage: input.stage, itemIndex: input.itemIndex, attempt: input.attempt, engine: input.engine, model: input.model, status: "RUNNING", prompt: input.prompt }, select: { id: true } }).then((row) => row.id).catch((error) => { persistenceFailure(error); return null; });
+  const runLogId = await prisma.jobRunLog.create({ data: { jobId: input.jobId, stage: input.stage, itemIndex: input.itemIndex, attempt: input.attempt, engine: input.engine, model: input.model, status: "RUNNING", prompt: input.prompt }, select: { id: true } }).then((row) => row.id).catch((error) => { persistenceFailure(error); return null; });
   const result = await runEngine(input.engine, input.prompt, input.dir, input.filePrefix);
   const diagnosticData = { response: result.ok ? result.resultText : null, stdoutTail: result.stdoutTail || null, stderrTail: result.stderrTail || null, exitCode: result.exitCode, timedOut: result.timedOut, durationMs: result.durationMs };
   if (result.ok) await update(runLogId, diagnosticData);

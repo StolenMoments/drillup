@@ -13,7 +13,13 @@ function questionJob(overrides: Partial<GenerationJobDto> = {}): GenerationJobDt
     correctAnswerCount: 2,
     choiceCount: 6,
     status: "FAILED",
-    kind: "QUESTION",
+    stage: "FAILED",
+    type: "QUESTION_GENERATION",
+    questionId: null,
+    parentJobId: null,
+    retryOfJobId: null,
+    startedAt: null,
+    heartbeatAt: null,
     items: null,
     keywordItems: null,
     errorMessage: "실패",
@@ -41,6 +47,7 @@ describe("buildGenerationRetryInput", () => {
         choiceCount: 6,
         referenceFiles: ["common/a.md"],
         sourceQuestionIds: [101, 102],
+        retryOfJobId: 42,
       },
       missingReferenceFiles: ["missing.md"],
     });
@@ -61,7 +68,7 @@ describe("buildGenerationRetryInput", () => {
 
   it("does not produce retry input for keyword-tag jobs", () => {
     const result = buildGenerationRetryInput(
-      questionJob({ kind: "KEYWORD_TAG", referenceFiles: ["missing.md"] }),
+      questionJob({ type: "KEYWORD_TAGGING", stage: null, referenceFiles: ["missing.md"] }),
       [],
     );
 

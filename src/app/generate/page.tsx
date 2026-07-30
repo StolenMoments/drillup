@@ -11,10 +11,10 @@ const POLL_INTERVAL_MS = 5000;
 
 function statusBadge(job: GenerationJobSummaryDto): string {
   switch (job.status) {
+    case "PENDING":
+      return "⏳ 대기 중";
     case "RUNNING":
-      return "⏳ 생성 중";
-    case "VERIFYING":
-      return "⏳ 검증 중";
+      return job.stage === "VERIFYING" ? "⏳ 검증 중" : "⏳ 생성 중";
     case "SUCCEEDED":
       return job.approvedAt ? `✅ 저장됨 ${job.savedCount}개` : "✅ 완료 · 미저장";
     case "FAILED":
@@ -48,7 +48,7 @@ function GenerationListContent() {
         if (ignore) return;
         setJobs(list);
         const active = list.some(
-          (job) => job.status === "RUNNING" || job.status === "VERIFYING",
+          (job) => job.status === "PENDING" || job.status === "RUNNING",
         );
         if (!active && timer) {
           clearInterval(timer);
@@ -114,7 +114,7 @@ function GenerationListContent() {
               <Link href={`/generate/${job.id}`} className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <span className="subtle">#{job.id}</span>
-                  {job.kind === "KEYWORD_TAG" && (
+                  {job.type === "KEYWORD_TAGGING" && (
                     <span className="chip">🏷️ 키워드 부여</span>
                   )}
                   <span className="font-bold">{job.topicName}</span>

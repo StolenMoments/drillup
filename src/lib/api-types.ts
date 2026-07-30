@@ -268,14 +268,15 @@ export interface ChoiceHardeningJobPageDto {
 export type GenerationEngineDto = "CLAUDE" | "CODEX" | "ANTIGRAVITY";
 export type CorrectAnswerCountDto = 1 | 2;
 export type ChoiceCountDto = 4 | 5 | 6;
-export type GenerationStatusDto =
+export type GenerationStatusDto = JobStatusDto;
+export type QuestionGenerationStageDto =
   | "RUNNING"
   | "VERIFYING"
   | "SUCCEEDED"
   | "FAILED";
 export type GenerationVerdictDto = "pass" | "fail" | "unverified";
-export type GenerationJobKindDto = "QUESTION" | "KEYWORD_TAG";
-export type GenerationItemRevisionStatusDto = "RUNNING" | "SUCCEEDED" | "FAILED";
+export type GenerationJobTypeDto = "QUESTION_GENERATION" | "KEYWORD_TAGGING";
+export type GenerationItemRevisionStatusDto = JobStatusDto;
 export type GenerationRunStageDto = "BLUEPRINT" | "BLUEPRINT_REPAIR" | "GENERATION" | "VERIFY" | "ITEM_REPAIR" | "REPAIR_VERIFY" | "MANUAL_ITEM_REVISION" | "KEYWORD_TAG";
 export type GenerationRunStatusDto = "RUNNING" | "SUCCEEDED" | "FAILED";
 
@@ -300,12 +301,13 @@ export interface GenerationRunLogDto {
 }
 
 export interface GenerationItemRevisionDto {
+  id: number;
   status: GenerationItemRevisionStatusDto;
   engine: GenerationEngineDto;
   verdict: "pass" | "fail" | null;
   comment: string | null;
   proposedQuestion: unknown | null;
-  appliedQuestion: unknown | null;
+  selectedAt: string | null;
   errorMessage: string | null;
 }
 
@@ -324,47 +326,42 @@ export type GenerationItemDto =
       verdictComment: string | null;
       testedDistinction?: string | null;
       revision: GenerationItemRevisionDto | null;
+      selectedRevision: GenerationItemRevisionDto | null;
     }
   | { index: number; ok: false; errors: string[] };
 
-export interface GenerationJobDto {
-  id: number;
+export interface GenerationJobDto extends JobDtoBase {
+  type: GenerationJobTypeDto;
   topicId: number;
-  engine: GenerationEngineDto;
+  questionId: null;
+  parentJobId: null;
   verifyEngine: GenerationEngineDto;
   instructions: string;
   referenceFiles: string[];
   correctAnswerCount: CorrectAnswerCountDto | null;
   choiceCount: ChoiceCountDto | null;
-  status: GenerationStatusDto;
-  kind: GenerationJobKindDto;
+  stage: QuestionGenerationStageDto | null;
   items: GenerationItemDto[] | null;
   keywordItems: KeywordTagItemDto[] | null;
-  errorMessage: string | null;
   verifyWarning: string | null;
-  createdAt: string;
-  finishedAt: string | null;
   approvedAt: string | null;
   savedCount: number;
   sourceQuestionIds: number[] | null;
 }
 
-export interface GenerationJobSummaryDto {
-  id: number;
+export interface GenerationJobSummaryDto extends JobDtoBase {
+  type: GenerationJobTypeDto;
   topicId: number;
+  questionId: null;
+  parentJobId: null;
   topicName: string;
-  engine: GenerationEngineDto;
   verifyEngine: GenerationEngineDto;
   correctAnswerCount: CorrectAnswerCountDto | null;
   choiceCount: ChoiceCountDto | null;
-  status: GenerationStatusDto;
-  kind: GenerationJobKindDto;
+  stage: QuestionGenerationStageDto | null;
   itemCount: number | null;
   savedCount: number;
   approvedAt: string | null;
-  errorMessage: string | null;
-  createdAt: string;
-  finishedAt: string | null;
 }
 
 export type NoteTidyJobStatusDto = "RUNNING" | "SUCCEEDED" | "FAILED";

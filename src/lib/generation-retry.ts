@@ -14,6 +14,7 @@ export interface GenerationRetryInput {
   choiceCount: ChoiceCountDto;
   referenceFiles: string[];
   sourceQuestionIds: number[];
+  retryOfJobId: number;
 }
 
 export interface GenerationRetryResult {
@@ -25,7 +26,7 @@ export function buildGenerationRetryInput(
   job: GenerationJobDto,
   availableReferenceFiles: Iterable<string>,
 ): GenerationRetryResult {
-  if (job.kind !== "QUESTION") {
+  if (job.type !== "QUESTION_GENERATION") {
     return { input: null, missingReferenceFiles: [] };
   }
 
@@ -44,6 +45,7 @@ export function buildGenerationRetryInput(
       choiceCount: job.choiceCount ?? 5,
       referenceFiles,
       sourceQuestionIds: [...(job.sourceQuestionIds ?? [])],
+      retryOfJobId: job.id,
     },
     missingReferenceFiles,
   };
