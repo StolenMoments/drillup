@@ -53,8 +53,12 @@ GenerationJob ID는 새 Job ID로 그대로 보존한다. 그 밖의 레거시 J
     AnswerExplanationJob:          (noteUpper, explanationUpper]
     GenerationItemRevision:        (explanationUpper, revisionUpper]
 
+range 계산에서 모든 legacy source table의 최대 ID는 반드시
+COALESCE(MAX(id), 0)으로 읽는다. 이는 GenerationJob, ChoiceHardeningJob,
+NoteTidyJob, AnswerExplanationJob, GenerationItemRevision 모두에 적용한다.
+따라서 빈 source table의 최대값도 0이며 이후 upper bound가 NULL이 되지 않는다.
 각 non-generation 행의 새 ID는 previousUpperBound + legacyId이고, 다음 upper bound는
-previousUpperBound + 해당 source table의 max(id)다. 예를 들어 ChoiceHardeningJob
+previousUpperBound + COALESCE(MAX(id), 0)이다. 예를 들어 ChoiceHardeningJob
 legacy ID 2와 NoteTidyJob legacy ID 1은 서로 다른 range에 있으므로 충돌하지 않는다.
 migration은 revisionUpper가 signed Int 최대값 2,147,483,647을 넘으면 SIGNAL로 중단하고,
 Job AUTO_INCREMENT를 revisionUpper보다 크게 설정한다. contract test와 verification
