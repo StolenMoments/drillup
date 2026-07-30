@@ -196,7 +196,7 @@ describe("legacy data preservation and verification", () => {
   test("a legacy SUCCEEDED explanation Job without cache becomes FAILED and cannot be a cache hit", () => {
     const legacyJobInsert = normalized.match(/SELECT @noteUpper \+ legacy\.id, 'ANSWER_EXPLANATION'[\s\S]*?FROM answer_explanation_job AS legacy[\s\S]*?;/i)?.[0] ?? "";
     expect(legacyJobInsert).toMatch(/CASE WHEN cache\.id IS NOT NULL THEN 'SUCCEEDED' ELSE 'FAILED' END/i);
-    expect(legacyJobInsert).toMatch(/cache\.id IS NULL AND legacy\.status = 'SUCCEEDED'.*cache.*missing|cache\.id IS NULL AND legacy\.status = 'SUCCEEDED'.*캐시/is);
+    expect(legacyJobInsert).toMatch(/cache\.id IS NULL AND legacy\.status = 'SUCCEEDED'[\s\S]*cache[\s\S]*missing|cache\.id IS NULL AND legacy\.status = 'SUCCEEDED'[\s\S]*캐시/i);
     const validSuccess = validationSection("successful_explanation_without_valid_cache");
     expect(validSuccess).toMatch(/candidate\.type = 'ANSWER_EXPLANATION'.*candidate\.status = 'SUCCEEDED'/i);
     expect(validSuccess).toMatch(/detail\.content IS NULL|cache\.id IS NULL/i);
@@ -220,7 +220,7 @@ describe("legacy data preservation and verification", () => {
     expect(normalized).toMatch(/SET @invalidManualRevisionLogCount ?:= ?\( SELECT COUNT\(\*\).*legacy\.stage = 'MANUAL_ITEM_REVISION'/i);
     expect(normalized).toMatch(/SELECT legacy\.id, @explanationUpper \+ revision\.id, legacy\.stage/i);
     expect(normalized).toMatch(/FROM generation_run_log AS legacy JOIN generation_item_revision AS revision/i);
-    expect(normalized).not.toMatch(/MANUAL_ITEM_REVISION'.*ELSE legacy\.generation_job_id/is);
+    expect(normalized).not.toMatch(/MANUAL_ITEM_REVISION'[\s\S]*ELSE legacy\.generation_job_id/i);
     expect(normalized).toMatch(/IF\(@invalidManualRevisionLogCount <> 0, 'CALL fail_common_job_backfill/i);
     const manualValidation = validationSection("manual_revision_log_mapping_mismatch");
     expect(manualValidation).toMatch(/copied\.job_id <> @explanationUpper \+ revision\.id/i);
@@ -239,7 +239,7 @@ describe("legacy data preservation and verification", () => {
 
   test("legacy logs, manual revision ownership, and non-null raw output are preserved", () => {
     expect(normalized).toMatch(/INSERT IGNORE INTO job_run_log/i);
-    expect(normalized).toMatch(/MANUAL_ITEM_REVISION.*generation_item_revision/is);
+    expect(normalized).toMatch(/MANUAL_ITEM_REVISION[\s\S]*generation_item_revision/i);
     expect(normalized).toMatch(/'LEGACY_OUTPUT'/i);
     expect(normalized).toMatch(/raw_output IS NOT NULL/i);
   });
