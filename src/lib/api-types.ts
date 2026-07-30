@@ -1,4 +1,28 @@
 export type QuestionTypeDto = "MCQ" | "CLOZE";
+export type JobTypeDto =
+  | "QUESTION_GENERATION"
+  | "KEYWORD_TAGGING"
+  | "GENERATION_ITEM_REVISION"
+  | "CHOICE_HARDENING"
+  | "NOTE_TIDY"
+  | "ANSWER_EXPLANATION";
+export type JobStatusDto = "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED";
+
+export interface JobDtoBase {
+  id: number;
+  type: JobTypeDto;
+  status: JobStatusDto;
+  engine: GenerationEngineDto;
+  topicId: number | null;
+  questionId: number | null;
+  parentJobId: number | null;
+  retryOfJobId: number | null;
+  errorMessage: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  heartbeatAt: string | null;
+  finishedAt: string | null;
+}
 export type QuestionListSortDto =
   | "latest"
   | "accuracyAsc"
