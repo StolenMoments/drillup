@@ -176,20 +176,6 @@ export async function recoverStaleJobs(now = new Date()): Promise<number> {
         return false;
       }
 
-      await tx.jobRunLog.updateMany({
-        where: { jobId: current.id, status: "RUNNING" },
-        data: {
-          status: "FAILED",
-          errorMessage: STALE_ERROR_MESSAGE,
-          finishedAt: now,
-        },
-      });
-      if (current.type === "QUESTION_GENERATION") {
-        await tx.questionGenerationJobData.updateMany({
-          where: { jobId: current.id },
-          data: { stage: "FAILED" },
-        });
-      }
       const closed = await tx.job.updateMany({
         where: {
           id: current.id,
@@ -205,11 +191,23 @@ export async function recoverStaleJobs(now = new Date()): Promise<number> {
           finishedAt: now,
         },
       });
-      if (closed.count !== 1) throw new JobFenceLostError();
+      if (closed.count !== 1) return false;
+
+      await tx.jobRunLog.updateMany({
+        where: { jobId: current.id, status: "RUNNING" },
+        data: {
+          status: "FAILED",
+          errorMessage: STALE_ERROR_MESSAGE,
+          finishedAt: now,
+        },
+      });
+      if (current.type === "QUESTION_GENERATION") {
+        await tx.questionGenerationJobData.updateMany({
+          where: { jobId: current.id },
+          data: { stage: "FAILED" },
+        });
+      }
       return true;
-    }).catch((error: unknown) => {
-      if (error instanceof JobFenceLostError) return false;
-      throw error;
     });
     if (didRecover) recovered += 1;
   }

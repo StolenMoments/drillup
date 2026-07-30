@@ -33,6 +33,7 @@ const database = vi.hoisted(() => ({
   logs: [] as StoredLog[],
   detailPreview: null as string | null,
   generationStage: null as string | null,
+  transactionOperations: [] as string[],
   failLogCreate: false,
 }));
 
@@ -111,13 +112,17 @@ function transactionClient() {
       updateMany: vi.fn(async (args: {
         where: Record<string, unknown>;
         data: Record<string, unknown>;
-      }) => updateJobs(args)),
+      }) => {
+        database.transactionOperations.push("job");
+        return updateJobs(args);
+      }),
     },
     jobRunLog: {
       updateMany: vi.fn(async ({ where, data }: {
         where: { jobId: number; status: string };
         data: Record<string, unknown>;
       }) => {
+        database.transactionOperations.push("logs");
         let count = 0;
         for (const log of database.logs) {
           if (log.jobId !== where.jobId || log.status !== where.status) continue;
@@ -134,6 +139,7 @@ function transactionClient() {
     },
     questionGenerationJobData: {
       updateMany: vi.fn(async ({ data }: { data: { stage: string } }) => {
+        database.transactionOperations.push("detail");
         database.generationStage = data.stage;
         return { count: 1 };
       }),
@@ -189,6 +195,7 @@ describe("common job runner", () => {
     database.logs = [];
     database.detailPreview = null;
     database.generationStage = null;
+    database.transactionOperations = [];
     database.failLogCreate = false;
     installDatabaseDouble();
   });
@@ -389,6 +396,34 @@ describe("common job runner", () => {
 
     expect(database.jobs[0].status).toBe("FAILED");
     expect(database.generationStage).toBe("FAILED");
+  });
+
+  it("locks the Job before closing logs and generation detail during stale recovery", async () => {
+    database.jobs = [makeJob({
+      type: "QUESTION_GENERATION",
+      status: "RUNNING",
+      runToken: "11111111-1111-4111-8111-111111111111",
+      startedAt: new Date("2026-07-30T00:00:00.000Z"),
+      heartbeatAt: new Date("2026-07-30T00:01:00.000Z"),
+    })];
+    database.logs = [{
+      id: 1,
+      jobId: 1,
+      status: "RUNNING",
+      startedAt: new Date("2026-07-30T00:00:30.000Z"),
+      finishedAt: null,
+      errorMessage: null,
+    }];
+    const previousTimeout = process.env.GENERATION_TIMEOUT_MS;
+    process.env.GENERATION_TIMEOUT_MS = "1000";
+    try {
+      await recoverStaleJobs(new Date("2026-07-30T00:03:01.001Z"));
+    } finally {
+      if (previousTimeout === undefined) delete process.env.GENERATION_TIMEOUT_MS;
+      else process.env.GENERATION_TIMEOUT_MS = previousTimeout;
+    }
+
+    expect(database.transactionOperations).toEqual(["job", "logs", "detail"]);
   });
 
   it("treats run log persistence as best effort and tails diagnostics", async () => {
