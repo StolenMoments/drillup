@@ -14,8 +14,8 @@ export interface EngineCommand {
 }
 
 const AGY_MODEL = "Gemini 3.5 Flash (High)";
-const CODEX_MODEL = "gpt-5.6-luna";
-const CODEX_REASONING_CONFIG = 'model_reasoning_effort="xhigh"';
+const CODEX_MODEL = "gpt-5.6-terra";
+const CODEX_REASONING_CONFIG = 'model_reasoning_effort="medium"';
 
 function winJoin(...parts: string[]): string {
   return parts.join("\\");

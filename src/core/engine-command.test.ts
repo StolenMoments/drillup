@@ -63,9 +63,9 @@ describe("buildEngineCommand - CODEX", () => {
       "exec",
       "--yolo",
       "--model",
-      "gpt-5.6-luna",
+      "gpt-5.6-terra",
       "-c",
-      'model_reasoning_effort="xhigh"',
+      'model_reasoning_effort="medium"',
       "-",
     ]);
     expect(cmd.promptViaStdin).toBe(true);
@@ -77,9 +77,9 @@ describe("buildEngineCommand - CODEX", () => {
       "exec",
       "--yolo",
       "--model",
-      "gpt-5.6-luna",
+      "gpt-5.6-terra",
       "-c",
-      'model_reasoning_effort="xhigh"',
+      'model_reasoning_effort="medium"',
       "-",
     ]);
   });
