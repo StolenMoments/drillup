@@ -13,7 +13,9 @@ vi.mock("./db", () => ({ prisma: prismaMock }));
 
 import {
   getFactualReviewJob,
+  getFreshnessReviewJob,
   startFactualReviewJob,
+  startFreshnessReviewJob,
 } from "./factual-review-job-service";
 
 function job(overrides: Record<string, unknown> = {}) {
@@ -22,6 +24,8 @@ function job(overrides: Record<string, unknown> = {}) {
     questionId: 7,
     engine: "CLAUDE" as const,
     concern: "정답이 틀렸습니다",
+    kind: "FACTUAL_CONCERN" as const,
+    sourcePolicy: "OFFICIAL_DOCS" as const,
     status: "RUNNING" as const,
     verdict: null,
     comment: null,
@@ -43,6 +47,7 @@ describe("factual review job service", () => {
       id: 7,
       type: "MCQ",
       payload: {},
+      topic: { verificationSourcePolicy: "OFFICIAL_DOCS" },
     });
   });
 
@@ -80,8 +85,36 @@ describe("factual review job service", () => {
 
       expect(result).toMatchObject({ id: 11, status: "RUNNING", result: null });
       expect(prismaMock.factualReviewJob.create).toHaveBeenCalledWith({
-        data: { questionId: 7, engine: "CLAUDE", concern: "정답이 틀렸습니다" },
+        data: { questionId: 7, engine: "CLAUDE", concern: "정답이 틀렸습니다", kind: "FACTUAL_CONCERN", sourcePolicy: "OFFICIAL_DOCS" },
       });
+    });
+  });
+
+  describe("startFreshnessReviewJob", () => {
+    it("MCQ의 주제 출처 정책을 snapshot으로 저장한다", async () => {
+      prismaMock.question.findUnique.mockResolvedValue({
+        id: 7,
+        type: "MCQ",
+        topic: { verificationSourcePolicy: "AWS_DOCS_ONLY" },
+      });
+      prismaMock.factualReviewJob.create.mockResolvedValue(job({ kind: "FRESHNESS", sourcePolicy: "AWS_DOCS_ONLY", concern: "" }));
+
+      const result = await startFreshnessReviewJob(7, "CODEX");
+
+      expect(prismaMock.factualReviewJob.create).toHaveBeenCalledWith({
+        data: { questionId: 7, engine: "CODEX", concern: "", kind: "FRESHNESS", sourcePolicy: "AWS_DOCS_ONLY" },
+      });
+      expect(result).toMatchObject({ sourcePolicy: "AWS_DOCS_ONLY", status: "RUNNING" });
+    });
+
+    it("CLOZE는 최신 정보 검증을 거절한다", async () => {
+      prismaMock.question.findUnique.mockResolvedValue({ id: 7, type: "CLOZE", topic: { verificationSourcePolicy: "OFFICIAL_DOCS" } });
+      await expect(startFreshnessReviewJob(7, "CLAUDE")).rejects.toMatchObject({ code: "VALIDATION", status: 400 });
+    });
+
+    it("다른 종류 job은 조회할 수 없다", async () => {
+      prismaMock.factualReviewJob.findUnique.mockResolvedValue(job());
+      await expect(getFreshnessReviewJob(7, 11)).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
     });
   });
 

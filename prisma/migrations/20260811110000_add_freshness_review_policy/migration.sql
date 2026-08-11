@@ -1,0 +1,7 @@
+-- Prisma uses MariaDB ENUM columns for schema enums.
+ALTER TABLE `topic`
+    ADD COLUMN `verification_source_policy` ENUM('OFFICIAL_DOCS', 'AWS_DOCS_ONLY') NOT NULL DEFAULT 'OFFICIAL_DOCS';
+
+ALTER TABLE `factual_review_job`
+    ADD COLUMN `kind` ENUM('FACTUAL_CONCERN', 'FRESHNESS') NOT NULL DEFAULT 'FACTUAL_CONCERN',
+    ADD COLUMN `source_policy` ENUM('OFFICIAL_DOCS', 'AWS_DOCS_ONLY') NOT NULL DEFAULT 'OFFICIAL_DOCS';

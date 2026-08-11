@@ -5,6 +5,7 @@ import { createTopic, listTopics } from "@/server/topic-service";
 const createSchema = z.object({
   name: z.string().trim().min(1).max(100),
   description: z.string().optional(),
+  verificationSourcePolicy: z.enum(["OFFICIAL_DOCS", "AWS_DOCS_ONLY"]).optional(),
 });
 
 export async function GET() {

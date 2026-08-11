@@ -223,6 +223,27 @@ export default function QuestionsPage() {
     }
   }
 
+  async function changeVerificationSourcePolicy(
+    verificationSourcePolicy: "OFFICIAL_DOCS" | "AWS_DOCS_ONLY",
+  ) {
+    if (topicId === "") return;
+    try {
+      await api.topics.update(topicId, { verificationSourcePolicy });
+      await reload({
+        selectedTopicId: topicId,
+        selectedKeywordId: keywordId,
+        selectedType: typeFilter,
+        selectedSort: sort,
+        selectedPage: page,
+        selectedSearch: committedSearch,
+        selectedSearchFields: committedSearchFields,
+      });
+      setMessage("✅ 검증 출처 정책을 저장했습니다");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "검증 출처 정책 저장 실패");
+    }
+  }
+
   async function removeTopic() {
     if (topicId === "") return;
     if (
@@ -371,6 +392,17 @@ export default function QuestionsPage() {
         </form>
         {topicId !== "" && (
           <>
+            <label className="flex items-center gap-2 text-sm">
+              검증 출처
+              <select
+                value={topics.find((topic) => topic.id === topicId)?.verificationSourcePolicy ?? "OFFICIAL_DOCS"}
+                onChange={(event) => void changeVerificationSourcePolicy(event.target.value as "OFFICIAL_DOCS" | "AWS_DOCS_ONLY")}
+                className="field w-auto min-w-44"
+              >
+                <option value="OFFICIAL_DOCS">일반 공식 문서</option>
+                <option value="AWS_DOCS_ONLY">AWS Docs만</option>
+              </select>
+            </label>
             <button
               onClick={renameTopic}
               className="btn btn-secondary min-h-9 px-3 text-sm"

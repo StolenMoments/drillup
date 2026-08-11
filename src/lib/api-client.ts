@@ -7,6 +7,7 @@ import type {
   ChoiceCountDto,
   CorrectAnswerCountDto,
   FactualReviewJobDto,
+  FreshnessReviewJobDto,
   GenerationEngineDto,
   GenerationJobDto,
   GenerationJobSummaryDto,
@@ -25,6 +26,7 @@ import type {
   StudyQuestionDto,
   SubmitReviewInput,
   TopicDto,
+  VerificationSourcePolicyDto,
   TopicNoteDto,
 } from "./api-types";
 
@@ -90,14 +92,14 @@ export const api = {
   },
   topics: {
     list: () => request<TopicDto[]>("/api/topics"),
-    create: (input: { name: string; description?: string }) =>
+    create: (input: { name: string; description?: string; verificationSourcePolicy?: VerificationSourcePolicyDto }) =>
       request<TopicDto>("/api/topics", {
         method: "POST",
         body: JSON.stringify(input),
       }),
     update: (
       id: number,
-      input: { name?: string; description?: string; referenceDir?: string | null },
+      input: { name?: string; description?: string; referenceDir?: string | null; verificationSourcePolicy?: VerificationSourcePolicyDto },
     ) =>
       request<TopicDto>(`/api/topics/${id}`, {
         method: "PATCH",
@@ -172,6 +174,15 @@ export const api = {
     getFactualReviewJob: (id: number, jobId: number) =>
       request<{ job: FactualReviewJobDto }>(
         `/api/questions/${id}/review-fact/${jobId}`,
+      ),
+    reviewFreshness: (id: number, engine: GenerationEngineDto) =>
+      request<{ job: FreshnessReviewJobDto }>(`/api/questions/${id}/review-freshness`, {
+        method: "POST",
+        body: JSON.stringify({ engine }),
+      }),
+    getFreshnessReviewJob: (id: number, jobId: number) =>
+      request<{ job: FreshnessReviewJobDto }>(
+        `/api/questions/${id}/review-freshness/${jobId}`,
       ),
     addKeyword: (id: number, name: string) =>
       request<KeywordRefDto>(`/api/questions/${id}/keywords`, {

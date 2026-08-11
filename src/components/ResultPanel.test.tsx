@@ -12,6 +12,8 @@ const apiMock = vi.hoisted(() => ({
   getExplanationJob: vi.fn(),
   reviewFact: vi.fn(),
   getFactualReviewJob: vi.fn(),
+  reviewFreshness: vi.fn(),
+  getFreshnessReviewJob: vi.fn(),
   update: vi.fn(),
 }));
 
@@ -554,5 +556,69 @@ describe("ResultPanel explanation polling", () => {
     expect(
       screen.getByText(/Claude로 해설받기 해설을 가져오지 못했습니다: 결과를 불러오지 못했습니다/),
     ).toBeInTheDocument();
+  });
+});
+
+describe("ResultPanel 최신 정보 검증", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    for (const mock of Object.values(apiMock)) mock.mockReset();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  const freshnessJob = (overrides: Record<string, unknown> = {}) => ({
+    id: 31,
+    questionId: 7,
+    engine: "CLAUDE" as const,
+    sourcePolicy: "AWS_DOCS_ONLY" as const,
+    status: "RUNNING" as const,
+    result: null,
+    errorMessage: null,
+    createdAt: "2026-08-11T00:00:00.000Z",
+    startedAt: null,
+    finishedAt: null,
+    ...overrides,
+  });
+
+  it("MCQ에만 검증 패널을 표시하고 완료 결과를 폴링한다", async () => {
+    apiMock.reviewFreshness.mockResolvedValue({ job: freshnessJob() });
+    apiMock.getFreshnessReviewJob.mockResolvedValue({
+      job: freshnessJob({
+        status: "SUCCEEDED",
+        result: { verdict: "pass", comment: "최신입니다", evidenceUrl: "https://docs.aws.amazon.com/x", payload: null },
+      }),
+    });
+    render(<ResultPanel question={question} result={result} onNext={vi.fn()} isLast={false} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "🔍 최신 정보 검증" }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(apiMock.reviewFreshness).toHaveBeenCalledWith(7, "CLAUDE");
+    expect(apiMock.getFreshnessReviewJob).toHaveBeenCalledWith(7, 31);
+    expect(screen.getByText(/최신 공식 문서 기준으로 이상이 없습니다/)).toBeVisible();
+  });
+
+  it("교정안 없는 fail에는 문제 편집 링크를 보여준다", async () => {
+    apiMock.reviewFreshness.mockResolvedValue({
+      job: freshnessJob({
+        status: "SUCCEEDED",
+        result: { verdict: "fail", comment: "문서가 변경됨", evidenceUrl: "https://docs.aws.amazon.com/x", payload: null },
+      }),
+    });
+    render(<ResultPanel question={question} result={result} onNext={vi.fn()} isLast={false} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "🔍 최신 정보 검증" }));
+    });
+
+    expect(screen.getByRole("link", { name: "문제 편집으로 교정하기" })).toHaveAttribute("href", "/questions/7/edit");
   });
 });

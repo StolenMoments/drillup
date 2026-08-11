@@ -6,6 +6,7 @@ import { deleteTopic, updateTopic } from "@/server/topic-service";
 const updateSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
   description: z.string().optional(),
+  verificationSourcePolicy: z.enum(["OFFICIAL_DOCS", "AWS_DOCS_ONLY"]).optional(),
   referenceDir: z
     .union([z.string().trim().max(200), z.null()])
     .optional()

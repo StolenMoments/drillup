@@ -1,6 +1,7 @@
 import { mcqAnswerIndices, type ClozePayload, type McqPayload, type QuestionType } from "./types";
 import type { QuestionBlueprint } from "./question-blueprint";
 import type { GenerationQuestionShape } from "./generation-shape";
+import type { VerificationSourcePolicy } from "./freshness-review-schema";
 
 function promptBody(topicName: string): string {
   return `당신은 학습용 문제 출제 전문가입니다. 주제 "${topicName}"에 대한 학습 문제를 생성해 주세요.
@@ -692,6 +693,7 @@ export function buildFactualConcernReviewPrompt(
   payload: McqPayload,
   concern: string,
   resultPath: string,
+  sourcePolicy: VerificationSourcePolicy = "OFFICIAL_DOCS",
 ): string {
   const target = {
     question: payload.question,
@@ -701,7 +703,7 @@ export function buildFactualConcernReviewPrompt(
   };
   return `당신은 학습 문제의 사실 정확성을 검증하는 전문가입니다. 주제 "${topicName}"의 아래 객관식 문제에 대해 제기된 이의를 판정하세요.
 
-${webVerificationSection("판정하기 전에")}## 대상 문제
+${freshnessSourcePolicySection(sourcePolicy)}## 대상 문제
 
 \`\`\`json
 ${JSON.stringify(target)}
@@ -743,5 +745,55 @@ ${concern.trim()}
 - 결과 JSON을 stdout에 출력하지 마세요.
 - 결과 JSON은 다음 경로에 UTF-8 텍스트 파일로만 저장하세요: ${resultPath}
 - 파일 내용은 위 출력 형식의 JSON만 포함해야 하며, 코드 펜스나 설명 문장을 추가하지 마세요.
+`;
+}
+
+function freshnessSourcePolicySection(sourcePolicy: VerificationSourcePolicy): string {
+  return sourcePolicy === "AWS_DOCS_ONLY"
+    ? "## 웹 검색 기반 사실 확인\n\n판정하기 전에 사용 가능한 WebSearch/WebFetch/브라우징 도구로 최신 정보를 확인하세요.\n\n## 검증 출처 정책\n\n- 근거로는 https://docs.aws.amazon.com/ 로 시작하는 AWS 공식 문서만 허용합니다. 그 밖의 URL·블로그·커뮤니티·기억은 사용하지 마세요.\n- 해당 AWS 문서 근거를 찾지 못하면 unverified로 판정하세요.\n- 로컬 참고 자료는 절대 읽거나 사용하지 마세요.\n\n"
+    : "## 웹 검색 기반 사실 확인\n\n판정하기 전에 사용 가능한 WebSearch/WebFetch/브라우징 도구로 최신 정보를 확인하세요.\n\n## 검증 출처 정책\n\n- 벤더의 공식 문서만 근거로 사용하세요. 블로그·커뮤니티·검색 결과·기억은 근거로 사용할 수 없습니다.\n- 로컬 참고 자료는 절대 읽거나 사용하지 마세요.\n\n";
+}
+
+export function buildFreshnessReviewPrompt(topicName: string, payload: McqPayload, explanation: string | null, sourcePolicy: VerificationSourcePolicy, resultPath: string): string {
+  const target = { question: payload.question, choices: payload.choices, answer_indices: mcqAnswerIndices(payload), choice_explanations: payload.choice_explanations ?? null, explanation };
+  return `당신은 학습 MCQ의 최신성·사실 정확성을 검증하는 전문가입니다. 주제 "${topicName}"의 아래 문제를 현재 공식 문서와 대조하세요.
+
+${freshnessSourcePolicySection(sourcePolicy)}## 검증 대상 JSON
+
+${JSON.stringify(target)}
+
+## 검증 범위
+
+- 문제 본문, 모든 선지, 정답(answer_indices), 선지별 해설(choice_explanations), 전체 해설(explanation)을 모두 검토하세요.
+- 오래되었거나 사실과 다른 내용, 모호해서 복수 정답이 되는 내용, 해설과 정답의 모순을 찾으세요.
+- 자동 적용하지 않습니다. fail일 때만 가능한 경우 revised에 최소 수정한 전체 MCQ payload를 제공하세요. 선지 수는 원본과 유지하고, choice_explanations는 모든 선지에 하나씩 포함하세요.
+
+## 판정 기준
+
+- pass: 현재 공식 문서 기준으로 문제·정답·해설이 모두 정확합니다.
+- fail: 최신 공식 문서 기준으로 수정이 필요한 오류 또는 노후화가 있습니다.
+- unverified: 허용된 공식 문서만으로 판단할 수 없습니다.
+
+## 출력 형식
+
+다른 설명 없이 아래 구조의 JSON만 작성하세요.
+
+{
+  "verdict": "pass",
+  "comment": "한국어로 간결한 검증 사유",
+  "evidence_url": "근거가 되는 허용 공식 문서 URL",
+  "revised": { "question": "fail일 때 가능한 경우 교정된 질문", "choices": ["교정된 전체 선지 배열"], "answer_indices": [0], "choice_explanations": ["각 선지의 교정된 판단 근거"] }
+}
+
+- verdict는 "pass", "fail", "unverified" 중 하나만 허용됩니다.
+- comment는 반드시 한국어로 작성하세요.
+- evidence_url은 가능한 경우 허용된 공식 문서 URL을 적고, 없으면 생략하세요.
+- revised는 fail일 때 가능한 경우에만 포함하세요.
+
+## 결과 저장 (반드시 준수)
+
+- 결과 JSON을 stdout에 출력하지 마세요.
+- 결과 JSON은 다음 경로에 UTF-8 텍스트 파일로만 저장하세요: ${resultPath}
+- 파일 내용은 위 출력 형식의 JSON만 포함해야 하며, 설명 문장을 추가하지 마세요.
 `;
 }

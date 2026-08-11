@@ -38,8 +38,11 @@ export interface TopicDto {
   name: string;
   description: string | null;
   referenceDir: string | null;
+  verificationSourcePolicy: VerificationSourcePolicyDto;
   questionCount: number;
 }
+
+export type VerificationSourcePolicyDto = "OFFICIAL_DOCS" | "AWS_DOCS_ONLY";
 
 export interface QuestionListItemDto {
   id: number;
@@ -190,6 +193,28 @@ export interface FactualReviewJobDto {
   concern: string;
   status: FactualReviewJobStatusDto;
   result: FactualReviewResultDto | null;
+  errorMessage: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export type FreshnessReviewVerdictDto = "pass" | "fail" | "unverified";
+
+export interface FreshnessReviewResultDto {
+  verdict: FreshnessReviewVerdictDto;
+  comment: string;
+  evidenceUrl: string | null;
+  payload: HardenedMcqPayloadDto | null;
+}
+
+export interface FreshnessReviewJobDto {
+  id: number;
+  questionId: number;
+  engine: GenerationEngineDto;
+  sourcePolicy: VerificationSourcePolicyDto;
+  status: FactualReviewJobStatusDto;
+  result: FreshnessReviewResultDto | null;
   errorMessage: string | null;
   createdAt: string;
   startedAt: string | null;

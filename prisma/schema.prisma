@@ -85,16 +85,22 @@ enum AnswerExplanationJobStatus {
   FAILED
 }
 
+enum VerificationSourcePolicy {
+  OFFICIAL_DOCS
+  AWS_DOCS_ONLY
+}
+
 model Topic {
-  id             Int             @id @default(autoincrement())
-  name           String          @unique @db.VarChar(100)
-  description    String?         @db.Text
-  referenceDir   String?         @map("reference_dir") @db.VarChar(200)
-  createdAt      DateTime        @default(now()) @map("created_at")
-  questions      Question[]
-  generationJobs GenerationJob[]
-  note           TopicNote?
-  noteTidyJobs   NoteTidyJob[]
+  id                       Int                      @id @default(autoincrement())
+  name                     String                   @unique @db.VarChar(100)
+  description              String?                  @db.Text
+  referenceDir             String?                  @map("reference_dir") @db.VarChar(200)
+  verificationSourcePolicy VerificationSourcePolicy @default(OFFICIAL_DOCS) @map("verification_source_policy")
+  createdAt                DateTime                 @default(now()) @map("created_at")
+  questions                Question[]
+  generationJobs           GenerationJob[]
+  note                     TopicNote?
+  noteTidyJobs             NoteTidyJob[]
 
   @@map("topic")
 }
@@ -171,21 +177,28 @@ enum FactualReviewJobStatus {
   FAILED
 }
 
+enum FactualReviewJobKind {
+  FACTUAL_CONCERN
+  FRESHNESS
+}
+
 model FactualReviewJob {
-  id           Int                    @id @default(autoincrement())
-  questionId   Int                    @map("question_id")
+  id           Int                      @id @default(autoincrement())
+  questionId   Int                      @map("question_id")
   engine       GenerationEngine
-  concern      String                 @db.Text
-  status       FactualReviewJobStatus @default(RUNNING)
+  concern      String                   @db.Text
+  kind         FactualReviewJobKind     @default(FACTUAL_CONCERN)
+  sourcePolicy VerificationSourcePolicy @default(OFFICIAL_DOCS) @map("source_policy")
+  status       FactualReviewJobStatus   @default(RUNNING)
   verdict      String?
-  comment      String?                @db.Text
-  evidenceUrl  String?                @map("evidence_url")
+  comment      String?                  @db.Text
+  evidenceUrl  String?                  @map("evidence_url")
   payload      Json?
-  errorMessage String?                @map("error_message") @db.Text
-  createdAt    DateTime               @default(now()) @map("created_at")
-  startedAt    DateTime?              @map("started_at")
-  finishedAt   DateTime?              @map("finished_at")
-  question     Question               @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  errorMessage String?                  @map("error_message") @db.Text
+  createdAt    DateTime                 @default(now()) @map("created_at")
+  startedAt    DateTime?                @map("started_at")
+  finishedAt   DateTime?                @map("finished_at")
+  question     Question                 @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
   @@index([status, startedAt])
   @@map("factual_review_job")

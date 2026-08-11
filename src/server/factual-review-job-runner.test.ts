@@ -26,6 +26,8 @@ function job(overrides: Record<string, unknown> = {}) {
     questionId: 7,
     engine: "CLAUDE" as const,
     concern: "정답이 틀렸다는 주장",
+    kind: "FACTUAL_CONCERN" as const,
+    sourcePolicy: "OFFICIAL_DOCS" as const,
     status: "RUNNING" as const,
     verdict: null,
     comment: null,
@@ -35,7 +37,7 @@ function job(overrides: Record<string, unknown> = {}) {
     createdAt: new Date("2026-07-15T00:00:00.000Z"),
     startedAt: new Date("2026-07-15T00:00:00.000Z"),
     finishedAt: null,
-    question: { id: 7, type: "MCQ", payload: original, topic: { name: "주제" } },
+    question: { id: 7, type: "MCQ", payload: original, explanation: "원본 해설", topic: { name: "주제" } },
     ...overrides,
   };
 }
@@ -177,5 +179,39 @@ describe("factual review job runner", () => {
     await runFactualReviewJob(11);
 
     expect(runEngineMock).not.toHaveBeenCalled();
+  });
+
+  it("최신 정보 검증은 AWS Docs 정책 프롬프트와 fail 교정안을 저장한다", async () => {
+    const revised = { ...original, question: "교정된 질문" };
+    prismaMock.factualReviewJob.findUnique.mockResolvedValue(job({
+      kind: "FRESHNESS",
+      sourcePolicy: "AWS_DOCS_ONLY",
+      concern: "",
+    }));
+    runEngineMock.mockResolvedValueOnce(engineResult(JSON.stringify({
+      verdict: "fail",
+      comment: "문서 기준으로 변경되었습니다",
+      evidence_url: "https://docs.aws.amazon.com/AmazonS3/latest/userguide/x.html",
+      revised,
+    })));
+
+    await runFactualReviewJob(11);
+
+    expect(runEngineMock).toHaveBeenCalledWith(
+      "CLAUDE",
+      expect.stringContaining("https://docs.aws.amazon.com/ 로 시작하는 AWS 공식 문서만 허용"),
+      expect.stringContaining("freshness-review"),
+    );
+    expect(prismaMock.factualReviewJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: 11, startedAt: expect.any(Date), status: "RUNNING" },
+      data: {
+        status: "SUCCEEDED",
+        verdict: "fail",
+        comment: "문서 기준으로 변경되었습니다",
+        evidenceUrl: "https://docs.aws.amazon.com/AmazonS3/latest/userguide/x.html",
+        payload: revised,
+        finishedAt: expect.any(Date),
+      },
+    });
   });
 });

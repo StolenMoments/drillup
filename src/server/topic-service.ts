@@ -9,6 +9,7 @@ function toDto(topic: {
   name: string;
   description: string | null;
   referenceDir: string | null;
+  verificationSourcePolicy: "OFFICIAL_DOCS" | "AWS_DOCS_ONLY";
   _count: { questions: number };
 }): TopicDto {
   return {
@@ -16,6 +17,7 @@ function toDto(topic: {
     name: topic.name,
     description: topic.description,
     referenceDir: topic.referenceDir,
+    verificationSourcePolicy: topic.verificationSourcePolicy,
     questionCount: topic._count.questions,
   };
 }
@@ -31,6 +33,7 @@ export async function listTopics(): Promise<TopicDto[]> {
 export async function createTopic(input: {
   name: string;
   description?: string;
+  verificationSourcePolicy?: "OFFICIAL_DOCS" | "AWS_DOCS_ONLY";
 }): Promise<TopicDto> {
   const existing = await prisma.topic.findUnique({
     where: { name: input.name },
@@ -40,7 +43,7 @@ export async function createTopic(input: {
   }
 
   const topic = await prisma.topic.create({
-    data: { name: input.name, description: input.description ?? null },
+    data: { name: input.name, description: input.description ?? null, verificationSourcePolicy: input.verificationSourcePolicy ?? "OFFICIAL_DOCS" },
     include: withCount,
   });
   return toDto(topic);
@@ -48,7 +51,7 @@ export async function createTopic(input: {
 
 export async function updateTopic(
   id: number,
-  input: { name?: string; description?: string; referenceDir?: string | null },
+  input: { name?: string; description?: string; referenceDir?: string | null; verificationSourcePolicy?: "OFFICIAL_DOCS" | "AWS_DOCS_ONLY" },
 ): Promise<TopicDto> {
   const existing = await prisma.topic.findUnique({ where: { id } });
   if (!existing) {

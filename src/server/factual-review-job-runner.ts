@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { Prisma } from "@prisma/client";
 import { parseFactualReviewJson } from "@/core/factual-review-schema";
+import { parseFreshnessReviewJson, type VerificationSourcePolicy } from "@/core/freshness-review-schema";
 import { extractJsonObject } from "@/core/json-extract";
-import { buildFactualConcernReviewPrompt } from "@/core/prompt-template";
+import { buildFactualConcernReviewPrompt, buildFreshnessReviewPrompt } from "@/core/prompt-template";
 import type { McqPayload } from "@/core/types";
 import { prisma } from "./db";
 import { runEngine } from "./generation/run-engine";
@@ -31,17 +32,15 @@ export async function runFactualReviewJob(jobId: number): Promise<void> {
 
   try {
     const original = job.question.payload as unknown as McqPayload;
+    const sourcePolicy: VerificationSourcePolicy = job.sourcePolicy === "AWS_DOCS_ONLY" ? "AWS_DOCS_ONLY" : "OFFICIAL_DOCS";
     const dir = path.resolve(
       "generation_output",
-      "factual-review",
+      job.kind === "FRESHNESS" ? "freshness-review" : "factual-review",
       `${job.questionId}-${job.engine.toLowerCase()}-${randomUUID()}`,
     );
-    const prompt = buildFactualConcernReviewPrompt(
-      job.question.topic.name,
-      original,
-      job.concern,
-      path.join(dir, "result.json"),
-    );
+    const prompt = job.kind === "FRESHNESS"
+      ? buildFreshnessReviewPrompt(job.question.topic.name, original, job.question.explanation, sourcePolicy, path.join(dir, "result.json"))
+      : buildFactualConcernReviewPrompt(job.question.topic.name, original, job.concern, path.join(dir, "result.json"), sourcePolicy);
 
     const run = await runEngine(job.engine, prompt, dir);
     if (!run.ok) {
@@ -49,7 +48,9 @@ export async function runFactualReviewJob(jobId: number): Promise<void> {
       return;
     }
 
-    const parsed = parseFactualReviewJson(extractJsonObject(run.resultText));
+    const parsed = job.kind === "FRESHNESS"
+      ? parseFreshnessReviewJson(extractJsonObject(run.resultText), sourcePolicy)
+      : parseFactualReviewJson(extractJsonObject(run.resultText));
     if (!parsed.ok) {
       await markFailed(parsed.fatal);
       return;

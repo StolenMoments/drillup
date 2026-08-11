@@ -11,6 +11,7 @@ import {
   buildCliRevisionPrompt,
   buildCliVerifyPrompt,
   buildFactualConcernReviewPrompt,
+  buildFreshnessReviewPrompt,
   buildGenerationPrompt,
   buildKeywordSuggestionPrompt,
 } from "./prompt-template";
@@ -713,5 +714,23 @@ describe("buildFactualConcernReviewPrompt", () => {
       "/tmp/result.json",
     );
     expect(prompt).toContain('"answer_indices":[2]');
+  });
+});
+
+describe("buildFreshnessReviewPrompt", () => {
+  const payload = {
+    question: "S3 문제",
+    choices: ["a", "b", "c", "d"],
+    answer_indices: [0],
+    choice_explanations: ["a 근거", "b 근거", "c 근거", "d 근거"],
+  };
+
+  it("AWS Docs 정책, 참고 자료 제외, 문제 전체 검증 범위를 포함한다", () => {
+    const prompt = buildFreshnessReviewPrompt("AWS", payload, "전체 해설", "AWS_DOCS_ONLY", "/tmp/freshness.json");
+    expect(prompt).toContain("https://docs.aws.amazon.com/ 로 시작하는 AWS 공식 문서만 허용");
+    expect(prompt).toContain("로컬 참고 자료는 절대 읽거나 사용하지 마세요");
+    expect(prompt).toContain('"explanation":"전체 해설"');
+    expect(prompt).toContain('"verdict": "pass"');
+    expect(prompt).toContain("unverified");
   });
 });
