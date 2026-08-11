@@ -11,4 +11,5 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Follow `docs/superpowers/plans/2026-07-07-drillup/00-overview.md` and the numbered plan files in order.
 - Keep `.env` and other secret-bearing files out of git.
 - Write commit messages in Korean (keep the conventional-commit type prefix in English: `feat:`, `fix:`, `test:`, `chore:`, `docs:`). One commit per task.
+- 작업 완료 후 검증과 커밋을 마치면 원격 `master`에 `git push`할 것.
 - Keep light emoji in user-facing feedback copy (e.g. ✅/❌ on answer results, 🎉 on completion). Do not strip them when editing UI text.
