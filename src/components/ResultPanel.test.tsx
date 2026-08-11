@@ -584,6 +584,25 @@ describe("ResultPanel 최신 정보 검증", () => {
     ...overrides,
   });
 
+  it("기본 해설을 최신 정보 검증보다 먼저 표시한다", () => {
+    const explanation = "기본 해설 내용";
+    render(
+      <ResultPanel
+        question={question}
+        result={{ ...result, explanation }}
+        onNext={vi.fn()}
+        isLast={false}
+      />,
+    );
+
+    const explanationElement = screen.getByText(explanation);
+    const freshnessPanel = screen.getByRole("region", { name: "최신 정보 검증" });
+
+    expect(explanationElement.compareDocumentPosition(freshnessPanel)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
   it("MCQ에만 검증 패널을 표시하고 완료 결과를 폴링한다", async () => {
     apiMock.reviewFreshness.mockResolvedValue({ job: freshnessJob() });
     apiMock.getFreshnessReviewJob.mockResolvedValue({

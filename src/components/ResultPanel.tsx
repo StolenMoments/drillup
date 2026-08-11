@@ -191,8 +191,8 @@ export default function ResultPanel({ question, result, onNext, isLast, nextLabe
       <p className="text-lg font-bold">{isCorrect ? "정답입니다 ✅" : "오답입니다 ❌"}</p>
       {factualApplied && <p className="text-[color:var(--success)]">✅ 사실 교정이 적용되었습니다 — 다음 학습부터 교정된 문제가 나옵니다 🎉</p>}
       {!isCorrect && result.correct.type === "MCQ" && question.type === "MCQ" && <p>정답: {mcqAnswerText(question, result.correct.answer_indices)}</p>}
-      {question.type === "MCQ" && <FreshnessReviewPanel questionId={question.id} original={bannerOriginal(question)} onApplied={resetAfterFactualApply} />}
       {result.explanation && <p className="text-[color:var(--muted)]">{result.explanation}</p>}
+      {question.type === "MCQ" && <FreshnessReviewPanel questionId={question.id} original={bannerOriginal(question)} onApplied={resetAfterFactualApply} />}
       <div className="space-y-2 border-t border-[color:var(--border)] pt-3">
         <p className="section-title">🤖 AI 해설 받기</p>
         <div className="flex flex-wrap gap-2">{ENGINES.map(({ value, label }) => {
