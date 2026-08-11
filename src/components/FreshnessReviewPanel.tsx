@@ -12,7 +12,7 @@ type ReviewState =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "tracking"; jobId: number; pollError: string | null }
-  | { status: "result"; result: FreshnessReviewResultDto; applying: boolean }
+  | { status: "result"; result: FreshnessReviewResultDto; applying: boolean; applied: boolean }
   | { status: "error"; message: string };
 
 export interface FreshnessReviewOriginal {
@@ -22,7 +22,7 @@ export interface FreshnessReviewOriginal {
 
 function toState(job: FreshnessReviewJobDto): ReviewState {
   if (job.status === "FAILED") return { status: "error", message: job.errorMessage ?? "검증 작업이 실패했습니다" };
-  if (job.status === "SUCCEEDED" && job.result) return { status: "result", result: job.result, applying: false };
+  if (job.status === "SUCCEEDED" && job.result) return { status: "result", result: job.result, applying: false, applied: false };
   if (job.status === "SUCCEEDED") return { status: "error", message: "검증 결과를 불러오지 못했습니다" };
   return { status: "tracking", jobId: job.id, pollError: null };
 }
@@ -83,6 +83,7 @@ export default function FreshnessReviewPanel({ questionId, original, onApplied }
     setState({ ...state, applying: true });
     try {
       await api.questions.update(questionId, { payload: state.result.payload, explanation: null });
+      setState((current) => current.status === "result" ? { ...current, applying: false, applied: true } : current);
       onApplied();
     } catch (error) {
       setState({ status: "error", message: userFacingError(error) });
@@ -110,7 +111,7 @@ export default function FreshnessReviewPanel({ questionId, original, onApplied }
       {state.status === "error" && <p className="text-sm text-[color:var(--danger)]">❌ {state.message}</p>}
       {state.status === "result" && state.result.verdict === "pass" && <div className="surface surface-pad space-y-1"><p className="text-[color:var(--success)]">✅ 최신 공식 문서 기준으로 이상이 없습니다</p><p className="text-sm text-[color:var(--muted)]">{state.result.comment}</p><Evidence url={state.result.evidenceUrl} /></div>}
       {state.status === "result" && state.result.verdict === "unverified" && <div className="surface surface-pad space-y-1"><p>판단 불가</p><p className="text-sm text-[color:var(--muted)]">{state.result.comment}</p><Evidence url={state.result.evidenceUrl} /></div>}
-      {state.status === "result" && state.result.verdict === "fail" && state.result.payload && <div className="surface surface-pad space-y-2"><p className="text-[color:var(--danger)]">⚠️ 최신 정보와 다른 내용이 있습니다</p><p className="text-sm text-[color:var(--muted)]">{state.result.comment}</p><Evidence url={state.result.evidenceUrl} /><Comparison original={original} revised={state.result.payload} /><button onClick={() => void applyReview()} disabled={state.applying} className="btn btn-primary text-sm">{state.applying ? "적용 중..." : "✅ 적용하기"}</button></div>}
+      {state.status === "result" && state.result.verdict === "fail" && state.result.payload && <div className="surface surface-pad space-y-2"><p className="text-[color:var(--danger)]">⚠️ 최신 정보와 다른 내용이 있습니다</p><p className="text-sm text-[color:var(--muted)]">{state.result.comment}</p><Evidence url={state.result.evidenceUrl} /><Comparison original={original} revised={state.result.payload} /><button onClick={() => void applyReview()} disabled={state.applying || state.applied} className="btn btn-primary text-sm">{state.applying ? "적용 중..." : state.applied ? "✅ 적용 완료" : "✅ 적용하기"}</button></div>}
       {state.status === "result" && state.result.verdict === "fail" && !state.result.payload && <div className="surface surface-pad space-y-2"><p className="text-[color:var(--danger)]">⚠️ 최신 정보와 다른 내용이 있습니다</p><p className="text-sm text-[color:var(--muted)]">{state.result.comment}</p><Evidence url={state.result.evidenceUrl} /><Link href={`/questions/${questionId}/edit`} className="inline-flex text-sm font-medium text-[color:var(--brand-strong)] underline underline-offset-2">문제 편집으로 교정하기</Link></div>}
     </section>
   );

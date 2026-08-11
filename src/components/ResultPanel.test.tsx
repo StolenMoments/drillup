@@ -621,4 +621,72 @@ describe("ResultPanel 최신 정보 검증", () => {
 
     expect(screen.getByRole("link", { name: "문제 편집으로 교정하기" })).toHaveAttribute("href", "/questions/7/edit");
   });
+
+  it("교정안 저장 성공 후 부모 성공 메시지와 적용 완료 상태를 보여준다", async () => {
+    const corrected = {
+      question: "교정된 질문",
+      choices: ["새 정답", "오답 1", "오답 2", "오답 3"],
+      answer_indices: [0],
+      choice_explanations: ["근거 1", "근거 2", "근거 3", "근거 4"],
+    };
+    apiMock.reviewFreshness.mockResolvedValue({
+      job: freshnessJob({
+        status: "SUCCEEDED",
+        result: { verdict: "fail", comment: "문서가 변경됨", evidenceUrl: "https://docs.aws.amazon.com/x", payload: corrected },
+      }),
+    });
+    apiMock.update.mockResolvedValue({});
+    render(<ResultPanel question={question} result={result} onNext={vi.fn()} isLast={false} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "🔍 최신 정보 검증" }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "✅ 적용하기" }));
+    });
+
+    expect(apiMock.update).toHaveBeenCalledWith(7, { payload: corrected, explanation: null });
+    expect(screen.getByText(/사실 교정이 적용되었습니다/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "✅ 적용 완료" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "적용 중..." })).not.toBeInTheDocument();
+  });
+
+  it("교정안 저장 실패 시 기존 오류 상태로 전환한다", async () => {
+    const corrected = {
+      question: "교정된 질문",
+      choices: ["새 정답", "오답 1", "오답 2", "오답 3"],
+      answer_indices: [0],
+      choice_explanations: ["근거 1", "근거 2", "근거 3", "근거 4"],
+    };
+    apiMock.reviewFreshness.mockResolvedValue({
+      job: freshnessJob({
+        status: "SUCCEEDED",
+        result: { verdict: "fail", comment: "문서가 변경됨", evidenceUrl: null, payload: corrected },
+      }),
+    });
+    apiMock.update.mockRejectedValue(new Error("저장 실패"));
+    render(<ResultPanel question={question} result={result} onNext={vi.fn()} isLast={false} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "🔍 최신 정보 검증" }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "✅ 적용하기" }));
+    });
+
+    expect(screen.getByText("❌ 저장 실패")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "✅ 적용하기" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "✅ 적용 완료" })).not.toBeInTheDocument();
+  });
+
+  it("검증 요청 오류를 오류 상태로 보여준다", async () => {
+    apiMock.reviewFreshness.mockRejectedValue(new Error("검증 요청 실패"));
+    render(<ResultPanel question={question} result={result} onNext={vi.fn()} isLast={false} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "🔍 최신 정보 검증" }));
+    });
+
+    expect(screen.getByText("❌ 검증 요청 실패")).toBeVisible();
+  });
 });
