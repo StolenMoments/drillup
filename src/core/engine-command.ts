@@ -13,7 +13,7 @@ export interface EngineCommand {
   promptViaStdin: boolean;
 }
 
-const AGY_MODEL = "Gemini 3.5 Flash (High)";
+const AGY_MODEL = "Gemini 3.7 Flash (High)";
 const CODEX_MODEL = "gpt-5.6-terra";
 const CODEX_REASONING_CONFIG = 'model_reasoning_effort="medium"';
 
