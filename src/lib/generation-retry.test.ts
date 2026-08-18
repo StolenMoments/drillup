@@ -53,9 +53,21 @@ describe("buildGenerationRetryInput", () => {
     );
 
     expect(result.input).toMatchObject({
+      correctAnswerCount: 2,
+      choiceCount: 6,
+      referenceFiles: [],
+    });
+  });
+
+  it("keeps an explicitly stored question shape", () => {
+    const result = buildGenerationRetryInput(
+      questionJob({ correctAnswerCount: 1, choiceCount: 5 }),
+      [],
+    );
+
+    expect(result.input).toMatchObject({
       correctAnswerCount: 1,
       choiceCount: 5,
-      referenceFiles: [],
     });
   });
 

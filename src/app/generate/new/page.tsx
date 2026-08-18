@@ -2,6 +2,15 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+  CHOICE_COUNTS,
+  CORRECT_ANSWER_COUNTS,
+  DEFAULT_GENERATION_QUESTION_SHAPE,
+} from "@/core/generation-shape";
+import {
+  getDefaultReferenceFiles,
+  isRequiredReferenceFile,
+} from "@/core/reference-selection";
 import { api } from "@/lib/api-client";
 import { buildGenerationRetryInput } from "@/lib/generation-retry";
 import type {
@@ -18,13 +27,6 @@ const ENGINES: Array<{ value: GenerationEngineDto; label: string }> = [
   { value: "CODEX", label: "codex" },
   { value: "ANTIGRAVITY", label: "antigravity" },
 ];
-const AIP_REQUIRED_FILES = new Set([
-  "common/00-exam-guide.md",
-  "common/01-style-examples.md",
-]);
-const CORRECT_ANSWER_COUNTS: CorrectAnswerCountDto[] = [1, 2];
-const CHOICE_COUNTS: ChoiceCountDto[] = [4, 5, 6];
-
 function GenerationNewForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -50,8 +52,13 @@ function GenerationNewForm() {
   const [verifyEngine, setVerifyEngine] = useState<GenerationEngineDto>("CODEX");
   const [verifyTouched, setVerifyTouched] = useState(false);
   const [instructions, setInstructions] = useState("");
-  const [correctAnswerCount, setCorrectAnswerCount] = useState<CorrectAnswerCountDto>(1);
-  const [choiceCount, setChoiceCount] = useState<ChoiceCountDto>(5);
+  const [correctAnswerCount, setCorrectAnswerCount] =
+    useState<CorrectAnswerCountDto>(
+      DEFAULT_GENERATION_QUESTION_SHAPE.correctAnswerCount,
+    );
+  const [choiceCount, setChoiceCount] = useState<ChoiceCountDto>(
+    DEFAULT_GENERATION_QUESTION_SHAPE.choiceCount,
+  );
   const [refList, setRefList] = useState<ReferenceFileListDto | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [starting, setStarting] = useState(false);
@@ -173,7 +180,13 @@ function GenerationNewForm() {
           }
           retryConsumedRef.current = true;
         } else {
-          setSelectedFiles(new Set(list.files.map((file) => file.path)));
+          setSelectedFiles(
+            getDefaultReferenceFiles({
+              referenceDir: topic.referenceDir,
+              topicName: topic.name,
+              availableFiles: list.files.map((file) => file.path),
+            }),
+          );
         }
       } catch {
         if (!ignore) setRefList({ files: [], dirExists: false });
@@ -215,7 +228,11 @@ function GenerationNewForm() {
   }
 
   function toggleFile(filePath: string) {
-    if (selectedTopic?.referenceDir === "aip-c01" && AIP_REQUIRED_FILES.has(filePath)) return;
+    if (
+      isRequiredReferenceFile(selectedTopic?.referenceDir ?? null, filePath)
+    ) {
+      return;
+    }
     setSelectedFiles((prev) => {
       const next = new Set(prev);
       if (next.has(filePath)) next.delete(filePath);
@@ -227,7 +244,9 @@ function GenerationNewForm() {
   async function startGeneration() {
     if (topicId === "" || starting) return;
     if (selectedTopic?.referenceDir === "aip-c01") {
-      const domainFiles = [...selectedFiles].filter((file) => !AIP_REQUIRED_FILES.has(file));
+      const domainFiles = [...selectedFiles].filter(
+        (file) => !isRequiredReferenceFile("aip-c01", file),
+      );
       if (domainFiles.length === 0) {
         setMessage("AIP-C01은 시험 가이드·스타일 예시와 함께 도메인 참고 자료를 하나 이상 선택해야 합니다.");
         return;
@@ -325,7 +344,10 @@ function GenerationNewForm() {
           ) : (
             <div className="space-y-1">
               {refList.files.map((file) => {
-                const required = selectedTopic.referenceDir === "aip-c01" && AIP_REQUIRED_FILES.has(file.path);
+                const required = isRequiredReferenceFile(
+                  selectedTopic.referenceDir,
+                  file.path,
+                );
                 return (
                 <label key={file.path} className="flex items-center gap-2 text-sm">
                   <input

@@ -1,17 +1,16 @@
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { isSafeReferencePath } from "@/core/reference-path";
+import { AIP_C01_REQUIRED_REFERENCES } from "@/core/reference-selection";
 import type { ReferenceFileDto, ReferenceFileListDto } from "@/lib/api-types";
 import { prisma } from "../db";
 import { ServiceError } from "../errors";
 
 const ALLOWED_EXTENSIONS = new Set([".md", ".txt"]);
-export const AIP_C01_REQUIRED_REFERENCES = [
-  "common/00-exam-guide.md",
-  "common/01-style-examples.md",
-];
 
-export function requiredReferenceFiles(referenceDir: string | null): string[] {
+export function requiredReferenceFiles(
+  referenceDir: string | null,
+): readonly string[] {
   return referenceDir === "aip-c01" ? AIP_C01_REQUIRED_REFERENCES : [];
 }
 

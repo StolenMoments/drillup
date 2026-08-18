@@ -1,3 +1,4 @@
+import { DEFAULT_GENERATION_QUESTION_SHAPE } from "@/core/generation-shape";
 import type {
   ChoiceCountDto,
   CorrectAnswerCountDto,
@@ -40,8 +41,11 @@ export function buildGenerationRetryInput(
       engine: job.engine,
       verifyEngine: job.verifyEngine,
       instructions: job.instructions,
-      correctAnswerCount: job.correctAnswerCount ?? 1,
-      choiceCount: job.choiceCount ?? 5,
+      correctAnswerCount:
+        job.correctAnswerCount ??
+        DEFAULT_GENERATION_QUESTION_SHAPE.correctAnswerCount,
+      choiceCount:
+        job.choiceCount ?? DEFAULT_GENERATION_QUESTION_SHAPE.choiceCount,
       referenceFiles,
       sourceQuestionIds: [...(job.sourceQuestionIds ?? [])],
     },

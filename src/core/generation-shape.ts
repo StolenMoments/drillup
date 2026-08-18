@@ -8,3 +8,8 @@ export interface GenerationQuestionShape {
   correctAnswerCount: CorrectAnswerCount;
   choiceCount: ChoiceCount;
 }
+
+export const DEFAULT_GENERATION_QUESTION_SHAPE: GenerationQuestionShape = {
+  correctAnswerCount: 2,
+  choiceCount: 6,
+};
