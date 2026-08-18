@@ -6,7 +6,7 @@ import path from "node:path";
 import { buildEngineCommand, type EngineName } from "@/core/engine-command";
 
 const LOG_TAIL_CHARS = 8_000;
-const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
+const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;
 
 type EngineDiagnostics = { stdoutTail: string; stderrTail: string; exitCode: number | null; timedOut: boolean; durationMs: number };
 export type EngineRunResult =

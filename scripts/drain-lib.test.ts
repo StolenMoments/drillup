@@ -40,9 +40,9 @@ describe("parseEnvFile", () => {
 });
 
 describe("generationTimeoutMs / orphanWindowMs", () => {
-  it("기본값은 10분 / 2배 + 60초다", () => {
-    expect(generationTimeoutMs({})).toBe(600_000);
-    expect(orphanWindowMs({})).toBe(1_260_000);
+  it("기본값은 20분 / 2배 + 60초다", () => {
+    expect(generationTimeoutMs({})).toBe(1_200_000);
+    expect(orphanWindowMs({})).toBe(2_460_000);
   });
 
   it("GENERATION_TIMEOUT_MS를 반영한다", () => {
@@ -50,15 +50,15 @@ describe("generationTimeoutMs / orphanWindowMs", () => {
   });
 
   it("잘못된 값이면 기본값을 쓴다", () => {
-    expect(orphanWindowMs({ GENERATION_TIMEOUT_MS: "abc" })).toBe(1_260_000);
-    expect(orphanWindowMs({ GENERATION_TIMEOUT_MS: "-5" })).toBe(1_260_000);
+    expect(orphanWindowMs({ GENERATION_TIMEOUT_MS: "abc" })).toBe(2_460_000);
+    expect(orphanWindowMs({ GENERATION_TIMEOUT_MS: "-5" })).toBe(2_460_000);
   });
 });
 
 describe("staleCutoff", () => {
   it("now에서 orphan window만큼 뺀 시각을 돌려준다", () => {
     const now = new Date("2026-07-11T12:00:00Z");
-    expect(staleCutoff({}, now).getTime()).toBe(now.getTime() - 1_260_000);
+    expect(staleCutoff({}, now).getTime()).toBe(now.getTime() - 2_460_000);
   });
 });
 

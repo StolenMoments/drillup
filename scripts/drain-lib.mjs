@@ -1,7 +1,7 @@
 // 배포 드레인용 순수 함수 모음.
 // 주의: 이전 배포의 node_modules로 실행하므로 다른 패키지를 import하지 않는다.
 
-export const DEFAULT_GENERATION_TIMEOUT_MS = 10 * 60 * 1000;
+export const DEFAULT_GENERATION_TIMEOUT_MS = 20 * 60 * 1000;
 export const ORPHAN_GRACE_MS = 60_000;
 export const DEFAULT_DRAIN_TIMEOUT_SECONDS = 40 * 60;
 export const POLL_INTERVAL_MS = 10_000;
