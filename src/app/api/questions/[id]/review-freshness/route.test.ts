@@ -26,15 +26,64 @@ describe("POST /api/questions/:id/review-freshness", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("새 job을 202로 반환하고 응답 뒤 러너를 예약한다", async () => {
-    serviceMock.startFreshnessReviewJob.mockResolvedValue({ id: 11, status: "RUNNING" });
+    serviceMock.startFreshnessReviewJob.mockResolvedValue({
+      job: { id: 11, status: "RUNNING" },
+      reused: false,
+      shouldRun: true,
+    });
     const response = await POST(request({ engine: "CLAUDE" }), { params: Promise.resolve({ id: "7" }) });
 
     expect(response.status).toBe(202);
-    expect(await response.json()).toEqual({ job: { id: 11, status: "RUNNING" } });
-    expect(serviceMock.startFreshnessReviewJob).toHaveBeenCalledWith(7, "CLAUDE");
+    expect(await response.json()).toEqual({ job: { id: 11, status: "RUNNING" }, reused: false });
+    expect(serviceMock.startFreshnessReviewJob).toHaveBeenCalledWith(7, "CLAUDE", false);
     expect(afterMock).toHaveBeenCalledOnce();
     await afterMock.mock.calls[0][0]();
     expect(runnerMock.runFactualReviewJob).toHaveBeenCalledWith(11);
+  });
+
+  it("재사용한 성공 결과를 200으로 반환하고 러너를 예약하지 않는다", async () => {
+    serviceMock.startFreshnessReviewJob.mockResolvedValue({
+      job: { id: 9, status: "SUCCEEDED", result: { verdict: "pass" } },
+      reused: true,
+      shouldRun: false,
+    });
+
+    const response = await POST(request({ engine: "CLAUDE" }), { params: Promise.resolve({ id: "7" }) });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      job: { id: 9, status: "SUCCEEDED", result: { verdict: "pass" } },
+      reused: true,
+    });
+    expect(afterMock).not.toHaveBeenCalled();
+  });
+
+  it("재사용한 진행 중 job은 202로 반환하고 중복 예약하지 않는다", async () => {
+    serviceMock.startFreshnessReviewJob.mockResolvedValue({
+      job: { id: 10, status: "RUNNING" },
+      reused: true,
+      shouldRun: false,
+    });
+
+    const response = await POST(request({ engine: "CODEX" }), { params: Promise.resolve({ id: "7" }) });
+
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({ reused: true });
+    expect(afterMock).not.toHaveBeenCalled();
+  });
+
+  it("force 요청은 새 attempt를 예약한다", async () => {
+    serviceMock.startFreshnessReviewJob.mockResolvedValue({
+      job: { id: 12, status: "RUNNING" },
+      reused: false,
+      shouldRun: true,
+    });
+
+    const response = await POST(request({ engine: "CLAUDE", force: true }), { params: Promise.resolve({ id: "7" }) });
+
+    expect(response.status).toBe(202);
+    expect(serviceMock.startFreshnessReviewJob).toHaveBeenCalledWith(7, "CLAUDE", true);
+    expect(afterMock).toHaveBeenCalledOnce();
   });
 
   it("잘못된 엔진과 CLOZE 오류를 API 오류로 반환한다", async () => {

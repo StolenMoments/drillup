@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
+  question: { findUnique: vi.fn() },
   factualReviewJob: {
     findUnique: vi.fn(),
     updateMany: vi.fn(),
@@ -28,6 +29,9 @@ function job(overrides: Record<string, unknown> = {}) {
     concern: "정답이 틀렸다는 주장",
     kind: "FACTUAL_CONCERN" as const,
     sourcePolicy: "OFFICIAL_DOCS" as const,
+    sourceHash: null,
+    sourceSnapshot: null,
+    attempt: 1,
     status: "RUNNING" as const,
     verdict: null,
     comment: null,
@@ -60,6 +64,7 @@ describe("factual review job runner", () => {
     runEngineMock.mockReset();
     prismaMock.factualReviewJob.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.factualReviewJob.findUnique.mockResolvedValue(job());
+    prismaMock.question.findUnique.mockResolvedValue(job().question);
   });
 
   it("rejected 판정이면 verdict/comment만 저장한다", async () => {
@@ -213,5 +218,62 @@ describe("factual review job runner", () => {
         finishedAt: expect.any(Date),
       },
     });
+  });
+
+  it("신규 최신 정보 검증은 현재 문제가 아니라 저장된 snapshot으로 실행한다", async () => {
+    const snapshotPayload = { ...original, question: "요청 시점 질문" };
+    prismaMock.factualReviewJob.findUnique.mockResolvedValue(job({
+      kind: "FRESHNESS",
+      sourcePolicy: "OFFICIAL_DOCS",
+      sourceHash: "a".repeat(64),
+      sourceSnapshot: {
+        cacheVersion: 1,
+        payload: snapshotPayload,
+        explanation: "요청 시점 해설",
+        topicName: "요청 시점 주제",
+        sourcePolicy: "OFFICIAL_DOCS",
+      },
+      concern: "",
+    }));
+    prismaMock.question.findUnique.mockResolvedValue({
+      ...job().question,
+      payload: { ...original, question: "나중에 수정된 질문" },
+      explanation: "나중에 수정된 해설",
+      topic: { name: "나중에 수정된 주제" },
+    });
+    runEngineMock.mockResolvedValueOnce(engineResult(JSON.stringify({
+      verdict: "pass",
+      comment: "최신입니다",
+      evidence_url: "https://example.com/docs",
+    })));
+
+    await runFactualReviewJob(11);
+
+    expect(prismaMock.question.findUnique).not.toHaveBeenCalled();
+    const prompt = runEngineMock.mock.calls[0][1] as string;
+    expect(prompt).toContain("요청 시점 질문");
+    expect(prompt).toContain("요청 시점 해설");
+    expect(prompt).toContain('주제 "요청 시점 주제"');
+    expect(prompt).not.toContain("나중에 수정된 질문");
+  });
+
+  it("legacy 최신 정보 검증은 snapshot이 없으면 현재 문제로 실행한다", async () => {
+    prismaMock.factualReviewJob.findUnique.mockResolvedValue(job({
+      kind: "FRESHNESS",
+      concern: "",
+      sourceSnapshot: null,
+    }));
+    runEngineMock.mockResolvedValueOnce(engineResult(JSON.stringify({
+      verdict: "pass",
+      comment: "최신입니다",
+    })));
+
+    await runFactualReviewJob(11);
+
+    expect(prismaMock.question.findUnique).toHaveBeenCalledWith({
+      where: { id: 7 },
+      include: { topic: { select: { name: true } } },
+    });
+    expect(runEngineMock.mock.calls[0][1]).toContain("원본 질문은 무엇인가요?");
   });
 });

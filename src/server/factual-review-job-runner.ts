@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Prisma } from "@prisma/client";
 import { parseFactualReviewJson } from "@/core/factual-review-schema";
 import { parseFreshnessReviewJson, type VerificationSourcePolicy } from "@/core/freshness-review-schema";
+import { parseFreshnessReviewSourceSnapshot } from "@/core/freshness-review-source";
 import { extractJsonObject } from "@/core/json-extract";
 import { buildFactualConcernReviewPrompt, buildFreshnessReviewPrompt } from "@/core/prompt-template";
 import type { McqPayload } from "@/core/types";
@@ -17,10 +18,7 @@ export async function runFactualReviewJob(jobId: number): Promise<void> {
   });
   if (claimed.count === 0) return;
 
-  const job = await prisma.factualReviewJob.findUnique({
-    where: { id: jobId },
-    include: { question: { include: { topic: { select: { name: true } } } } },
-  });
+  const job = await prisma.factualReviewJob.findUnique({ where: { id: jobId } });
   if (!job || job.status !== "RUNNING" || !job.startedAt) return;
 
   async function markFailed(errorMessage: string): Promise<void> {
@@ -31,16 +29,36 @@ export async function runFactualReviewJob(jobId: number): Promise<void> {
   }
 
   try {
-    const original = job.question.payload as unknown as McqPayload;
-    const sourcePolicy: VerificationSourcePolicy = job.sourcePolicy === "AWS_DOCS_ONLY" ? "AWS_DOCS_ONLY" : "OFFICIAL_DOCS";
+    const snapshot = job.kind === "FRESHNESS"
+      ? parseFreshnessReviewSourceSnapshot(job.sourceSnapshot)
+      : null;
+    const question = snapshot
+      ? null
+      : await prisma.question.findUnique({
+          where: { id: job.questionId },
+          include: { topic: { select: { name: true } } },
+        });
+    if (!snapshot && !question) {
+      await markFailed("검증할 문제를 찾을 수 없습니다");
+      return;
+    }
+
+    const original = (snapshot?.payload ?? question!.payload) as unknown as McqPayload;
+    const topicName = snapshot?.topicName ?? question!.topic.name;
+    const explanation = snapshot
+      ? snapshot.explanation
+      : question!.explanation;
+    const sourcePolicy: VerificationSourcePolicy = snapshot?.sourcePolicy ?? (
+      job.sourcePolicy === "AWS_DOCS_ONLY" ? "AWS_DOCS_ONLY" : "OFFICIAL_DOCS"
+    );
     const dir = path.resolve(
       "generation_output",
       job.kind === "FRESHNESS" ? "freshness-review" : "factual-review",
       `${job.questionId}-${job.engine.toLowerCase()}-${randomUUID()}`,
     );
     const prompt = job.kind === "FRESHNESS"
-      ? buildFreshnessReviewPrompt(job.question.topic.name, original, job.question.explanation, sourcePolicy, path.join(dir, "result.json"))
-      : buildFactualConcernReviewPrompt(job.question.topic.name, original, job.concern, path.join(dir, "result.json"), sourcePolicy);
+      ? buildFreshnessReviewPrompt(topicName, original, explanation, sourcePolicy, path.join(dir, "result.json"))
+      : buildFactualConcernReviewPrompt(topicName, original, job.concern, path.join(dir, "result.json"), sourcePolicy);
 
     const run = await runEngine(job.engine, prompt, dir);
     if (!run.ok) {

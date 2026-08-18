@@ -183,23 +183,28 @@ enum FactualReviewJobKind {
 }
 
 model FactualReviewJob {
-  id           Int                      @id @default(autoincrement())
-  questionId   Int                      @map("question_id")
-  engine       GenerationEngine
-  concern      String                   @db.Text
-  kind         FactualReviewJobKind     @default(FACTUAL_CONCERN)
-  sourcePolicy VerificationSourcePolicy @default(OFFICIAL_DOCS) @map("source_policy")
-  status       FactualReviewJobStatus   @default(RUNNING)
-  verdict      String?
-  comment      String?                  @db.Text
-  evidenceUrl  String?                  @map("evidence_url")
-  payload      Json?
-  errorMessage String?                  @map("error_message") @db.Text
-  createdAt    DateTime                 @default(now()) @map("created_at")
-  startedAt    DateTime?                @map("started_at")
-  finishedAt   DateTime?                @map("finished_at")
-  question     Question                 @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  id             Int                      @id @default(autoincrement())
+  questionId     Int                      @map("question_id")
+  engine         GenerationEngine
+  concern        String                   @db.Text
+  kind           FactualReviewJobKind     @default(FACTUAL_CONCERN)
+  sourcePolicy   VerificationSourcePolicy @default(OFFICIAL_DOCS) @map("source_policy")
+  sourceHash     String?                  @map("source_hash") @db.Char(64)
+  sourceSnapshot Json?                    @map("source_snapshot")
+  attempt        Int                      @default(1)
+  status         FactualReviewJobStatus   @default(RUNNING)
+  verdict        String?
+  comment        String?                  @db.Text
+  evidenceUrl    String?                  @map("evidence_url")
+  payload        Json?
+  errorMessage   String?                  @map("error_message") @db.Text
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  startedAt      DateTime?                @map("started_at")
+  finishedAt     DateTime?                @map("finished_at")
+  question       Question                 @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
+  @@unique([questionId, kind, sourceHash, engine, attempt], map: "fr_job_source_attempt_key")
+  @@index([questionId, kind, sourceHash, engine, status, attempt], map: "fr_job_cache_lookup_idx")
   @@index([status, startedAt])
   @@map("factual_review_job")
 }

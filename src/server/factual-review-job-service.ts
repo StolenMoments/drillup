@@ -1,4 +1,9 @@
-import type { FactualReviewJob, GenerationEngine } from "@prisma/client";
+import { Prisma, type FactualReviewJob, type GenerationEngine } from "@prisma/client";
+import {
+  createFreshnessReviewSourceSnapshot,
+  freshnessReviewSourceHash,
+} from "@/core/freshness-review-source";
+import type { McqPayload } from "@/core/types";
 import type {
   FactualReviewJobDto,
   FactualReviewResultDto,
@@ -41,6 +46,12 @@ function toDto(job: FactualReviewJob): FactualReviewJobDto {
 
 function sourcePolicyOf(job: FactualReviewJob): VerificationSourcePolicy {
   return job.sourcePolicy === "AWS_DOCS_ONLY" ? "AWS_DOCS_ONLY" : "OFFICIAL_DOCS";
+}
+
+function normalizeSourcePolicy(
+  value: string,
+): VerificationSourcePolicy {
+  return value === "AWS_DOCS_ONLY" ? "AWS_DOCS_ONLY" : "OFFICIAL_DOCS";
 }
 
 function toFreshnessDto(job: FactualReviewJob): FreshnessReviewJobDto {
@@ -132,26 +143,91 @@ export async function getFactualReviewJob(
 export async function startFreshnessReviewJob(
   questionId: number,
   engine: GenerationEngine,
-): Promise<FreshnessReviewJobDto> {
+  force = false,
+): Promise<{
+  job: FreshnessReviewJobDto;
+  reused: boolean;
+  shouldRun: boolean;
+}> {
   await recoverStaleFactualReviewJobs();
-  const question = await prisma.question.findUnique({
-    where: { id: questionId },
-    include: { topic: { select: { verificationSourcePolicy: true } } },
-  });
-  if (!question) throw new ServiceError("NOT_FOUND", "문제를 찾을 수 없습니다", 404);
-  if (question.type !== "MCQ") {
-    throw new ServiceError("VALIDATION", "MCQ 문제만 최신 정보 검증을 요청할 수 있습니다", 400);
-  }
-  const job = await prisma.factualReviewJob.create({
-    data: {
+
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM question WHERE id = ${questionId} FOR UPDATE`;
+
+    const question = await tx.question.findUnique({
+      where: { id: questionId },
+      include: {
+        topic: {
+          select: { name: true, verificationSourcePolicy: true },
+        },
+      },
+    });
+    if (!question) {
+      throw new ServiceError("NOT_FOUND", "문제를 찾을 수 없습니다", 404);
+    }
+    if (question.type !== "MCQ") {
+      throw new ServiceError(
+        "VALIDATION",
+        "MCQ 문제만 최신 정보 검증을 요청할 수 있습니다",
+        400,
+      );
+    }
+
+    const sourcePolicy = normalizeSourcePolicy(
+      question.topic.verificationSourcePolicy,
+    );
+    const sourceSnapshot = createFreshnessReviewSourceSnapshot({
+      payload: question.payload as unknown as McqPayload,
+      explanation: question.explanation,
+      topicName: question.topic.name,
+      sourcePolicy,
+    });
+    const sourceHash = await freshnessReviewSourceHash(sourceSnapshot);
+    const cacheKey = {
       questionId,
+      kind: "FRESHNESS" as const,
+      sourceHash,
       engine,
-      concern: "",
-      kind: "FRESHNESS",
-      sourcePolicy: question.topic?.verificationSourcePolicy ?? "OFFICIAL_DOCS",
-    },
+    };
+
+    const running = await tx.factualReviewJob.findFirst({
+      where: { ...cacheKey, status: "RUNNING" },
+      orderBy: { attempt: "desc" },
+    });
+    if (running) {
+      return { job: toFreshnessDto(running), reused: true, shouldRun: false };
+    }
+
+    if (!force) {
+      const succeeded = await tx.factualReviewJob.findFirst({
+        where: { ...cacheKey, status: "SUCCEEDED" },
+        orderBy: { attempt: "desc" },
+      });
+      if (succeeded) {
+        return {
+          job: toFreshnessDto(succeeded),
+          reused: true,
+          shouldRun: false,
+        };
+      }
+    }
+
+    const latest = await tx.factualReviewJob.findFirst({
+      where: cacheKey,
+      orderBy: { attempt: "desc" },
+      select: { attempt: true },
+    });
+    const job = await tx.factualReviewJob.create({
+      data: {
+        ...cacheKey,
+        concern: "",
+        sourcePolicy,
+        sourceSnapshot: sourceSnapshot as unknown as Prisma.InputJsonValue,
+        attempt: (latest?.attempt ?? 0) + 1,
+      },
+    });
+    return { job: toFreshnessDto(job), reused: false, shouldRun: true };
   });
-  return toFreshnessDto(job);
 }
 
 export async function getFreshnessReviewJob(

@@ -175,10 +175,10 @@ export const api = {
       request<{ job: FactualReviewJobDto }>(
         `/api/questions/${id}/review-fact/${jobId}`,
       ),
-    reviewFreshness: (id: number, engine: GenerationEngineDto) =>
-      request<{ job: FreshnessReviewJobDto }>(`/api/questions/${id}/review-freshness`, {
+    reviewFreshness: (id: number, engine: GenerationEngineDto, force = false) =>
+      request<{ job: FreshnessReviewJobDto; reused: boolean }>(`/api/questions/${id}/review-freshness`, {
         method: "POST",
-        body: JSON.stringify({ engine }),
+        body: JSON.stringify({ engine, ...(force ? { force: true } : {}) }),
       }),
     getFreshnessReviewJob: (id: number, jobId: number) =>
       request<{ job: FreshnessReviewJobDto }>(

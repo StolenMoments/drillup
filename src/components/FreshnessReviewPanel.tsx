@@ -12,7 +12,14 @@ type ReviewState =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "tracking"; jobId: number; pollError: string | null }
-  | { status: "result"; result: FreshnessReviewResultDto; applying: boolean; applied: boolean }
+  | {
+      status: "result";
+      result: FreshnessReviewResultDto;
+      applying: boolean;
+      applied: boolean;
+      reused: boolean;
+      finishedAt: string | null;
+    }
   | { status: "error"; message: string };
 
 export interface FreshnessReviewOriginal {
@@ -20,11 +27,30 @@ export interface FreshnessReviewOriginal {
   choices: string[];
 }
 
-function toState(job: FreshnessReviewJobDto): ReviewState {
+function toState(job: FreshnessReviewJobDto, reused = false): ReviewState {
   if (job.status === "FAILED") return { status: "error", message: job.errorMessage ?? "검증 작업이 실패했습니다" };
-  if (job.status === "SUCCEEDED" && job.result) return { status: "result", result: job.result, applying: false, applied: false };
+  if (job.status === "SUCCEEDED" && job.result) {
+    return {
+      status: "result",
+      result: job.result,
+      applying: false,
+      applied: false,
+      reused,
+      finishedAt: job.finishedAt,
+    };
+  }
   if (job.status === "SUCCEEDED") return { status: "error", message: "검증 결과를 불러오지 못했습니다" };
   return { status: "tracking", jobId: job.id, pollError: null };
+}
+
+function formatCompletedAt(value: string | null): string {
+  if (!value) return "시각 정보 없음";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "시각 정보 없음";
+  return new Intl.DateTimeFormat("ko-KR", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
 
 function userFacingError(error: unknown): string {
@@ -40,11 +66,15 @@ export default function FreshnessReviewPanel({ questionId, original, onApplied }
   const [engine, setEngine] = useState<GenerationEngineDto>("CLAUDE");
   const [state, setState] = useState<ReviewState>({ status: "idle" });
 
-  async function requestReview() {
+  async function requestReview(force = false) {
     setState({ status: "loading" });
     try {
-      const { job } = await api.questions.reviewFreshness(questionId, engine);
-      setState(toState(job));
+      const { job, reused } = await api.questions.reviewFreshness(
+        questionId,
+        engine,
+        force,
+      );
+      setState(toState(job, reused));
     } catch (error) {
       setState({ status: "error", message: userFacingError(error) });
     }
@@ -109,6 +139,15 @@ export default function FreshnessReviewPanel({ questionId, original, onApplied }
         {state.pollError && <p className="mt-2 rounded-[10px] bg-[color:var(--warning-soft)] px-3 py-2" role="alert">⚠️ {state.pollError} 자동 확인은 계속됩니다.</p>}
       </div>}
       {state.status === "error" && <p className="text-sm text-[color:var(--danger)]">❌ {state.message}</p>}
+      {state.status === "result" && <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <p className="text-[color:var(--muted)]" role={state.reused ? "status" : undefined}>
+          {state.reused && <span className="font-medium text-[color:var(--brand-strong)]">이전 검증 결과 · </span>}
+          검증 완료 <time dateTime={state.finishedAt ?? undefined}>{formatCompletedAt(state.finishedAt)}</time>
+        </p>
+        <button onClick={() => void requestReview(true)} disabled={state.applying} className="btn btn-secondary text-sm">
+          🔄 다시 검증
+        </button>
+      </div>}
       {state.status === "result" && state.result.verdict === "pass" && <div className="surface surface-pad space-y-1"><p className="text-[color:var(--success)]">✅ 최신 공식 문서 기준으로 이상이 없습니다</p><p className="text-sm text-[color:var(--muted)]">{state.result.comment}</p><Evidence url={state.result.evidenceUrl} /></div>}
       {state.status === "result" && state.result.verdict === "unverified" && <div className="surface surface-pad space-y-1"><p>판단 불가</p><p className="text-sm text-[color:var(--muted)]">{state.result.comment}</p><Evidence url={state.result.evidenceUrl} /></div>}
       {state.status === "result" && state.result.verdict === "fail" && state.result.payload && <div className="surface surface-pad space-y-2"><p className="text-[color:var(--danger)]">⚠️ 최신 정보와 다른 내용이 있습니다</p><p className="text-sm text-[color:var(--muted)]">{state.result.comment}</p><Evidence url={state.result.evidenceUrl} /><Comparison original={original} revised={state.result.payload} /><button onClick={() => void applyReview()} disabled={state.applying || state.applied} className="btn btn-primary text-sm">{state.applying ? "적용 중..." : state.applied ? "✅ 적용 완료" : "✅ 적용하기"}</button></div>}

@@ -620,7 +620,7 @@ describe("ResultPanel 최신 정보 검증", () => {
       await vi.advanceTimersByTimeAsync(5_000);
     });
 
-    expect(apiMock.reviewFreshness).toHaveBeenCalledWith(7, "CLAUDE");
+    expect(apiMock.reviewFreshness).toHaveBeenCalledWith(7, "CLAUDE", false);
     expect(apiMock.getFreshnessReviewJob).toHaveBeenCalledWith(7, 31);
     expect(screen.getByText(/최신 공식 문서 기준으로 이상이 없습니다/)).toBeVisible();
   });
@@ -707,5 +707,64 @@ describe("ResultPanel 최신 정보 검증", () => {
     });
 
     expect(screen.getByText("❌ 검증 요청 실패")).toBeVisible();
+  });
+
+  it("재사용한 성공 결과와 검증 완료 시각을 즉시 표시한다", async () => {
+    apiMock.reviewFreshness.mockResolvedValue({
+      job: freshnessJob({
+        status: "SUCCEEDED",
+        finishedAt: "2026-08-18T03:30:00.000Z",
+        result: {
+          verdict: "pass",
+          comment: "이전에 확인한 결과입니다",
+          evidenceUrl: "https://docs.aws.amazon.com/x",
+          payload: null,
+        },
+      }),
+      reused: true,
+    });
+    render(<ResultPanel question={question} result={result} onNext={vi.fn()} isLast={false} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "🔍 최신 정보 검증" }));
+    });
+
+    expect(screen.getByText(/이전 검증 결과/)).toBeVisible();
+    expect(screen.getByText(/검증 완료/)).toBeVisible();
+    expect(screen.getByText("이전에 확인한 결과입니다")).toBeVisible();
+    expect(screen.getByRole("button", { name: "🔄 다시 검증" })).toBeVisible();
+    expect(apiMock.getFreshnessReviewJob).not.toHaveBeenCalled();
+  });
+
+  it("다시 검증은 force 요청 후 새 job을 폴링한다", async () => {
+    apiMock.reviewFreshness
+      .mockResolvedValueOnce({
+        job: freshnessJob({
+          status: "SUCCEEDED",
+          finishedAt: "2026-08-18T03:30:00.000Z",
+          result: {
+            verdict: "pass",
+            comment: "이전 결과",
+            evidenceUrl: null,
+            payload: null,
+          },
+        }),
+        reused: true,
+      })
+      .mockResolvedValueOnce({
+        job: freshnessJob({ id: 32, status: "RUNNING" }),
+        reused: false,
+      });
+    render(<ResultPanel question={question} result={result} onNext={vi.fn()} isLast={false} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "🔍 최신 정보 검증" }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "🔄 다시 검증" }));
+    });
+
+    expect(apiMock.reviewFreshness).toHaveBeenNthCalledWith(2, 7, "CLAUDE", true);
+    expect(screen.getByText("최신 공식 문서를 확인하고 있습니다")).toBeVisible();
   });
 });
