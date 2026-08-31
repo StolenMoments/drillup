@@ -32,7 +32,33 @@ if ! ./node_modules/.bin/prisma migrate deploy; then
   ./node_modules/.bin/prisma migrate resolve --rolled-back 20260715000000_add_choice_hardening_job
   ./node_modules/.bin/prisma migrate deploy
 fi
+
+if ! command -v bwrap >/dev/null 2>&1; then
+  if command -v dnf >/dev/null 2>&1; then
+    sudo dnf install -y bubblewrap
+  elif command -v yum >/dev/null 2>&1; then
+    sudo yum install -y bubblewrap
+  elif command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update
+    sudo apt-get install -y bubblewrap
+  else
+    echo "AI_SANDBOX_UNAVAILABLE: no supported package manager found for bubblewrap" >&2
+    exit 1
+  fi
+fi
+node scripts/ai-sandbox-preflight.mjs
+
 npm run build
+
+SMOKE_HEAD_BEFORE="$(git rev-parse HEAD)"
+SMOKE_STATUS_BEFORE="$(git status --porcelain=v1 --untracked-files=all)"
+./node_modules/.bin/tsx scripts/ai-engine-smoke.ts
+SMOKE_HEAD_AFTER="$(git rev-parse HEAD)"
+SMOKE_STATUS_AFTER="$(git status --porcelain=v1 --untracked-files=all)"
+if [ "$SMOKE_HEAD_BEFORE" != "$SMOKE_HEAD_AFTER" ] || [ "$SMOKE_STATUS_BEFORE" != "$SMOKE_STATUS_AFTER" ]; then
+  echo "AI smoke test changed repository HEAD or working tree" >&2
+  exit 1
+fi
 
 UNIT_DIR="$HOME/.config/systemd/user"
 UNIT_PATH="$UNIT_DIR/drillup.service"

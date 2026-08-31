@@ -1,4 +1,5 @@
 import path from "node:path";
+import { aiOutputContracts } from "@/core/ai-output-contracts";
 import type { GenerationEngine } from "@prisma/client";
 import { extractJsonObject } from "@/core/json-extract";
 import { buildNoteExtractPrompt } from "@/core/note-extract-prompt";
@@ -37,7 +38,7 @@ export async function extractNoteFromQuestion(
     path.join(dir, "result.json"),
   );
 
-  const run = await runEngine(engine, prompt, dir);
+  const run = await runEngine(engine, prompt, dir, aiOutputContracts.note);
   if (!run.ok) {
     throw new ServiceError("NOTE_EXTRACT_FAILED", run.failureReason, 502);
   }

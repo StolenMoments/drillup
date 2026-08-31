@@ -307,6 +307,7 @@ export interface GenerationRunLogDto {
   stdoutTail: string | null;
   stderrTail: string | null;
   errorMessage: string | null;
+  warningMessage: string | null;
   exitCode: number | null;
   timedOut: boolean;
   startedAt: string;

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { aiOutputContracts } from "@/core/ai-output-contracts";
 import type { Prisma } from "@prisma/client";
 import { parseFactualReviewJson } from "@/core/factual-review-schema";
 import { parseFreshnessReviewJson, type VerificationSourcePolicy } from "@/core/freshness-review-schema";
@@ -60,7 +61,14 @@ export async function runFactualReviewJob(jobId: number): Promise<void> {
       ? buildFreshnessReviewPrompt(topicName, original, explanation, sourcePolicy, path.join(dir, "result.json"))
       : buildFactualConcernReviewPrompt(topicName, original, job.concern, path.join(dir, "result.json"), sourcePolicy);
 
-    const run = await runEngine(job.engine, prompt, dir);
+    const run = await runEngine(
+      job.engine,
+      prompt,
+      dir,
+      job.kind === "FRESHNESS"
+        ? aiOutputContracts.freshnessReview
+        : aiOutputContracts.factualReview,
+    );
     if (!run.ok) {
       await markFailed(run.failureReason);
       return;

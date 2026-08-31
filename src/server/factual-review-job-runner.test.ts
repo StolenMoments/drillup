@@ -82,6 +82,7 @@ describe("factual review job runner", () => {
       "CLAUDE",
       expect.any(String),
       expect.any(String),
+      expect.objectContaining({ id: "drillup.factual-review.v1" }),
     );
     expect(prismaMock.factualReviewJob.updateMany).toHaveBeenLastCalledWith({
       where: { id: 11, startedAt: expect.any(Date), status: "RUNNING" },
@@ -206,6 +207,7 @@ describe("factual review job runner", () => {
       "CLAUDE",
       expect.stringContaining("https://docs.aws.amazon.com/ 로 시작하는 AWS 공식 문서만 허용"),
       expect.stringContaining("freshness-review"),
+      expect.objectContaining({ id: "drillup.freshness-review.v1" }),
     );
     expect(prismaMock.factualReviewJob.updateMany).toHaveBeenLastCalledWith({
       where: { id: 11, startedAt: expect.any(Date), status: "RUNNING" },

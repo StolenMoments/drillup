@@ -39,7 +39,7 @@ export function parseFreshnessReviewJson(rawText: string, sourcePolicy: Verifica
     return { ok: true, verdict: "unverified", comment: "AWS 공식 문서(docs.aws.amazon.com) 근거를 확인할 수 없어 판단할 수 없습니다.", evidenceUrl: null, payload: null };
   }
 
-  if (parsed.data.revised === undefined) {
+  if (parsed.data.revised == null) {
     return { ok: true, verdict: parsed.data.verdict, comment: parsed.data.comment, evidenceUrl, payload: null };
   }
   const revised = mcqPayloadSchema.safeParse(parsed.data.revised);

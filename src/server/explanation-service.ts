@@ -1,4 +1,5 @@
 import path from "node:path";
+import { aiOutputContracts } from "@/core/ai-output-contracts";
 import type { GenerationEngine, Prisma } from "@prisma/client";
 import {
   parseExplanationJson,
@@ -37,7 +38,7 @@ export async function generateAndCacheExplanation(
     path.join(dir, "result.json"),
   );
 
-  const run = await runEngine(engine, prompt, dir);
+  const run = await runEngine(engine, prompt, dir, aiOutputContracts.explanation);
   if (!run.ok) {
     throw new ServiceError("EXPLANATION_FAILED", run.failureReason, 502);
   }

@@ -96,6 +96,7 @@ describe("choice hardening runner", () => {
       "CLAUDE",
       expect.any(String),
       expect.stringMatching(/harden[\\/]jobs[\\/]11[\\/]attempt-2$/),
+      expect.objectContaining({ id: "drillup.harden-choices.v1" }),
       "generate-",
     );
     expect(prismaMock.choiceHardeningJob.updateMany).toHaveBeenLastCalledWith(
@@ -162,6 +163,7 @@ describe("choice hardening runner", () => {
       "CLAUDE",
       expect.any(String),
       expect.stringContaining("attempt-3"),
+      expect.objectContaining({ id: "drillup.harden-choices.v1" }),
       "generate-",
     );
   });

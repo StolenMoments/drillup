@@ -1,4 +1,5 @@
 import path from "node:path";
+import { aiOutputContracts } from "@/core/ai-output-contracts";
 import type { Prisma } from "@prisma/client";
 import { parseHardenJson } from "@/core/harden-schema";
 import { extractJsonObject } from "@/core/json-extract";
@@ -107,6 +108,7 @@ export async function runChoiceHardeningJob(jobId: number): Promise<void> {
       job.engine,
       generatePrompt,
       dir,
+      aiOutputContracts.hardenChoices,
       "generate-",
     );
     if (!generated.ok) {

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { aiOutputContracts } from "@/core/ai-output-contracts";
 import { extractJsonObject } from "@/core/json-extract";
 import { buildNoteTidyPrompt } from "@/core/note-tidy-prompt";
 import { parseNoteTidyResult } from "@/core/note-tidy-result";
@@ -48,7 +49,7 @@ export async function runNoteTidyJob(jobId: number): Promise<void> {
       note.content,
       path.join(dir, "result.json"),
     );
-    const run = await runEngine(job.engine, prompt, dir);
+    const run = await runEngine(job.engine, prompt, dir, aiOutputContracts.note);
     if (!run.ok) {
       await markFailed(jobId, run.failureReason);
       return;

@@ -275,6 +275,7 @@ model GenerationRunLog {
   stdoutTail      String?             @map("stdout_tail") @db.Text
   stderrTail      String?             @map("stderr_tail") @db.Text
   errorMessage    String?             @map("error_message") @db.Text
+  warningMessage  String?             @map("warning_message") @db.Text
   exitCode        Int?                @map("exit_code")
   timedOut        Boolean             @default(false) @map("timed_out")
   startedAt       DateTime            @default(now()) @map("started_at")

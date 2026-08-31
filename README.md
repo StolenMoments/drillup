@@ -51,8 +51,9 @@ http://localhost:3000 접속 후 APP_PASSWORD로 로그인.
 2. 소스를 rsync로 Ampere 인스턴스(`SSH_HOST` 시크릿에 설정된 서버)에 전송
    (`.env`, `node_modules/`, `.next/` 등은 제외되어 서버 쪽 상태가
    보존됨)
-3. 서버에서 `scripts/deploy-remote.sh` 실행: `npm ci` -> `npx prisma
-   migrate deploy` -> `npm run build` -> systemd user 서비스(`drillup`)
+3. 서버에서 `scripts/deploy-remote.sh` 실행: 활성 AI 작업 drain -> `npm ci` ->
+   `npx prisma migrate deploy` -> bubblewrap 설치·자가진단 -> `npm run build` ->
+   엔진별 smoke test -> systemd user 서비스(`drillup`)
    재시작 (`prisma migrate deploy`가 `npm run build`보다 먼저 실행되므로,
    빌드가 실패해도 DB 마이그레이션은 이미 적용되어 있을 수 있다 -
    배포 실패 시 롤백 대신 수정 커밋을 push할 것)
@@ -70,7 +71,8 @@ http://localhost:3000 접속 후 APP_PASSWORD로 로그인.
 
 ### 서버 측 1회성 사전 준비 (최초 배포 전에 수동으로)
 
-- Node 22+ 설치
+- Node 22+와 세 AI CLI 설치·로그인 (bubblewrap은 배포 스크립트가 지원되는
+  패키지 관리자에서 자동 설치)
 - `DEPLOY_PATH`에 프로덕션 `.env` 파일 직접 생성 (`DB_*`,
   `APP_PASSWORD`, `SESSION_SECRET`, `NODE_ENV=production`, `PORT=3000`)
 - `loginctl enable-linger <user>` 실행 (재부팅 후에도 systemd user
@@ -95,7 +97,14 @@ HTTPS 리버스 프록시(nginx 등) 구성은 이 워크플로우 범위 밖이
 - 교차 검증: 생성 직후 화면에서 선택한 검증 엔진 CLI가 정답 정확성·문제 품질을 판정합니다. 불합격(⚠️) 문제는 미리보기에서 기본 체크가 해제되며, 최종 저장 여부는 사람이 결정합니다. 검증 자체가 실패해도 생성 결과는 유지됩니다("검증 안 됨" 표시).
 - 중복 방지: 같은 주제의 기존 문제 목록(최신 100개, 8,000자 한도)을 생성 프롬프트에 포함해 중복 출제를 예방합니다.
 - 흐름: 주제·추가 지시 입력 -> 잡 생성(202) -> 5초 폴링(생성 중 -> 검증 중) -> 미리보기에서 선택 -> 기존 가져오기 API로 저장.
-- 잡 이력은 DB의 `generation_job` 테이블에, 실행 산출물은 `generation_output/jobs/<id>/`(git 미추적)에 남습니다.
+- 잡 이력은 DB의 `generation_job` 테이블에 남습니다. 새 실행 산출물은 저장소 밖의
+  `/home/opc/.local/share/drillup-ai/runs/<uuid>/`에 실행별로 분리되며, 기존
+  `generation_output/` 산출물은 자동으로 이동하거나 삭제하지 않습니다.
+- 운영 Linux에서는 bubblewrap 안에 실행 폴더·인증 경로·시스템 바이너리만
+  노출합니다. 저장소와 앱 비밀 환경변수는 전달하지 않으며, 격리를 준비할 수 없으면
+  `AI_SANDBOX_UNAVAILABLE`로 요청을 실패 처리합니다.
+- 모든 엔진 출력은 공용 JSON Schema 계약으로 검증합니다. 명확한 pass/fail 별칭이나
+  단일 대체 결과 파일을 채택한 경우 생성 작업의 **AI 진단 기록**에 경고가 표시됩니다.
 - 타임아웃 기본 20분 — `.env`의 `GENERATION_TIMEOUT_MS`(밀리초)로 조정.
 
 ## 키워드 CLI 백필

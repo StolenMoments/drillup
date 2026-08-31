@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import path from "node:path";
 import { Prisma, type GenerationEngine, type GenerationItemRevision, type GenerationJob } from "@prisma/client";
 import { parseImportJson, type ImportQuestion, validateGeneratedQuestions } from "@/core/import-schema";
+import { aiOutputContracts } from "@/core/ai-output-contracts";
 import { attachTestedDistinctions, prepareGeneratedItems } from "@/core/generation-result";
 import { extractJsonObject } from "@/core/json-extract";
 import { shuffleMcqChoices } from "@/core/random";
@@ -39,7 +40,7 @@ import { ServiceError } from "../errors";
 import { importQuestions, type ImportQuestionInput } from "../import-service";
 import { attachKeywords } from "../keyword-service";
 import { requiredReferenceFiles, resolveReferenceFiles } from "./reference";
-import { generationTimeoutMs, jobOutputDir } from "./run-engine";
+import { generationTimeoutMs, jobOutputDir, removeAiRunsForLegacyDir } from "./run-engine";
 import { completeTrackedRun, failTrackedRun, runTrackedEngine } from "./tracked-run";
 
 const ORPHAN_GRACE_MS = 60_000;
@@ -329,7 +330,7 @@ async function runKeywordTagJob(
   const job = await prisma.generationJob.findUnique({ where: { id: jobId } });
   if (!job || job.status !== "RUNNING") return;
 
-  const run = await runTrackedEngine({ generationJobId: jobId, stage: "KEYWORD_TAG", engine: job.engine, prompt, dir });
+  const run = await runTrackedEngine({ generationJobId: jobId, stage: "KEYWORD_TAG", engine: job.engine, prompt, dir, contract: aiOutputContracts.keywordAssignments });
   if (!run.ok) {
     await failJob(jobId, run.failureReason, null);
     return;
@@ -396,7 +397,7 @@ export async function repairGateFailures(input: {
     if (!failed.length) break;
     const repairPath = path.join(input.dir, `blueprint-repair-${attempt}-result.json`);
     const prompt = buildCliQuestionBlueprintRepairPrompt(failed.map((item) => item.blueprint), summarizeGateViolations(failed), repairPath, input.shape);
-    const repairRun = await runTrackedEngine({ generationJobId: input.generationJobId, stage: "BLUEPRINT_REPAIR", attempt, engine: input.engine, prompt, dir: input.dir, filePrefix: `blueprint-repair-${attempt}-` });
+    const repairRun = await runTrackedEngine({ generationJobId: input.generationJobId, stage: "BLUEPRINT_REPAIR", attempt, engine: input.engine, prompt, dir: input.dir, contract: aiOutputContracts.blueprint, filePrefix: `blueprint-repair-${attempt}-` });
     // 엔진 실행 자체가 실패하면(타임아웃 등) 같은 조건 재시도의 기대 효용이 낮아 중단한다.
     if (!repairRun.ok) break;
     const repaired = parseQuestionBlueprintJson(extractJsonObject(repairRun.resultText));
@@ -442,7 +443,7 @@ async function runJob(
 
   const blueprintPath = path.join(dir, "blueprint-result.json");
   const blueprintPrompt = buildCliQuestionBlueprintPrompt(topicName, instructions, blueprintPath, existing, referenceAbsPaths, existingKeywords, variantSources, shape);
-  const blueprintRun = await runTrackedEngine({ generationJobId: jobId, stage: "BLUEPRINT", engine: job.engine, prompt: blueprintPrompt, dir, filePrefix: "blueprint-" });
+  const blueprintRun = await runTrackedEngine({ generationJobId: jobId, stage: "BLUEPRINT", engine: job.engine, prompt: blueprintPrompt, dir, contract: aiOutputContracts.blueprint, filePrefix: "blueprint-", referenceFiles: referenceAbsPaths });
   if (!blueprintRun.ok) {
     await failJob(jobId, blueprintRun.failureReason, null);
     return;
@@ -463,7 +464,7 @@ async function runJob(
   const resultPath = path.join(dir, "result.json");
   const prompt = buildCliGenerationFromBlueprintPrompt(topicName, blueprints, resultPath, referenceAbsPaths, shape);
 
-  const run = await runTrackedEngine({ generationJobId: jobId, stage: "GENERATION", engine: job.engine, prompt, dir });
+  const run = await runTrackedEngine({ generationJobId: jobId, stage: "GENERATION", engine: job.engine, prompt, dir, contract: aiOutputContracts.questions, referenceFiles: referenceAbsPaths });
   if (!run.ok) {
     await failJob(jobId, run.failureReason, null);
     return;
@@ -535,7 +536,7 @@ async function runJob(
   let finalItems = unverifiedItems;
   let verifyWarning: string | null = null;
 
-  const verifyRun = await runTrackedEngine({ generationJobId: jobId, stage: "VERIFY", engine: job.verifyEngine, prompt: verifyPrompt, dir, filePrefix: "verify-" });
+  const verifyRun = await runTrackedEngine({ generationJobId: jobId, stage: "VERIFY", engine: job.verifyEngine, prompt: verifyPrompt, dir, contract: aiOutputContracts.verifyPassFail, filePrefix: "verify-", referenceFiles: referenceAbsPaths });
   if (!verifyRun.ok) {
     verifyWarning = verifyRun.failureReason;
   } else {
@@ -567,7 +568,7 @@ async function runJob(
         referenceAbsPaths,
         shape,
       );
-      const repairRun = await runTrackedEngine({ generationJobId: jobId, stage: "ITEM_REPAIR", itemIndex: item.index, engine: job.engine, prompt: repairPrompt, dir, filePrefix: `repair-${item.index}-` });
+      const repairRun = await runTrackedEngine({ generationJobId: jobId, stage: "ITEM_REPAIR", itemIndex: item.index, engine: job.engine, prompt: repairPrompt, dir, contract: aiOutputContracts.revisionPassFail, filePrefix: `repair-${item.index}-`, referenceFiles: referenceAbsPaths });
       if (!repairRun.ok) continue;
       const revision = parseRevisionJson(extractJsonObject(repairRun.resultText));
       if (!revision.ok) {
@@ -591,7 +592,7 @@ async function runJob(
     if (repaired.length > 0) {
       const repairVerifyPath = path.join(dir, "repair-verify-result.json");
       const repairVerifyPrompt = buildCliVerifyPrompt(topicName, repaired.map((item) => ({ ...item, blueprint: blueprints[item.index] })), repairVerifyPath, referenceAbsPaths, shape);
-      const repairVerifyRun = await runTrackedEngine({ generationJobId: jobId, stage: "REPAIR_VERIFY", engine: job.verifyEngine, prompt: repairVerifyPrompt, dir, filePrefix: "repair-verify-" });
+      const repairVerifyRun = await runTrackedEngine({ generationJobId: jobId, stage: "REPAIR_VERIFY", engine: job.verifyEngine, prompt: repairVerifyPrompt, dir, contract: aiOutputContracts.verifyPassFail, filePrefix: "repair-verify-", referenceFiles: referenceAbsPaths });
       if (repairVerifyRun.ok) {
         const repairVerdicts = parseVerifyJson(extractJsonObject(repairVerifyRun.resultText));
         if (!repairVerdicts.ok) await failTrackedRun(repairVerifyRun.runLogId, repairVerdicts.fatal);
@@ -719,7 +720,7 @@ async function runItemRevision(
     shape,
     verdictComment,
   );
-  const run = await runTrackedEngine({ generationJobId: jobId, stage: "MANUAL_ITEM_REVISION", itemIndex: revision.itemIndex, engine: revision.engine, prompt, dir });
+  const run = await runTrackedEngine({ generationJobId: jobId, stage: "MANUAL_ITEM_REVISION", itemIndex: revision.itemIndex, engine: revision.engine, prompt, dir, contract: aiOutputContracts.revisionPassFail, referenceFiles });
   if (!run.ok) {
     await prisma.generationItemRevision.update({ where: { id: revisionId }, data: { status: "FAILED", errorMessage: run.failureReason, finishedAt: new Date() } });
     return;
@@ -914,6 +915,9 @@ export async function deleteJob(id: number): Promise<void> {
   await prisma.generationJob.delete({ where: { id } });
   await rm(jobOutputDir(id), { recursive: true, force: true }).catch(() => {
     // 출력 디렉터리 정리는 best-effort로 처리한다.
+  });
+  await removeAiRunsForLegacyDir(jobOutputDir(id)).catch(() => {
+    // 새 실행 루트 정리도 best-effort로 처리한다.
   });
 }
 

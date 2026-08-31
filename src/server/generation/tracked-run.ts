@@ -1,4 +1,5 @@
 import type { GenerationEngine, GenerationRunStage } from "@prisma/client";
+import type { AiOutputContract } from "@/core/ai-output-contract";
 import { prisma } from "../db";
 import { runEngine, type EngineRunResult } from "./run-engine";
 
@@ -11,7 +12,9 @@ type Input = {
   model?: string;
   prompt: string;
   dir: string;
+  contract: AiOutputContract;
   filePrefix?: string;
+  referenceFiles?: readonly string[];
 };
 
 function persistenceFailure(error: unknown): void { console.error("generation run log persistence failed", error); }
@@ -23,8 +26,8 @@ async function update(runLogId: number | null, data: Record<string, unknown>): P
 
 export async function runTrackedEngine(input: Input): Promise<EngineRunResult & { runLogId: number | null }> {
   const runLogId = await prisma.generationRunLog.create({ data: { generationJobId: input.generationJobId, stage: input.stage, itemIndex: input.itemIndex, attempt: input.attempt, engine: input.engine, model: input.model, status: "RUNNING", prompt: input.prompt }, select: { id: true } }).then((row) => row.id).catch((error) => { persistenceFailure(error); return null; });
-  const result = await runEngine(input.engine, input.prompt, input.dir, input.filePrefix);
-  const diagnosticData = { response: result.ok ? result.resultText : null, stdoutTail: result.stdoutTail || null, stderrTail: result.stderrTail || null, exitCode: result.exitCode, timedOut: result.timedOut, durationMs: result.durationMs };
+  const result = await runEngine(input.engine, input.prompt, input.dir, input.contract, input.filePrefix, input.referenceFiles);
+  const diagnosticData = { response: result.ok ? result.resultText : null, stdoutTail: result.stdoutTail || null, stderrTail: result.stderrTail || null, warningMessage: result.warningMessage, exitCode: result.exitCode, timedOut: result.timedOut, durationMs: result.durationMs };
   if (result.ok) await update(runLogId, diagnosticData);
   else await update(runLogId, { ...diagnosticData, status: "FAILED", errorMessage: result.failureReason, finishedAt: new Date() });
   return { ...result, runLogId };

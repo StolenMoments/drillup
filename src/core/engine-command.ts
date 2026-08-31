@@ -13,6 +13,14 @@ export interface EngineCommand {
   promptViaStdin: boolean;
 }
 
+export interface EngineCommandOutput {
+  promptPath: string;
+  resultPath: string;
+  schemaPath: string;
+  schemaJson: string;
+  workDir: string;
+}
+
 const AGY_MODEL = "Gemini 3.7 Flash (High)";
 const CODEX_MODEL = "gpt-5.6-terra";
 const CODEX_REASONING_CONFIG = 'model_reasoning_effort="medium"';
@@ -33,7 +41,7 @@ function isWindows(env: EngineEnv): boolean {
 // .cmd 배치 래퍼는 exit code/stdin 전달 문제가 있어 exe 직접 호출을 우선한다.
 export function buildEngineCommand(
   engine: EngineName,
-  promptPath: string,
+  output: EngineCommandOutput,
   env: EngineEnv,
 ): EngineCommand {
   if (engine === "CLAUDE") {
@@ -70,12 +78,21 @@ export function buildEngineCommand(
     return {
       command,
       args: [
-        "--dangerously-skip-permissions",
+        "--safe-mode",
+        "--permission-mode",
+        "dontAsk",
         "--model",
         "sonnet",
+        "--tools",
+        "WebSearch,WebFetch,Read",
         "--allowedTools",
-        "WebSearch",
-        "WebFetch",
+        "WebSearch,WebFetch,Read",
+        "--disable-slash-commands",
+        "--no-session-persistence",
+        "--json-schema",
+        output.schemaJson,
+        "--output-format",
+        "json",
         "-p",
       ],
       promptViaStdin: true,
@@ -100,11 +117,28 @@ export function buildEngineCommand(
       command,
       args: [
         "exec",
-        "--yolo",
+        "--sandbox",
+        "workspace-write",
+        "--cd",
+        output.workDir,
+        "--skip-git-repo-check",
+        "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
         "--model",
         CODEX_MODEL,
         "-c",
         CODEX_REASONING_CONFIG,
+        "-c",
+        'web_search="live"',
+        "-c",
+        "sandbox_workspace_write.network_access=true",
+        "--output-schema",
+        output.schemaPath,
+        "--output-last-message",
+        output.resultPath,
+        "--color",
+        "never",
         "-",
       ],
       promptViaStdin: true,
@@ -112,8 +146,9 @@ export function buildEngineCommand(
   }
 
   const instruction =
-    `Read the UTF-8 prompt file at "${promptPath}" and follow every instruction in it. ` +
-    "Create the requested JSON output file; do not summarize the prompt itself.";
+    `Read the UTF-8 prompt file at "${output.promptPath}" and follow every instruction in it. ` +
+    `Your output must conform to the JSON Schema at "${output.schemaPath}". ` +
+    `Create the JSON output file at "${output.resultPath}"; do not summarize the prompt itself.`;
   const candidates = isWindows(env)
     ? [
         ...(env.localAppData ? [winJoin(env.localAppData, "agy", "bin", "agy.exe")] : []),
@@ -129,7 +164,14 @@ export function buildEngineCommand(
   const command = firstExisting(candidates, env, isWindows(env) ? "agy.exe" : "agy");
   return {
     command,
-    args: ["--dangerously-skip-permissions", "-p", instruction, "--model", AGY_MODEL],
+    args: [
+      "--dangerously-skip-permissions",
+      "--disable-slash-commands",
+      "-p",
+      instruction,
+      "--model",
+      AGY_MODEL,
+    ],
     promptViaStdin: false,
   };
 }

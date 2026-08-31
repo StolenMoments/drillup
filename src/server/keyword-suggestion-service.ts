@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { aiOutputContracts } from "@/core/ai-output-contracts";
 import type { GenerationEngine } from "@prisma/client";
 import { extractJsonObject } from "@/core/json-extract";
 import { parseKeywordSuggestionJson } from "@/core/keyword-tag-schema";
@@ -46,7 +47,7 @@ export async function suggestQuestionKeywords(
     assignedKeywords,
     path.join(dir, "result.json"),
   );
-  const run = await runEngine(engine, prompt, dir);
+  const run = await runEngine(engine, prompt, dir, aiOutputContracts.keywordSuggestion);
   if (!run.ok) {
     throw new ServiceError("KEYWORD_SUGGESTION_FAILED", run.failureReason, 502);
   }

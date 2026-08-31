@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { aiOutputContracts } from "@/core/ai-output-contracts";
 import type { GenerationEngine } from "@prisma/client";
 import { extractJsonObject } from "@/core/json-extract";
 import { KEYWORD_BACKFILL_BATCH_SIZE } from "@/core/keyword-backfill";
@@ -104,7 +105,7 @@ export async function backfillKeywordBatch(input: {
     existingKeywords.map((keyword) => keyword.name),
     path.join(dir, "result.json"),
   );
-  const run = await runEngine(input.engine, prompt, dir);
+  const run = await runEngine(input.engine, prompt, dir, aiOutputContracts.keywordAssignments);
   if (!run.ok) {
     throw new ServiceError("KEYWORD_BACKFILL_FAILED", run.failureReason, 502);
   }
