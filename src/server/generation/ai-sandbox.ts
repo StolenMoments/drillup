@@ -118,7 +118,7 @@ function addParentDirs(
 ): void {
   const parents: string[] = [];
   let current = path.dirname(target);
-  while (current !== "/" && current !== ".") {
+  while (current !== "." && current !== path.dirname(current)) {
     parents.push(current);
     current = path.dirname(current);
   }
@@ -134,7 +134,10 @@ function authPaths(engine: EngineName, homeDir: string): string[] {
   if (engine === "CLAUDE") {
     return [joinHome(homeDir, ".claude"), joinHome(homeDir, ".claude.json")];
   }
-  return [joinHome(homeDir, ".gemini", "antigravity-cli")];
+  return [
+    joinHome(homeDir, ".gemini", "antigravity-cli"),
+    joinHome(homeDir, ".gemini", "config"),
+  ];
 }
 
 export function wrapWithBubblewrap(input: {
@@ -189,10 +192,13 @@ export function wrapWithBubblewrap(input: {
     "/tmp",
   ];
   addParentDirs(args, homeDir, createdDirs);
+  // agy refreshes its OAuth token and project cache during normal startup.
+  const authBindOption =
+    input.engine === "ANTIGRAVITY" ? "--bind" : "--ro-bind";
   for (const authPath of authPaths(input.engine, homeDir)) {
     if (!existsSync(authPath)) continue;
     addParentDirs(args, authPath, createdDirs);
-    args.push("--ro-bind", authPath, authPath);
+    args.push(authBindOption, authPath, authPath);
   }
   args.push("--bind", input.runDir, "/work", "--chdir", "/work");
 
