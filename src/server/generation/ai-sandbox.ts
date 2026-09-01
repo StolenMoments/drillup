@@ -89,7 +89,9 @@ export function aiSandboxPreflight(): SandboxPreflightResult {
     "--dev",
     "/dev",
     "--",
-    "/usr/bin/true",
+    "/bin/sh",
+    "-c",
+    "exit 0",
   ], {
     encoding: "utf-8",
     env: sanitizedAiEnv("CODEX"),
