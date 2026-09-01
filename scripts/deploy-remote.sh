@@ -48,17 +48,17 @@ if ! command -v bwrap >/dev/null 2>&1; then
 fi
 node scripts/ai-sandbox-preflight.mjs
 
-npm run build
-
 SMOKE_HEAD_BEFORE="$(git rev-parse HEAD)"
 SMOKE_STATUS_BEFORE="$(git status --porcelain=v1 --untracked-files=all)"
-./node_modules/.bin/tsx scripts/ai-engine-smoke.ts
+npm run smoke:ai
 SMOKE_HEAD_AFTER="$(git rev-parse HEAD)"
 SMOKE_STATUS_AFTER="$(git status --porcelain=v1 --untracked-files=all)"
 if [ "$SMOKE_HEAD_BEFORE" != "$SMOKE_HEAD_AFTER" ] || [ "$SMOKE_STATUS_BEFORE" != "$SMOKE_STATUS_AFTER" ]; then
   echo "AI smoke test changed repository HEAD or working tree" >&2
   exit 1
 fi
+
+npm run build
 
 UNIT_DIR="$HOME/.config/systemd/user"
 UNIT_PATH="$UNIT_DIR/drillup.service"
