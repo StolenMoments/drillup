@@ -192,13 +192,11 @@ export function wrapWithBubblewrap(input: {
     "/tmp",
   ];
   addParentDirs(args, homeDir, createdDirs);
-  // agy refreshes its OAuth token and project cache during normal startup.
-  const authBindOption =
-    input.engine === "ANTIGRAVITY" ? "--bind" : "--ro-bind";
+  // AI CLIs refresh OAuth tokens and local state during normal startup.
   for (const authPath of authPaths(input.engine, homeDir)) {
     if (!existsSync(authPath)) continue;
     addParentDirs(args, authPath, createdDirs);
-    args.push(authBindOption, authPath, authPath);
+    args.push("--bind", authPath, authPath);
   }
   args.push("--bind", input.runDir, "/work", "--chdir", "/work");
 

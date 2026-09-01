@@ -74,7 +74,7 @@ describe("ai sandbox policy", () => {
     expectMount(launch.args, "--bind", configDir);
   });
 
-  it("다른 엔진의 인증 정보는 계속 읽기 전용으로 마운트한다", () => {
+  it("Codex 인증 상태도 쓰기 가능하게 마운트한다", () => {
     process.env.AI_SANDBOX_REQUIRED = "true";
     const homeDir = mkdtempSync(path.join(tmpdir(), "drillup-ai-sandbox-"));
     tempHomes.push(homeDir);
@@ -89,6 +89,6 @@ describe("ai sandbox policy", () => {
       homeDir,
     });
 
-    expectMount(launch.args, "--ro-bind", authDir);
+    expectMount(launch.args, "--bind", authDir);
   });
 });
