@@ -176,3 +176,12 @@ describe("choice hardening migration deployment", () => {
     expect(deployScript.match(/prisma migrate deploy/g)).toHaveLength(2);
   });
 });
+
+describe("AI smoke deployment policy", () => {
+  it("실제 AI CLI 호출을 배포 성공 조건으로 사용하지 않는다", () => {
+    const deployScript = readFileSync("scripts/deploy-remote.sh", "utf8");
+
+    expect(deployScript).not.toContain("smoke:ai:live");
+    expect(deployScript).not.toContain("ai-engine-smoke");
+  });
+});

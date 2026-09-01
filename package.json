@@ -10,8 +10,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "keywords:backfill": "tsx scripts/backfill-keywords.ts",
-    "smoke:ai": "tsx scripts/ai-engine-smoke.ts",
-    "smoke:ai:check": "tsx scripts/ai-engine-smoke.ts --check"
+    "smoke:ai:check": "tsx scripts/ai-engine-smoke.ts --check",
+    "smoke:ai:live": "tsx scripts/ai-engine-smoke.ts"
   },
   "dependencies": {
     "@prisma/adapter-mariadb": "^7.8.0",
