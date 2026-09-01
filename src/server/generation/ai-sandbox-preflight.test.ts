@@ -29,6 +29,16 @@ describe("AI sandbox preflight", () => {
     expect(aiSandboxPreflight()).toEqual({ ok: true });
 
     const args = spawnSyncMock.mock.calls[0]?.[1];
+    expect(args).toEqual(
+      expect.arrayContaining([
+        "--ro-bind-try",
+        "/lib",
+        "/lib",
+        "--ro-bind-try",
+        "/lib64",
+        "/lib64",
+      ]),
+    );
     expect(args?.slice(-4)).toEqual(["--", "/bin/sh", "-c", "exit 0"]);
     expect(args).not.toContain("/usr/bin/true");
   });
