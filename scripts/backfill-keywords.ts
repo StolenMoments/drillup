@@ -42,7 +42,7 @@ function usage(): string {
 
 문제는 주제별로 최대 ${KEYWORD_BACKFILL_BATCH_SIZE}개씩 처리하며,
 Claude:Codex:Antigravity 호출 비율은 1:1:3입니다.
-Codex 호출은 gpt-5.6-luna 모델과 xhigh 추론 강도를 사용합니다.`;
+Codex 호출은 gpt-6.1-sol 모델과 medium 추론 강도를 사용합니다.`;
 }
 
 function positiveInteger(raw: string, optionName: string): number {

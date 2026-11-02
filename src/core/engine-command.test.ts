@@ -78,9 +78,9 @@ describe("buildEngineCommand - CODEX", () => {
     expect(cmd.promptViaStdin).toBe(true);
   });
 
-  it("Codex 모델과 xhigh 추론 설정을 항상 전달한다", () => {
+  it("Codex 모델과 medium 추론 설정을 항상 전달한다", () => {
     const cmd = buildEngineCommand("CODEX", output, env());
-    expect(cmd.args).toContain("gpt-5.6-terra");
+    expect(cmd.args).toContain("gpt-6.1-sol");
     expect(cmd.args).toContain('model_reasoning_effort="medium"');
   });
 

@@ -22,7 +22,7 @@ export interface EngineCommandOutput {
 }
 
 const AGY_MODEL = "gemini-3.8-flash-high";
-const CODEX_MODEL = "gpt-5.6-terra";
+const CODEX_MODEL = "gpt-6.1-sol";
 const CODEX_REASONING_CONFIG = 'model_reasoning_effort="medium"';
 
 function winJoin(...parts: string[]): string {
