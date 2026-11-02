@@ -21,7 +21,7 @@ export interface EngineCommandOutput {
   workDir: string;
 }
 
-const AGY_MODEL = "Gemini 3.7 Flash (High)";
+const AGY_MODEL = "gemini-3.8-flash-high";
 const CODEX_MODEL = "gpt-5.6-terra";
 const CODEX_REASONING_CONFIG = 'model_reasoning_effort="medium"';
 

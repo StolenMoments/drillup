@@ -109,7 +109,7 @@ describe("buildEngineCommand - ANTIGRAVITY", () => {
     expect(cmd.args[0]).toBe("--dangerously-skip-permissions");
     expect(cmd.args).toContain("--disable-slash-commands");
     expect(cmd.args.join(" ")).toContain(output.promptPath);
-    expect(cmd.args).toContain("Gemini 3.7 Flash (High)");
+    expect(cmd.args).toContain("gemini-3.8-flash-high");
     expect(cmd.promptViaStdin).toBe(false);
   });
 
